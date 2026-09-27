@@ -3,15 +3,14 @@ Subject: [PATCH] arm64: dts: qcom: add Light L16
 
 ---
 diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
-index 821146b2a..926dcc861 100644
+index 821146b2a..5d43ea50e 100644
 --- a/arch/arm64/boot/dts/qcom/Makefile
 +++ b/arch/arm64/boot/dts/qcom/Makefile
-@@ -365,3 +365,5 @@ x1p42100-hp-omnibook-x14-el2-dtbs := x1p42100-hp-omnibook-x14.dtb x1-el2.dtbo
+@@ -365,3 +365,4 @@ x1p42100-hp-omnibook-x14-el2-dtbs := x1p42100-hp-omnibook-x14.dtb x1-el2.dtbo
  dtb-$(CONFIG_ARCH_QCOM)	+= x1p42100-hp-omnibook-x14.dtb x1p42100-hp-omnibook-x14-el2.dtb
  x1p42100-lenovo-thinkbook-16-el2-dtbs	:= x1p42100-lenovo-thinkbook-16.dtb x1-el2.dtbo
  dtb-$(CONFIG_ARCH_QCOM)	+= x1p42100-lenovo-thinkbook-16.dtb x1p42100-lenovo-thinkbook-16-el2.dtb
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16.dtb
-+dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16-noufs.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 new file mode 100755
 index 000000000..02801aab6
