@@ -57,6 +57,7 @@ package() {
 
 phosh() {
 	install_if="$pkgname=$pkgver-r$pkgrel postmarketos-ui-phosh"
+	replaces="phosh"
 
 	install -Dm644 "$srcdir"/phoc.ini \
 		"$subpkgdir"/usr/share/phosh/phoc.ini

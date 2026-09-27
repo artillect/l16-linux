@@ -235,5 +235,5 @@ File:Light-lfc-phosh.jpg|Phosh in landscape
 == See also ==
 {{Special:PrefixIndex/{{FULLPAGENAME}}/}}
 * [https://xdaforums.com/t/light-l16-firmware.4403267/ Light L16 Firmware] thread on XDA: stock firmware versions, bootloader unlocking, rooting
-* Light L16 community Discord: <!-- CHANGE_ME: invite link -->
+* [https://discord.gg/e3c2wEVDU4 Light L16 community Discord]
 * [https://gitlab.com/msm8996-mainline/linux msm8996-mainline] kernel tree
