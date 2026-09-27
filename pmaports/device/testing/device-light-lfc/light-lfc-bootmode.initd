@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+
+name="Light L16 boot mode"
+description="Make plain reboots return to Linux when dual booting with the stock LightOS"
+
+# Dual boot: the root filesystem is on the "linux" partition and the kernel in
+# "recovery", which FIH's LK boots on the "recovery" reboot reason; a plain reboot
+# (no reason) boots stock Android from "boot". Linux-only: the kernel is in "boot",
+# so the default is already right.
+
+start() {
+	ebegin "Checking the Light L16 install mode"
+	rm -f /run/light-lfc-dual-boot
+	partname=$(sed -n 's/^PARTNAME=//p' /sys/dev/block/$(mountpoint -d /)/uevent)
+	if [ "$partname" = linux ]; then
+		einfo "Dual boot: plain reboots go to Linux (recovery)"
+		printf recovery > /sys/module/reboot_mode/parameters/default_mode
+		# "Reboot to Android" runs as the user; the setting only picks which of the
+		# two installed systems the next reboot starts
+		chmod 666 /sys/module/reboot_mode/parameters/default_mode
+		# shows the "Reboot to Android" launcher (its TryExec)
+		ln -s /usr/bin/light-lfc-reboot-android /run/light-lfc-dual-boot
+	else
+		einfo "Linux only: plain reboots go to Linux (boot)"
+	fi
+	eend $?
+}

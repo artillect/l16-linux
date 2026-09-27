@@ -67,6 +67,8 @@ patch iio-qcom-smgr-l16-light "iio: qcom_smgr: L16: stream light instead of the 
 	drivers/iio/common/qcom_smgr/qcom_smgr.c
 patch asoc-wcd9335-dec-volume "ASoC: codecs: wcd9335: add decimator volume controls" \
 	sound/soc/codecs/wcd9335.c
+patch power-reset-reboot-mode-default "power: reset: reboot-mode: settable mode for a reboot without a command" \
+	drivers/power/reset/reboot-mode.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)

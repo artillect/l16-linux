@@ -1,0 +1,34 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] power: reset: reboot-mode: settable mode for a reboot without a command
+
+---
+diff --git a/drivers/power/reset/reboot-mode.c b/drivers/power/reset/reboot-mode.c
+index fba53f638..d327d013b 100644
+--- a/drivers/power/reset/reboot-mode.c
++++ b/drivers/power/reset/reboot-mode.c
+@@ -19,15 +19,23 @@ struct mode_info {
+ 	struct list_head list;
+ };
+ 
++/*
++ * The mode of a reboot without a command (a plain "reboot"). Lets userspace choose
++ * where plain reboots go, e.g. on a device whose OS boots from the recovery partition.
++ * Write it without a trailing newline (printf, not echo).
++ */
++static char default_mode[32] = "normal";
++module_param_string(default_mode, default_mode, sizeof(default_mode), 0644);
++MODULE_PARM_DESC(default_mode, "mode of a reboot without a command (default: normal)");
++
+ static unsigned int get_reboot_mode_magic(struct reboot_mode_driver *reboot,
+ 					  const char *cmd)
+ {
+-	const char *normal = "normal";
+ 	struct mode_info *info;
+ 	char cmd_[110];
+ 
+ 	if (!cmd)
+-		cmd = normal;
++		cmd = default_mode;
+ 
+ 	list_for_each_entry(info, &reboot->head, list)
+ 		if (!strcmp(info->mode, cmd))

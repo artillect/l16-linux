@@ -1,0 +1,6 @@
+#!/bin/sh
+# light-lfc-reboot-android: dual boot only; reboot into the stock LightOS. A reboot
+# without a reason boots "boot" (Android); light-lfc-bootmode made plain reboots ask
+# for "recovery" (Linux) and let the user change that, so undo it for this reboot.
+printf normal > /sys/module/reboot_mode/parameters/default_mode || exit 1
+exec loginctl reboot
