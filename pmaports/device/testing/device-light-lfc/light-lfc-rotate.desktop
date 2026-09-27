@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Light L16 lock screen rotation
+Comment=Follow the accelerometer on the lock and login screens
+Exec=/usr/bin/light-lfc-rotate
+NoDisplay=true
+X-GNOME-AutoRestart=true
