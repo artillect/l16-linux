@@ -1,0 +1,65 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] power: supply: qcom_fg: report discharging current as negative
+
+---
+diff --git a/drivers/power/supply/qcom_fg.c b/drivers/power/supply/qcom_fg.c
+index db45f7417..276bca82c 100644
+--- a/drivers/power/supply/qcom_fg.c
++++ b/drivers/power/supply/qcom_fg.c
+@@ -50,6 +50,10 @@
+ #define BATT_TEMP_JEITA_WARM		400
+ #define BATT_TEMP_JEITA_HOT		450
+ 
++/* L16: JEITA threshold from the monitored battery (deg C -> tenths), else the default */
++#define L16_JEITA(chip, field, unset, def) \
++	((chip)->batt_info->field != (unset) ? (chip)->batt_info->field * 10 : (def))
++
+ #define MEM_INTF_AVAIL			BIT(0)
+ #define MEM_INTF_CTL_BURST		BIT(7)
+ #define MEM_INTF_CTL_WR_EN		BIT(6)
+@@ -550,7 +554,8 @@ static int qcom_fg_get_current(struct qcom_fg_chip *chip, int *val)
+ 	}
+ 
+ 	temp = (s16)(readval[1] << 8 | readval[0]);
+-	*val = div_s64((s64)temp * 152587, 1000);
++	/* L16: discharge is negative (the FG reports it positive) */
++	*val = -div_s64((s64)temp * 152587, 1000);
+ 
+ 	return 0;
+ }
+@@ -1188,7 +1193,7 @@ static int qcom_fg_probe(struct platform_device *pdev)
+ 	if (chip->ops->set_temp_threshold) {
+ 		ret = chip->ops->set_temp_threshold(chip,
+ 						POWER_SUPPLY_PROP_TEMP_MIN,
+-						BATT_TEMP_JEITA_COLD);
++						L16_JEITA(chip, temp_alert_min, INT_MIN, BATT_TEMP_JEITA_COLD));
+ 		if (ret) {
+ 			dev_err(chip->dev,
+ 				"Failed to set cold threshold: %d\n", ret);
+@@ -1197,7 +1202,7 @@ static int qcom_fg_probe(struct platform_device *pdev)
+ 
+ 		ret = chip->ops->set_temp_threshold(chip,
+ 						POWER_SUPPLY_PROP_TEMP_MAX,
+-						BATT_TEMP_JEITA_WARM);
++						L16_JEITA(chip, temp_alert_max, INT_MAX, BATT_TEMP_JEITA_WARM));
+ 		if (ret) {
+ 			dev_err(chip->dev,
+ 				"Failed to set warm threshold: %d\n", ret);
+@@ -1206,7 +1211,7 @@ static int qcom_fg_probe(struct platform_device *pdev)
+ 
+ 		ret = chip->ops->set_temp_threshold(chip,
+ 						POWER_SUPPLY_PROP_TEMP_ALERT_MIN,
+-						BATT_TEMP_JEITA_COOL);
++						L16_JEITA(chip, temp_min, INT_MIN, BATT_TEMP_JEITA_COOL));
+ 		if (ret) {
+ 			dev_err(chip->dev,
+ 				"Failed to set cool threshold: %d\n", ret);
+@@ -1215,7 +1220,7 @@ static int qcom_fg_probe(struct platform_device *pdev)
+ 
+ 		ret = chip->ops->set_temp_threshold(chip,
+ 						POWER_SUPPLY_PROP_TEMP_ALERT_MAX,
+-						BATT_TEMP_JEITA_HOT);
++						L16_JEITA(chip, temp_max, INT_MAX, BATT_TEMP_JEITA_HOT));
+ 		if (ret) {
+ 			dev_err(chip->dev,
+ 				"Failed to set hot threshold: %d\n", ret);

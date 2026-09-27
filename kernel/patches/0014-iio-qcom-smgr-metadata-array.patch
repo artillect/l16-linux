@@ -1,0 +1,77 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] iio: qcom_smgr: decode the report metadata as a per-item array
+
+---
+diff --git a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c
+index 1b58e2662..340877694 100644
+--- a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c
++++ b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c
+@@ -629,6 +629,19 @@ static const struct qmi_elem_info sns_smgr_buffering_report_sample_ei[] = {
+ 	},
+ };
+ 
++static const struct qmi_elem_info sns_smgr_buffering_report_item_meta_ei[] = {
++	{
++		.data_type = QMI_UNSIGNED_1_BYTE,
++		.elem_len = 12,
++		.elem_size = sizeof(u8),
++		.array_type = STATIC_ARRAY,
++		.offset = offsetof(struct sns_smgr_buffering_report_item_meta, raw),
++	},
++	{
++		.data_type = QMI_EOTI,
++	},
++};
++
+ const struct qmi_elem_info sns_smgr_buffering_report_ind_ei[] = {
+ 	{
+ 		.data_type = QMI_UNSIGNED_1_BYTE,
+@@ -641,15 +654,24 @@ const struct qmi_elem_info sns_smgr_buffering_report_ind_ei[] = {
+ 				   report_id),
+ 	},
+ 	{
+-		.data_type = QMI_STRUCT,
++		/* L16: metadata array, one entry per requested item */
++		.data_type = QMI_DATA_LEN,
+ 		.elem_len = 1,
+-		.elem_size = sizeof_field(struct sns_smgr_buffering_report_ind,
+-					  metadata),
++		.elem_size = sizeof(u8),
+ 		.array_type = NO_ARRAY,
+ 		.tlv_type = 0x02,
++		.offset = offsetof(struct sns_smgr_buffering_report_ind,
++				   metadata_len),
++	},
++	{
++		.data_type = QMI_STRUCT,
++		.elem_len = 2,
++		.elem_size = sizeof(struct sns_smgr_buffering_report_item_meta),
++		.array_type = VAR_LEN_ARRAY,
++		.tlv_type = 0x02,
+ 		.offset = offsetof(struct sns_smgr_buffering_report_ind,
+ 				   metadata),
+-		.ei_array = sns_smgr_buffering_report_metadata_ei,
++		.ei_array = sns_smgr_buffering_report_item_meta_ei,
+ 	},
+ 	{
+ 		.data_type = QMI_DATA_LEN,
+diff --git a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h
+index 5d0d622b9..dea31b8b2 100644
+--- a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h
++++ b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h
+@@ -141,9 +141,14 @@ struct sns_smgr_buffering_report_sample {
+ 	u16 val3;
+ };
+ 
++struct sns_smgr_buffering_report_item_meta {
++	u8 raw[12];
++};
++
+ struct sns_smgr_buffering_report_ind {
+ 	u8 report_id;
+-	struct sns_smgr_buffering_report_metadata metadata;
++	u8 metadata_len; /* L16: one metadata entry per item */
++	struct sns_smgr_buffering_report_item_meta metadata[2];
+ 	u8 samples_len;
+ 	struct sns_smgr_buffering_report_sample samples[SNS_SMGR_SAMPLES_MAX_LEN];
+ 	u8 val2;

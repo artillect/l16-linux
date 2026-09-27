@@ -1,0 +1,19 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] drm/msm/mdp5: use the first pair-able layer mixer
+
+---
+diff --git a/drivers/gpu/drm/msm/disp/mdp5/mdp5_mixer.c b/drivers/gpu/drm/msm/disp/mdp5/mdp5_mixer.c
+index 2822b533f..e251f49a6 100644
+--- a/drivers/gpu/drm/msm/disp/mdp5/mdp5_mixer.c
++++ b/drivers/gpu/drm/msm/disp/mdp5/mdp5_mixer.c
+@@ -94,7 +94,9 @@ int mdp5_mixer_assign(struct drm_atomic_state *s, struct drm_crtc *crtc,
+ 		 * so easily. For now, ignore the possibility of requiring
+ 		 * a full modeset.
+ 		 */
+-		if (!(*mixer) || cur->caps & MDP_LM_CAP_PAIR)
++		/* L16: first pair-able mixer (LM0/PP0, as stock uses for DSI0) */
++		if (!(*mixer) || (cur->caps & MDP_LM_CAP_PAIR &&
++				  !((*mixer)->caps & MDP_LM_CAP_PAIR)))
+ 			*mixer = cur;
+ 	}
+ 

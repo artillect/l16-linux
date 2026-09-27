@@ -1,0 +1,19 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] Input: pm8941-pwrkey: a press aborts suspend
+
+---
+diff --git a/drivers/input/misc/pm8941-pwrkey.c b/drivers/input/misc/pm8941-pwrkey.c
+index 53249d2c0..80c74d379 100644
+--- a/drivers/input/misc/pm8941-pwrkey.c
++++ b/drivers/input/misc/pm8941-pwrkey.c
+@@ -181,6 +181,10 @@ static irqreturn_t pm8941_pwrkey_irq(int irq, void *_data)
+ 	}
+ 	pwrkey->last_status = sts;
+ 
++	/* L16: press aborts suspend */
++	if (sts && device_may_wakeup(pwrkey->dev))
++		pm_wakeup_hard_event(pwrkey->dev);
++
+ 	input_report_key(pwrkey->input, pwrkey->code, sts);
+ 	input_sync(pwrkey->input);
+ 

@@ -1,0 +1,41 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] iio: qcom_smgr: L16: stream light instead of the dead proximity sensor
+
+---
+diff --git a/drivers/iio/common/qcom_smgr/qcom_smgr.c b/drivers/iio/common/qcom_smgr/qcom_smgr.c
+index 1d5753bd2..5e5e87282 100644
+--- a/drivers/iio/common/qcom_smgr/qcom_smgr.c
++++ b/drivers/iio/common/qcom_smgr/qcom_smgr.c
+@@ -219,6 +219,11 @@ static int qcom_smgr_request_buffering(struct qcom_smgr *smgr,
+ 		 */
+ 		req.items[0].val1 = 3;
+ 		req.items[0].val2 = 1;
++
++		/* L16: light, not proximity (secondary data type of the prox/light sensor) */
++		if (sensor->type == SNS_SMGR_SENSOR_TYPE_PROX_LIGHT &&
++		    sensor->data_type_count > 1)
++			req.items[0].data_type = SNS_SMGR_DATA_TYPE_SECONDARY;
+ 	} else
+ 		req.action = SNS_SMGR_BUFFERING_ACTION_DELETE;
+ 
+@@ -305,7 +310,8 @@ static void qcom_smgr_buffering_report_handler(struct qmi_handle *hdl,
+ 	 * (sensor maxed out) and 0 when something is within range (assume
+ 	 * sensor is covered).
+ 	 */
+-	if (sensor->type == SNS_SMGR_SENSOR_TYPE_PROX_LIGHT) {
++	/* L16: lux passes through; no proximity conversion */
++	if (0) {
+ 		temp = le32_to_cpu(iio_data.values[0]);
+ 		temp >>= SMGR_VALUE_DECIMAL_OFFSET;
+ 		temp = ~temp & 1;
+@@ -613,7 +619,9 @@ static const struct iio_chan_spec qcom_smgr_mag_iio_channels[] = {
+ 
+ static const struct iio_chan_spec qcom_smgr_prox_iio_channels[] = {
+ 	{
+-		.type = IIO_PROXIMITY,
++		.type = IIO_INTENSITY, /* L16: ambient light */
++		.modified = true,
++		.channel2 = IIO_MOD_LIGHT_BOTH,
+ 		.scan_index = 0,
+ 		.scan_type = {
+ 			.sign = 'u',

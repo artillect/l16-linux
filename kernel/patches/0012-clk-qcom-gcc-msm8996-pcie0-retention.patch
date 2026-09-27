@@ -1,0 +1,18 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] clk: qcom: gcc-msm8996: keep PCIe0 GDSC in retention
+
+---
+diff --git a/drivers/clk/qcom/gcc-msm8996.c b/drivers/clk/qcom/gcc-msm8996.c
+index aa3bd2777..b30f6df20 100644
+--- a/drivers/clk/qcom/gcc-msm8996.c
++++ b/drivers/clk/qcom/gcc-msm8996.c
+@@ -3239,7 +3239,8 @@ static struct gdsc pcie0_gdsc = {
+ 	.pd = {
+ 		.name = "pcie0",
+ 	},
+-	.pwrsts = PWRSTS_OFF_ON,
++	/* L16: keep PCIe0 link across suspend (as newer SoCs do) */
++	.pwrsts = PWRSTS_RET_ON,
+ };
+ 
+ static struct gdsc pcie1_gdsc = {

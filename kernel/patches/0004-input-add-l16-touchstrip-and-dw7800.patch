@@ -1,0 +1,370 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] Input: add Light L16 touch strip and DW7800 haptics
+
+---
+diff --git a/drivers/input/misc/Kconfig b/drivers/input/misc/Kconfig
+index 30fae603f..1d228cff3 100644
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+@@ -349,6 +349,19 @@ config INPUT_APANEL
+ 	 To compile this driver as a module, choose M here: the module will
+ 	 be called apanel.
+ 
++config INPUT_L16_TOUCHSTRIP
++	tristate "Light L16 touch strip"
++	depends on I2C
++	help
++	  One-dimensional Elan eKTF touch strip of the Light L16 camera.
++
++config INPUT_DW7800_HAPTICS
++	tristate "Dongwoon DW7800 haptics"
++	depends on I2C
++	select INPUT_FF_MEMLESS
++	help
++	  Dongwoon DW7800 FIFO haptic driver (Light L16 vibration motor).
++
+ config INPUT_GPIO_BEEPER
+ 	tristate "Generic GPIO Beeper support"
+ 	depends on GPIOLIB || COMPILE_TEST
+diff --git a/drivers/input/misc/Makefile b/drivers/input/misc/Makefile
+index a6bdf73d1..ccff30c8d 100644
+--- a/drivers/input/misc/Makefile
++++ b/drivers/input/misc/Makefile
+@@ -40,6 +40,8 @@ obj-$(CONFIG_INPUT_DRV260X_HAPTICS)	+= drv260x.o
+ obj-$(CONFIG_INPUT_DRV2665_HAPTICS)	+= drv2665.o
+ obj-$(CONFIG_INPUT_DRV2667_HAPTICS)	+= drv2667.o
+ obj-$(CONFIG_INPUT_GPIO_BEEPER)		+= gpio-beeper.o
++obj-$(CONFIG_INPUT_DW7800_HAPTICS)	+= dw7800-haptics.o
++obj-$(CONFIG_INPUT_L16_TOUCHSTRIP)	+= l16-touchstrip.o
+ obj-$(CONFIG_INPUT_GPIO_DECODER)	+= gpio_decoder.o
+ obj-$(CONFIG_INPUT_GPIO_VIBRA)		+= gpio-vibra.o
+ obj-$(CONFIG_INPUT_HISI_POWERKEY)	+= hisi_powerkey.o
+diff --git a/drivers/input/misc/dw7800-haptics.c b/drivers/input/misc/dw7800-haptics.c
+new file mode 100755
+index 000000000..6121b608c
+--- /dev/null
++++ b/drivers/input/misc/dw7800-haptics.c
+@@ -0,0 +1,187 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Dongwoon DW7800 haptic driver (Light L16 vibration motor), as a memoryless
++ * force-feedback rumble device. The chip plays signed 8-bit samples written into
++ * a FIFO; this follows what the stock L16 kernel's dw7800 driver does:
++ *
++ *   power on   reg 5 = 1 (software reset), wait 1.1 ms,
++ *              reg 6 = 0x20 (timing), reg 7 = 0x08 (LDO level), reg 8 = 0
++ *   play       while on: when the FIFO level (reg 3) is <= 0x50, write 40 samples
++ *              of a sine (20 samples per period) to the FIFO (reg 4)
++ *   stop       one 0 sample, then power on again (empties the FIFO)
++ *
++ * Every register write is one transfer of [reg, data...]. Reg 1 reads 0x02.
++ */
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/workqueue.h>
++
++#define DW7800_REG_VERSION	0x01
++#define DW7800_REG_FIFO_LEVEL	0x03
++#define DW7800_REG_FIFO		0x04
++#define DW7800_REG_RESET	0x05
++#define DW7800_REG_TIMING	0x06
++#define DW7800_REG_LDO		0x07
++#define DW7800_REG_HW_RESET	0x08
++
++/* stock values */
++#define DW7800_TIMING		0x20
++#define DW7800_LDO		0x08
++#define DW7800_FIFO_LOW		0x50
++#define DW7800_CHUNK		40
++
++/* one period of stock's normal_pattern */
++static const s8 dw7800_sine[20] = {
++	0, 20, 39, 58, 75, 90, 103, 114, 121, 126,
++	127, 126, 121, 114, 103, 90, 75, 58, 39, 20,
++};
++
++struct dw7800 {
++	struct i2c_client *client;
++	struct input_dev *input;
++	struct work_struct work;
++	unsigned int level;	/* 0..0xffff, 0 = off */
++};
++
++static int dw7800_write(struct dw7800 *dw, u8 reg, u8 val)
++{
++	return i2c_smbus_write_byte_data(dw->client, reg, val);
++}
++
++static void dw7800_power_on(struct dw7800 *dw)
++{
++	dw7800_write(dw, DW7800_REG_RESET, 1);
++	usleep_range(1100, 1200);
++	dw7800_write(dw, DW7800_REG_TIMING, DW7800_TIMING);
++	dw7800_write(dw, DW7800_REG_LDO, DW7800_LDO);
++	dw7800_write(dw, DW7800_REG_HW_RESET, 0);
++}
++
++static void dw7800_work(struct work_struct *work)
++{
++	struct dw7800 *dw = container_of(work, struct dw7800, work);
++	u8 buf[1 + DW7800_CHUNK];
++	unsigned int level;
++	int fill, i, ret;
++
++	while ((level = READ_ONCE(dw->level))) {
++		fill = i2c_smbus_read_byte_data(dw->client, DW7800_REG_FIFO_LEVEL);
++		if (fill < 0)
++			break;
++		if (fill > DW7800_FIFO_LOW) {
++			usleep_range(1000, 2000);
++			continue;
++		}
++		/* the sine, then its negative half */
++		buf[0] = DW7800_REG_FIFO;
++		for (i = 0; i < DW7800_CHUNK; i++) {
++			int s = dw7800_sine[i % 20] * (i < 20 ? 1 : -1);
++
++			buf[1 + i] = (s8)(s * (int)level / 0xffff);
++		}
++		ret = i2c_master_send(dw->client, buf, sizeof(buf));
++		if (ret < 0)
++			break;
++	}
++
++	dw7800_write(dw, DW7800_REG_FIFO, 0);
++	dw7800_power_on(dw);
++}
++
++static int dw7800_play(struct input_dev *input, void *data, struct ff_effect *effect)
++{
++	struct dw7800 *dw = input_get_drvdata(input);
++	unsigned int level = max(effect->u.rumble.strong_magnitude,
++				 effect->u.rumble.weak_magnitude / 2);
++
++	WRITE_ONCE(dw->level, level);
++	if (level)
++		queue_work(system_long_wq, &dw->work);
++
++	return 0;
++}
++
++static void dw7800_stop(struct dw7800 *dw)
++{
++	WRITE_ONCE(dw->level, 0);
++	cancel_work_sync(&dw->work);
++}
++
++static void dw7800_close(struct input_dev *input)
++{
++	dw7800_stop(input_get_drvdata(input));
++}
++
++static void dw7800_cancel(void *data)
++{
++	dw7800_stop(data);
++}
++
++static int dw7800_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct dw7800 *dw;
++	int ret;
++
++	dw = devm_kzalloc(dev, sizeof(*dw), GFP_KERNEL);
++	if (!dw)
++		return -ENOMEM;
++	dw->client = client;
++	INIT_WORK(&dw->work, dw7800_work);
++	i2c_set_clientdata(client, dw);
++
++	ret = i2c_smbus_read_byte_data(client, DW7800_REG_VERSION);
++	if (ret < 0)
++		return dev_err_probe(dev, ret, "no response\n");
++	dev_info(dev, "version %#x\n", ret);
++	dw7800_power_on(dw);
++
++	dw->input = devm_input_allocate_device(dev);
++	if (!dw->input)
++		return -ENOMEM;
++	dw->input->name = "dw7800-haptics";
++	dw->input->id.bustype = BUS_I2C;
++	dw->input->close = dw7800_close;
++	input_set_drvdata(dw->input, dw);
++	input_set_capability(dw->input, EV_FF, FF_RUMBLE);
++
++	ret = devm_add_action_or_reset(dev, dw7800_cancel, dw);
++	if (ret)
++		return ret;
++
++	ret = input_ff_create_memless(dw->input, NULL, dw7800_play);
++	if (ret)
++		return ret;
++
++	return input_register_device(dw->input);
++}
++
++static int dw7800_suspend(struct device *dev)
++{
++	dw7800_stop(dev_get_drvdata(dev));
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(dw7800_pm, dw7800_suspend, NULL);
++
++static const struct of_device_id dw7800_of_match[] = {
++	{ .compatible = "dongwoon,dw7800" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, dw7800_of_match);
++
++static struct i2c_driver dw7800_driver = {
++	.driver = {
++		.name = "dw7800-haptics",
++		.of_match_table = dw7800_of_match,
++		.pm = pm_sleep_ptr(&dw7800_pm),
++	},
++	.probe = dw7800_probe,
++};
++module_i2c_driver(dw7800_driver);
++
++MODULE_DESCRIPTION("Dongwoon DW7800 haptic driver");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/input/misc/l16-touchstrip.c b/drivers/input/misc/l16-touchstrip.c
+new file mode 100755
+index 000000000..6ba1a464d
+--- /dev/null
++++ b/drivers/input/misc/l16-touchstrip.c
+@@ -0,0 +1,130 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Touch strip of the Light L16: an Elan eKTF controller reporting one finger on a
++ * one-dimensional strip. Protocol as seen on the wire (and as stock's elan-ktf
++ * driver handles it):
++ *
++ *   after reset   55 55 55 55                  hello
++ *   touch         5a b1 b2 b3 b4 b5 b6 bits    Elan 2-finger report, 8 bytes
++ *                   finger 1 x = (b1 & 0xf0) << 4 | b2, 0..767 end to end
++ *                   (y is always 0), bits = finger-down mask, 0 on release
++ *
++ * Info queries (53 60 00 00 -> 52 60 00 31) give an X resolution of 768 and a
++ * Y resolution of 1. Other packets (hello, recalibration) are read and ignored;
++ * every interrupt reads one packet, which releases the level-low IRQ line.
++ */
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/interrupt.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/regulator/consumer.h>
++
++#define STRIP_PACKET_LEN	8
++#define STRIP_HDR_2FINGER	0x5a
++#define STRIP_X_MAX		767
++/* give up on the IRQ after this many failed reads in a row, instead of spinning */
++#define STRIP_MAX_ERRORS	20
++
++struct l16_strip {
++	struct i2c_client *client;
++	struct input_dev *input;
++	struct gpio_desc *reset_gpio;
++	unsigned int errors;
++};
++
++static irqreturn_t l16_strip_irq(int irq, void *data)
++{
++	struct l16_strip *strip = data;
++	u8 buf[STRIP_PACKET_LEN];
++	int ret;
++
++	ret = i2c_master_recv(strip->client, buf, sizeof(buf));
++	if (ret != sizeof(buf)) {
++		if (++strip->errors >= STRIP_MAX_ERRORS) {
++			dev_err(&strip->client->dev,
++				"%u failed reads in a row, disabling the interrupt\n",
++				strip->errors);
++			disable_irq_nosync(irq);
++		}
++		return IRQ_HANDLED;
++	}
++	strip->errors = 0;
++
++	if (buf[0] != STRIP_HDR_2FINGER)
++		return IRQ_HANDLED;
++
++	if (buf[7] & 0x01) {
++		input_report_abs(strip->input, ABS_X, ((buf[1] & 0xf0) << 4) | buf[2]);
++		input_report_key(strip->input, BTN_TOUCH, 1);
++	} else {
++		input_report_key(strip->input, BTN_TOUCH, 0);
++	}
++	input_sync(strip->input);
++
++	return IRQ_HANDLED;
++}
++
++static int l16_strip_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct l16_strip *strip;
++	int ret;
++
++	strip = devm_kzalloc(dev, sizeof(*strip), GFP_KERNEL);
++	if (!strip)
++		return -ENOMEM;
++	strip->client = client;
++
++	ret = devm_regulator_get_enable(dev, "vcc33");
++	if (ret)
++		return dev_err_probe(dev, ret, "vcc33 supply\n");
++	ret = devm_regulator_get_enable(dev, "vccio");
++	if (ret)
++		return dev_err_probe(dev, ret, "vccio supply\n");
++
++	/* reset: held low 10 ms, then released; the controller says hello after ~0.5 s */
++	strip->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(strip->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(strip->reset_gpio), "reset-gpios\n");
++	if (strip->reset_gpio) {
++		msleep(10);
++		gpiod_set_value_cansleep(strip->reset_gpio, 0);
++	}
++
++	strip->input = devm_input_allocate_device(dev);
++	if (!strip->input)
++		return -ENOMEM;
++	strip->input->name = "Light L16 touch strip";
++	strip->input->id.bustype = BUS_I2C;
++	input_set_capability(strip->input, EV_KEY, BTN_TOUCH);
++	input_set_abs_params(strip->input, ABS_X, 0, STRIP_X_MAX, 0, 0);
++
++	ret = input_register_device(strip->input);
++	if (ret)
++		return ret;
++
++	/* level low; the handler always reads a packet, which releases the line */
++	return devm_request_threaded_irq(dev, client->irq, NULL, l16_strip_irq,
++					 IRQF_ONESHOT, "l16-touchstrip", strip);
++}
++
++static const struct of_device_id l16_strip_of_match[] = {
++	{ .compatible = "light,l16-touchstrip" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, l16_strip_of_match);
++
++static struct i2c_driver l16_strip_driver = {
++	.driver = {
++		.name = "l16-touchstrip",
++		.of_match_table = l16_strip_of_match,
++	},
++	.probe = l16_strip_probe,
++};
++module_i2c_driver(l16_strip_driver);
++
++MODULE_DESCRIPTION("Light L16 touch strip (Elan eKTF, one-dimensional)");
++MODULE_LICENSE("GPL");

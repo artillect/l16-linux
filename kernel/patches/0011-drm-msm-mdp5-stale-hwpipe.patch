@@ -1,0 +1,30 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] drm/msm/mdp5: drop hwpipes not registered in the global state
+
+---
+diff --git a/drivers/gpu/drm/msm/disp/mdp5/mdp5_plane.c b/drivers/gpu/drm/msm/disp/mdp5/mdp5_plane.c
+index 4ca183fb6..b36ff04b8 100644
+--- a/drivers/gpu/drm/msm/disp/mdp5/mdp5_plane.c
++++ b/drivers/gpu/drm/msm/disp/mdp5/mdp5_plane.c
+@@ -264,6 +264,21 @@ static int mdp5_plane_atomic_check_with_state(struct drm_crtc_state *crtc_state,
+ 				new_hwpipe = true;
+ 		}
+ 
++		/* L16: stale hwpipe (plane state restored after suspend) */
++		if (!new_hwpipe && mdp5_state->hwpipe) {
++			struct mdp5_global_state *gs = mdp5_get_global_state(state->state);
++
++			if (IS_ERR(gs))
++				return PTR_ERR(gs);
++			if (gs->hwpipe.hwpipe_to_plane[mdp5_state->hwpipe->idx] != plane) {
++				mdp5_state->hwpipe = NULL;
++				if (mdp5_state->r_hwpipe &&
++				    gs->hwpipe.hwpipe_to_plane[mdp5_state->r_hwpipe->idx] != plane)
++					mdp5_state->r_hwpipe = NULL;
++				new_hwpipe = true;
++			}
++		}
++
+ 		/* (re)assign hwpipe if needed, otherwise keep old one: */
+ 		if (new_hwpipe) {
+ 			/* TODO maybe we want to re-assign hwpipe sometimes
