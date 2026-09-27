@@ -14,7 +14,7 @@ index 821146b2a..926dcc861 100644
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16-noufs.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 new file mode 100755
-index 000000000..b5321d513
+index 000000000..02801aab6
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 @@ -0,0 +1,1062 @@
