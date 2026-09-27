@@ -1,0 +1,12 @@
+#!/bin/sh
+# The login screen's PulseAudio keeps the sound card open after login, leaving the
+# user's PulseAudio with only a dummy output: no PulseAudio for the greeter user.
+if getent passwd greetd >/dev/null; then
+	G=$(getent passwd greetd | cut -d: -f6)
+	mkdir -p "$G/.config/autostart" "$G/.config/pulse"
+	printf '[Desktop Entry]\nType=Application\nName=PulseAudio Sound System\nHidden=true\n' \
+		> "$G/.config/autostart/pulseaudio.desktop"
+	printf 'autospawn = no\n' > "$G/.config/pulse/client.conf"
+	chown -R greetd:greetd "$G/.config"
+fi
+exit 0

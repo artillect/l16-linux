@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=8
+pkgrel=9
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -103,8 +103,10 @@ openrc() {
 phosh() {
 	install_if="$pkgname=$pkgver-r$pkgrel postmarketos-ui-phosh"
 	replaces="phosh"
-	# light-lfc-rotate: monitor-sensor, wlr-randr
-	depends="iio-sensor-proxy wlr-randr"
+	# greetd: the post-install configures its user; light-lfc-rotate: monitor-sensor,
+	# wlr-randr
+	depends="greetd iio-sensor-proxy wlr-randr"
+	install="$subpkgname.post-install $subpkgname.post-upgrade"
 
 	# landscape (kernel panel orientation) at 1.75x; the phrog login screen falls
 	# back to this one too
