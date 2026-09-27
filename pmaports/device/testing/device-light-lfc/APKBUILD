@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=9
+pkgrel=10
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -91,6 +91,8 @@ package() {
 }
 
 openrc() {
+	# what abuild's default openrc() would set; overriding it drops that
+	install_if="openrc $pkgname=$pkgver-r$pkgrel"
 	install="$subpkgname.post-install $subpkgname.post-upgrade"
 	depends="msm-firmware-loader-openrc"
 
