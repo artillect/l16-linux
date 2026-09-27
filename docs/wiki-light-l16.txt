@@ -76,7 +76,7 @@
 <!-- Multimedia Features -->
 | status_3d     = Y
 | status_dvb    = -
-| status_audio  = N
+| status_audio  = Y
 | status_camera = N
 | status_cameraflash =
 | status_irtx   = -
@@ -108,9 +108,9 @@
 | status_magnet    = Y
 | status_light     = Y
 | status_proximity = N
-| status_hall      =
+| status_hall      = -
 | status_haptics   = Y
-| status_barometer =
+| status_barometer = -
 | status_powersensor = Y
 
 }}
@@ -165,6 +165,15 @@ $ fastboot reboot
 
 No unlock code is needed, and nothing appears on screen. Your data is not erased.
 
+== Backing up the stock partitions ==
+{{note|Do this before installing postmarketOS. The L16 is no longer supported by Light, and there is no official way to get its firmware back.}}
+
+Android needs root for this; see the [https://xdaforums.com/t/light-l16-firmware.4403267/ Light L16 Firmware thread on XDA] for rooting with Magisk. Then copy every partition off the device, for example with <code>dd</code> over <code>adb shell</code>. Two things to watch out for:
+* With Magisk, only the first raw block device opened in each <code>su -c</code> call can be read; run one <code>dd</code> per <code>su -c</code>.
+* Android's own <code>dd</code> (toybox) can't handle large offsets; use Magisk's busybox instead (<code>/sbin/.magisk/busybox/dd</code>).
+
+The <code>persist</code> partition is the most important one: it holds factory calibration unique to each device. postmarketOS also loads firmware from the <code>modem</code>, <code>persist</code> and <code>system</code> partitions, so keep them intact.
+
 == Installation ==
 {{note|The installation method is not finalized yet.}}
 <!-- Uncomment once the device package is in pmaports
@@ -202,3 +211,6 @@ File:Light-lfc-phosh.jpg|Phosh in landscape
 
 == See also ==
 {{Special:PrefixIndex/{{FULLPAGENAME}}/}}
+* [https://xdaforums.com/t/light-l16-firmware.4403267/ Light L16 Firmware] thread on XDA: stock firmware versions, bootloader unlocking, rooting
+* Light L16 community Discord: <!-- CHANGE_ME: invite link -->
+* [https://gitlab.com/msm8996-mainline/linux msm8996-mainline] kernel tree
