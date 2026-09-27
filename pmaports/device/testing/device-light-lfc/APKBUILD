@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=1
+pkgrel=3
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -14,10 +14,12 @@ depends="
 	linux-firmware-qcom
 	linux-light-lfc
 	mkbootimg
+	msm-firmware-loader
 	postmarketos-base
 	"
 makedepends="devicepkg-dev"
 subpackages="
+	$pkgname-openrc
 	$pkgname-phosh
 	"
 source="
@@ -28,6 +30,8 @@ source="
 	deviceinfo
 	initfs-hook.sh
 	l16-mics.pa
+	light-lfc-firmware.initd
+	light-lfc-firmware.sh
 	modules-initfs
 	phoc.ini
 	"
@@ -53,6 +57,23 @@ package() {
 	# front and rear microphones as separate mono inputs
 	install -Dm644 "$srcdir"/l16-mics.pa \
 		"$pkgdir"/etc/pulse/default.pa.d/light-lfc-mics.pa
+
+	# No GPU firmware in the initramfs: with pm4/pfp there, the GPU initialises at
+	# bind time, before the zap shader (stock system partition, msm-firmware-loader)
+	# is reachable, and hw init fails for the whole boot. Without them it initialises
+	# on first use, when everything is there.
+
+	# firmware msm-firmware-loader does not find on its own (see the script)
+	install -Dm755 "$srcdir"/light-lfc-firmware.sh \
+		"$pkgdir"/usr/libexec/light-lfc-firmware
+}
+
+openrc() {
+	install="$subpkgname.post-install"
+	depends="msm-firmware-loader-openrc"
+
+	install -Dm755 "$srcdir"/light-lfc-firmware.initd \
+		"$subpkgdir"/etc/init.d/light-lfc-firmware
 }
 
 phosh() {
@@ -70,6 +91,8 @@ e3c9490fc8fc8f8c1019635711c6b97a6ce4b78f5a6fbe735eb1fdee633146d467e351018492eaac
 001f906bfb909574efd12a336a5aadd23702214a216659a23a9227a34cb9aa9c60b4a157dc18863fdd14b982178c2db1af7b4b8c2dc198ef953f834fd8e9816e  deviceinfo
 01da95e84f883dc0e1308220bfb2e2fb8f9a233d130e0943bbcb564b64bb9240eb66ffd9259aff1f9df67ff7d9b4171b993c36e924e9f45c0aef75268e808594  initfs-hook.sh
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
+8510e9f5b5a95f35f2653f0acff90ccdc51ae8e248edf8803368eb0b591645dcd4541fad3c61a2eb9b723f01cb7e32c63af8a40b0180da67b399791224a00b2e  light-lfc-firmware.initd
+63263752f146515c8cc59338afe122f78f0dcf469954d203184e7b7de488549a75b17943373cd2f3f568552c5440c240778f480a3fe4b2ac0b12e6de5b4fc5f2  light-lfc-firmware.sh
 b669fa078424f136be06dfece7fa279aae244a960c5d0349e4ae6cefd8d3f566d29e14d006175d248dedf7476d6b15487522368c494a541689f41d916b471b58  modules-initfs
 032b3770c95904db7f795263b6a34de186708c1ed85b5845bffb0b46f00f3a902521ebedb388b6d2e8a45aff22c7ad07cf8a3b2e77d7a934fc1386ca7944cc22  phoc.ini
 "
