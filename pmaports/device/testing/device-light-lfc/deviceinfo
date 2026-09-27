@@ -4,7 +4,7 @@
 deviceinfo_format_version="0"
 deviceinfo_name="Light L16"
 deviceinfo_manufacturer="Light"
-deviceinfo_codename="light-l16"
+deviceinfo_codename="light-lfc"
 deviceinfo_year="2017"
 deviceinfo_dtb="qcom/apq8096-light-l16"
 deviceinfo_append_dtb="true"
