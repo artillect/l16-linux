@@ -168,11 +168,34 @@ No unlock code is needed, and nothing appears on screen. Your data is not erased
 == Backing up the stock partitions ==
 {{note|Do this before installing postmarketOS. The L16 is no longer supported by Light, and there is no official way to get its firmware back.}}
 
-Android needs root for this; see the [https://xdaforums.com/t/light-l16-firmware.4403267/ Light L16 Firmware thread on XDA] for rooting with Magisk. Then copy every partition off the device, for example with <code>dd</code> over <code>adb shell</code>. Two things to watch out for:
-* With Magisk, only the first raw block device opened in each <code>su -c</code> call can be read; run one <code>dd</code> per <code>su -c</code>.
-* Android's own <code>dd</code> (toybox) can't handle large offsets; use Magisk's busybox instead (<code>/sbin/.magisk/busybox/dd</code>).
-
 The <code>persist</code> partition is the most important one: it holds factory calibration unique to each device. postmarketOS also loads firmware from the <code>modem</code>, <code>persist</code> and <code>system</code> partitions, so keep them intact.
+
+=== Temporary root ===
+Reading the partitions needs root. LightOS runs an old Android 6 kernel, so the [https://github.com/hyln9/VIKIROOT/releases/tag/v0.1.1 VIKIROOT] exploit gives a root shell without changing anything on the device (method from [https://xdaforums.com/t/light-l16-firmware.4403267/post-87850603 this XDA post]).
+
+# In Android, enable developer options and USB debugging.
+# Download the VIKIROOT release and extract the <code>exploit</code> file.
+# Run it:<syntaxhighlight lang="shell-session">
+$ adb push exploit /data/local/tmp
+$ adb shell
+$ cd /data/local/tmp
+$ chmod +x exploit
+$ ./exploit 2222
+</syntaxhighlight>If it hangs at "waiting for reverse connect shell", toggle Bluetooth off and on. No prompt appears afterwards; <code>whoami</code> should print <code>root</code>.
+# Copy each partition to internal storage, for example:<syntaxhighlight lang="shell-session">
+# dd if=/dev/block/bootdevice/by-name/persist of=/storage/emulated/0/persist.img
+</syntaxhighlight>Do the same for <code>boot</code>, <code>recovery</code>, <code>modem</code>, <code>system</code> and any other partition listed in <code>/dev/block/bootdevice/by-name/</code>, then copy the images to your computer with <code>adb pull</code>.
+
+=== Permanent root (optional) ===
+To keep root in Android, patch your own <code>boot.img</code> from the backup with the [https://github.com/topjohnwu/Magisk Magisk] app, then flash the patched image with the bootloader unlocked (on Windows this needs the driver from [[#Windows driver]]):
+<syntaxhighlight lang="shell-session">
+$ adb reboot bootloader
+$ fastboot flash boot magisk_patched.img
+$ fastboot reboot
+</syntaxhighlight>
+Open Magisk once more and let it finish its setup. With Magisk:
+* only the first raw block device opened in each <code>su -c</code> call can be read; run one <code>dd</code> per <code>su -c</code>;
+* Android's own <code>dd</code> (toybox) can't handle large offsets; use Magisk's busybox instead (<code>/sbin/.magisk/busybox/dd</code>).
 
 == Installation ==
 {{note|The installation method is not finalized yet.}}
