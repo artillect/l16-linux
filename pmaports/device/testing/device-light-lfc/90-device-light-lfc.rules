@@ -9,7 +9,7 @@ SUBSYSTEM=="iio", ATTR{name}=="qcom-smgr-accel", ENV{ACCEL_MOUNT_MATRIX}="0, -1,
 # feedbackd: the L16 vibration motor (DW7800)
 SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT}=="1", SUBSYSTEMS=="input", ATTRS{name}=="dw7800-haptics", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
 
-# L16: l16-suspend-on-blank (running as the logged-in user, group wheel) re-arms the
+# L16: light-lfc-suspend-on-blank (running as the logged-in user, group wheel) re-arms the
 # RTC alarm when a power-button press lands while a suspend is starting.
 ACTION=="add", SUBSYSTEM=="rtc", KERNEL=="rtc0", RUN+="/bin/chgrp wheel /sys%p/wakealarm", RUN+="/bin/chmod g+w /sys%p/wakealarm"
 

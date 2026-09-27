@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Light L16 suspend on blank
+Comment=Suspend a few seconds after the screen blanks, on battery
+Exec=/usr/bin/light-lfc-suspend-on-blank
+NoDisplay=true
+X-GNOME-AutoRestart=true

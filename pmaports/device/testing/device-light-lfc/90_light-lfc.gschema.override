@@ -1,0 +1,7 @@
+# Light L16: the on-screen keyboard is off by default, and Phosh has no Suspend entry
+# in its power menu by default (its schema is still sm.puri.phosh)
+[org.gnome.desktop.a11y.applications]
+screen-keyboard-enabled=true
+
+[sm.puri.phosh]
+enable-suspend=true

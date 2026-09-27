@@ -1,3 +1,6 @@
 #!/bin/sh
+# L16 firmware links: after msm-firmware-loader, before udev
 rc-update -q add light-lfc-firmware sysinit
+# suspend-on-blank arms the RTC alarm, which can power on a switched-off L16
+rc-update -q add clear-rtc-wakealarm shutdown
 exit 0

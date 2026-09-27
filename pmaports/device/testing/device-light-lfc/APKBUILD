@@ -3,11 +3,15 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=3
+pkgrel=5
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
 options="!check !archcheck"
+# swclock-offset: the PM8994 RTC is read-only (as on stock);
+# shutdown-clear-rtc-wakealarm: the PMIC's RTC alarm can power on a switched-off
+# device, and suspend-on-blank arms it;
+# reboot-mode: "reboot-mode recovery" reboots into Linux, plain reboot into Android
 depends="
 	linux-firmware-ath10k
 	linux-firmware-qca
@@ -16,6 +20,9 @@ depends="
 	mkbootimg
 	msm-firmware-loader
 	postmarketos-base
+	reboot-mode
+	shutdown-clear-rtc-wakealarm
+	swclock-offset
 	"
 makedepends="devicepkg-dev"
 subpackages="
@@ -25,6 +32,7 @@ subpackages="
 source="
 	50-light-lfc-suspend.rules
 	90-device-light-lfc.rules
+	90_light-lfc.gschema.override
 	HiFi.conf
 	L16.conf
 	deviceinfo
@@ -32,6 +40,9 @@ source="
 	l16-mics.pa
 	light-lfc-firmware.initd
 	light-lfc-firmware.sh
+	light-lfc-suspend-on-blank
+	light-lfc-suspend-on-blank.desktop
+	logind-light-lfc.conf
 	modules-initfs
 	phoc.ini
 	"
@@ -80,12 +91,30 @@ phosh() {
 	install_if="$pkgname=$pkgver-r$pkgrel postmarketos-ui-phosh"
 	replaces="phosh"
 
+	# landscape (kernel panel orientation) at 1.75x; the phrog login screen falls
+	# back to this one too
 	install -Dm644 "$srcdir"/phoc.ini \
 		"$subpkgdir"/usr/share/phosh/phoc.ini
+
+	# on-screen keyboard on, Suspend in the power menu
+	install -Dm644 "$srcdir"/90_light-lfc.gschema.override \
+		-t "$subpkgdir"/usr/share/glib-2.0/schemas
+
+	# phone-like sleep: suspend a few seconds after the screen blanks, on battery,
+	# in the session and on the login screen
+	install -Dm755 "$srcdir"/light-lfc-suspend-on-blank \
+		"$subpkgdir"/usr/bin/light-lfc-suspend-on-blank
+	install -Dm644 "$srcdir"/light-lfc-suspend-on-blank.desktop \
+		-t "$subpkgdir"/etc/xdg/autostart
+	install -Dm644 "$srcdir"/light-lfc-suspend-on-blank.desktop \
+		-t "$subpkgdir"/usr/share/phrog/autostart
+	install -Dm644 "$srcdir"/logind-light-lfc.conf \
+		"$subpkgdir"/etc/elogind/logind.conf.d/50-light-lfc.conf
 }
 sha512sums="
-c873fb95a4ae4fed4529ff61080d5487918e7ad9e79ec3475981fec648863dfda460fafa081b3f1b94fe42f37381d5221776bb645bbb8908ebc4a2cd8ec39415  50-light-lfc-suspend.rules
-7b4783a45c6c2f479cde0187315a3c745eebb896b92c50b875bc9ae159025ba3ec07464eb4464eccda267b79eb5081aebd900f8f0a3a81c86c20b541e75b1a38  90-device-light-lfc.rules
+8c58311daab6fdc3b6e371c5081bde0c2ce26fdef64917bc60c7a3881d5d700124e00549ace28e8c5d1f5dcbb52ea5835165d4a50f497a84e25fe8febcd844ca  50-light-lfc-suspend.rules
+ca2dde55f9abc0745636623f1096b67354bfeeea439cbce4ac97468bf14b093aa49c6ef7dccd97a50e12cc55dd0ee57fe972e2ef22060f8d5ac39917499e40df  90-device-light-lfc.rules
+bf64c5c716e7072ecdc6e3019fbc14dae0877ab8fb04d8db8dc6c6386f4e71b61b6433f9063442426c750a260bf00ac643444b7a1d70dd36520b53b834c8b110  90_light-lfc.gschema.override
 e3c9490fc8fc8f8c1019635711c6b97a6ce4b78f5a6fbe735eb1fdee633146d467e351018492eaac35eb1940a3327927e8a51d818d42d81ac928968a1f961ba6  HiFi.conf
 97b14e6ab622d1fc3fa2841dc9ea6c3b53328675b8910a64eabc8c99c28b7bebf3281d7333bab8ff19947c8645ab28c6aa62a2496433cd9c7c358829c7468a4d  L16.conf
 001f906bfb909574efd12a336a5aadd23702214a216659a23a9227a34cb9aa9c60b4a157dc18863fdd14b982178c2db1af7b4b8c2dc198ef953f834fd8e9816e  deviceinfo
@@ -93,6 +122,9 @@ e3c9490fc8fc8f8c1019635711c6b97a6ce4b78f5a6fbe735eb1fdee633146d467e351018492eaac
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
 8510e9f5b5a95f35f2653f0acff90ccdc51ae8e248edf8803368eb0b591645dcd4541fad3c61a2eb9b723f01cb7e32c63af8a40b0180da67b399791224a00b2e  light-lfc-firmware.initd
 63263752f146515c8cc59338afe122f78f0dcf469954d203184e7b7de488549a75b17943373cd2f3f568552c5440c240778f480a3fe4b2ac0b12e6de5b4fc5f2  light-lfc-firmware.sh
+a82a6e9c2804981842c6910e51d1a295e4abcd9bea18b6129fb3751c88a7980ce7fccda91e67e67ec5af12f3858e87f65391fa190f2117d68a6739124ebfc148  light-lfc-suspend-on-blank
+b1b827b01058a544ed31dafcac7bd3ead8de1bd5134162eb4cb5bb586123cc6624ec4f5d18ec682318eef0329438ca321ac488b5539dbc688c81e2892296fec2  light-lfc-suspend-on-blank.desktop
+d191efa265677cc9d13d968e3190e3176aec89403bd9399c5b20cae97e32416763cea75e4998fd6434e34136ccd2e99e4c6fb05f726fd151852e6d28e3995594  logind-light-lfc.conf
 b669fa078424f136be06dfece7fa279aae244a960c5d0349e4ae6cefd8d3f566d29e14d006175d248dedf7476d6b15487522368c494a541689f41d916b471b58  modules-initfs
 032b3770c95904db7f795263b6a34de186708c1ed85b5845bffb0b46f00f3a902521ebedb388b6d2e8a45aff22c7ad07cf8a3b2e77d7a934fc1386ca7944cc22  phoc.ini
 "

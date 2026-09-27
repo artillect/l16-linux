@@ -1,5 +1,5 @@
 // L16: let the user at the device suspend it (the power button blanks the screen and
-// l16-suspend-on-blank suspends it) even while other sessions exist, e.g. an ssh
+// light-lfc-suspend-on-blank suspends it) even while other sessions exist, e.g. an ssh
 // login; otherwise logind asks for authentication, which a background job cannot give.
 polkit.addRule(function(action, subject) {
 	if ((action.id == "org.freedesktop.login1.suspend" ||
