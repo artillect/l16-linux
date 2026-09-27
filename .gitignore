@@ -1,0 +1,14 @@
+# build outputs
+*.img
+*.dtb
+*.bin
+*.cpio.gz
+*.tar.gz
+Image.gz
+out/
+
+# stock-derived files (firmware, stock DTBs, boot signature): not redistributed from here
+firmware/
+stock/
+
+__pycache__/

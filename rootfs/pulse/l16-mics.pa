@@ -1,0 +1,7 @@
+# Light L16: the stereo mic input is the back mic (left, DMIC2) and the front mic
+# (right, DMIC0). Offer each as its own mono input so apps can pick one (e.g. voice
+# memos from the front, video from the back); the stereo input stays available.
+.ifexists module-remap-source.so
+load-module module-remap-source source_name=l16_front_mic master=alsa_input.platform-sound.HiFi__Mic__source master_channel_map=front-right channel_map=mono source_properties="device.description='Front Microphone'"
+load-module module-remap-source source_name=l16_rear_mic master=alsa_input.platform-sound.HiFi__Mic__source master_channel_map=front-left channel_map=mono source_properties="device.description='Rear Microphone'"
+.endif

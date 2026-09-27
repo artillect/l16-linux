@@ -1,0 +1,33 @@
+#!/bin/sh
+# l16-suspend-stress: repeated suspend/resume through logind, woken by the RTC alarm.
+# usage: l16-suspend-stress [cycles] [seconds asleep] [seconds awake]
+# Progress goes to /root/suspend-stress.log (synced every cycle), so after a hang it
+# shows which cycle it was in; the kernel's last lines are in stock's pstore.
+N=${1:-20}
+ASLEEP=${2:-10}
+AWAKE=${3:-8}
+LOG=/root/suspend-stress.log
+R=/sys/class/rtc/rtc0
+
+log() { echo "$(cut -d' ' -f1 /proc/uptime) $*" >> $LOG; sync; }
+
+log "start: $N cycles, ${ASLEEP}s asleep, ${AWAKE}s awake"
+for i in $(seq 1 $N); do
+	before=$(dmesg | grep -c "PM: suspend exit")
+	echo 0 > $R/wakealarm
+	echo $(( $(cat $R/since_epoch) + ASLEEP )) > $R/wakealarm
+	log "cycle $i: suspending"
+	loginctl suspend
+	# wait for this cycle's resume
+	t=0
+	while [ "$(dmesg | grep -c 'PM: suspend exit')" -le "$before" ] && [ $t -lt 120 ]; do
+		sleep 1; t=$((t + 1))
+	done
+	if [ $t -ge 120 ]; then
+		log "cycle $i: no resume seen after 120 s, stopping"
+		exit 1
+	fi
+	log "cycle $i: resumed"
+	sleep $AWAKE
+done
+log "done: $N cycles"

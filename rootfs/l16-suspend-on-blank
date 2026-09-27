@@ -1,0 +1,81 @@
+#!/bin/sh
+# l16-suspend-on-blank: suspend shortly after the screen blanks (power button or idle),
+# like a phone. Suspending with the screen already blank is fast (Phosh releases its
+# logind delay lock once blanked) and clean on wake (the kernel restores "off", Phosh
+# turns the screen on once). A press within the grace period just unblanks.
+# Not while on external power, so charging and USB networking are left alone.
+#
+# Presses while the suspend is under way:
+#  - after we asked logind but before the kernel froze userspace, Phosh unblanks but
+#    logind still suspends: arm the RTC to wake straight back up;
+#  - from the task freeze on, the kernel aborts the suspend (pm8941-pwrkey patch);
+#  - either way, a wake must end with the screen on: a stale or doubled press can
+#    blank it again right after resume, so unblank it if so.
+GRACE=3
+RTC=/sys/class/rtc/rtc0
+INFLIGHT=/tmp/l16-suspend-on-blank.$(id -u)
+
+log() { logger -t l16-suspend-on-blank "$*"; }
+
+on_power() {
+	# /run/l16-suspend-on-power (e.g. for testing over USB) suspends on power too
+	[ ! -e /run/l16-suspend-on-power ] &&
+	[ "$(cat /sys/class/power_supply/qcom-smbchg-usb/online 2>/dev/null)" = 1 ]
+}
+
+blanked() {
+	[ "$(gdbus call --session -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver \
+		-m org.gnome.ScreenSaver.GetActive 2>/dev/null)" = "(true,)" ]
+}
+
+unblank() {
+	gdbus call --session -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver \
+		-m org.gnome.ScreenSaver.SetActive false > /dev/null 2>&1
+}
+
+# logind's Suspend method directly, as Phosh and gsd-power do: loginctl refuses on its
+# own when other users are logged in (e.g. over ssh); logind leaves that to polkit
+# (50-l16-suspend.rules) and still honours delay inhibitors.
+suspend_now() {
+	gdbus call --system -d org.freedesktop.login1 -o /org/freedesktop/login1 \
+		-m org.freedesktop.login1.Manager.Suspend false
+}
+
+rm -f "$INFLIGHT"
+{
+	gdbus monitor --session -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver &
+	gdbus monitor --system -d org.freedesktop.login1 -o /org/freedesktop/login1 &
+	wait
+} | while read -r line; do
+	case "$line" in
+	*ScreenSaver.ActiveChanged*true*)
+		sleep $GRACE
+		if ! blanked; then
+			log "unblanked within ${GRACE}s, not suspending"
+		elif on_power; then
+			log "on external power, not suspending"
+		else
+			log "screen blank for ${GRACE}s, suspending"
+			touch "$INFLIGHT"
+			suspend_now 2>&1 | logger -t l16-suspend-on-blank
+		fi
+		;;
+	*ScreenSaver.ActiveChanged*false*)
+		if [ -e "$INFLIGHT" ]; then
+			log "woken while the suspend was starting, arming RTC to wake again"
+			echo 0 > $RTC/wakealarm
+			echo $(( $(cat $RTC/since_epoch) + 2 )) > $RTC/wakealarm
+		fi
+		;;
+	*PrepareForSleep*false*)
+		if [ -e "$INFLIGHT" ]; then
+			rm -f "$INFLIGHT"
+			sleep 1
+			if blanked; then
+				log "screen blank after resume, turning it on"
+				unblank
+			fi
+		fi
+		;;
+	esac
+done

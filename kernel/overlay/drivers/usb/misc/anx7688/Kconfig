@@ -1,0 +1,8 @@
+config USB_TYPE_C_ANX7688
+	tristate "Analogix ANX7688 USB Type-C / PD controller (Light L16)"
+	depends on I2C && GPIOLIB && POWER_SUPPLY
+	help
+	  Stock Light L16 ANX7688 driver (Analogix reference driver 2.1.11 as
+	  integrated by FIH), ported to mainline. Handles cable detect, chip
+	  power sequencing and USB Power Delivery through the chip's on-chip
+	  firmware. The on-chip firmware updater is not included.

@@ -1,0 +1,11 @@
+#!/bin/sh
+# print one raw sample from a qcom-smgr IIO sensor (before any mount matrix)
+# usage: l16-iio accel|gyro|mag|prox-light
+D=$(grep -l "qcom-smgr-$1\$" /sys/bus/iio/devices/iio:device*/name | xargs dirname)
+N=$(basename $D)
+for e in $D/scan_elements/*_en; do echo 1 > $e; done 2>/dev/null
+echo 1 > $D/buffer/enable 2>/dev/null
+s=$(timeout 2 cat /dev/$N | od -A n -t d4 -N 24 | head -1)
+echo 0 > $D/buffer/enable 2>/dev/null
+set -- $s
+awk -v a=$1 -v b=$2 -v c=$3 -v n=$1 'BEGIN { k = 1 / 65536; if (n == "") print "no data"; else printf "%.2f %.2f %.2f\n", a * k, b * k, c * k }'

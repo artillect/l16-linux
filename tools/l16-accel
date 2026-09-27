@@ -1,0 +1,10 @@
+#!/bin/sh
+# print one raw accelerometer sample (m/s^2, before the mount matrix)
+D=$(grep -l qcom-smgr-accel /sys/bus/iio/devices/iio:device*/name | xargs dirname)
+N=$(basename $D)
+for e in $D/scan_elements/*_en; do echo 1 > $e; done
+echo 1 > $D/buffer/enable
+s=$(timeout 1 cat /dev/$N | od -A n -t d4 -N 24 | head -1)
+echo 0 > $D/buffer/enable
+set -- $s
+awk -v x=$1 -v y=$2 -v z=$3 'BEGIN { k = 1 / 65536; printf "x=%.1f y=%.1f z=%.1f\n", x * k, y * k, z * k }'

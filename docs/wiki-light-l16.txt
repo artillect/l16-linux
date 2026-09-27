@@ -1,0 +1,204 @@
+{{Infobox device
+
+<!-- Main -->
+| manufacturer = Light
+| name         = L16
+| codename     = light-lfc
+| model        = L16
+| image        = File:Light-lfc.jpg
+| imagecaption = Light L16 multi-aperture camera
+| releaseyear  = 2017
+| prereleaseyear = 2015
+
+| booting = yes
+| status  =
+
+| packaged = no
+| category =
+
+
+<!-- Hardware -->
+| chipset = Qualcomm Snapdragon 820
+| cpu     = 2x 2.15 GHz Kryo, 2x 1.59 GHz Kryo
+| gpu     = Adreno 530 @ 624 MHz
+| som     =
+| display = 1080 x 1920, 16:9, 5"
+| storage = 256 GB (UFS)
+| memory  = 4 GB
+| architecture = aarch64
+| wp_type =
+
+
+<!-- Software -->
+| originalsoftware = Android (LightOS)
+| originalversion  = 6.0.1
+| extendedversion  = 6.0.1 (LightOS 1.3.5.1)
+| optionalsoftware =
+| status_fossbootloader = N
+
+
+<!-- postmarketOS -->
+| type          = embedded
+| pmoskernel    = 6.19.5
+| whet_dhry     = 0.0
+| genericdevice =
+| optionalgenericdevice = no
+| devicepackage =
+| kernelpackage =
+| firmwarepackage =
+
+<!-- Warning / Note boxes / Miscellaneous -->
+| supported      = yes
+| prebuiltimages = no
+| boot_internal_storage =
+| bootable_media =
+| changearch     =
+
+| initial_MR   =
+| related_post =
+
+
+<!-- Features -->
+
+<!-- Main Features -->
+| status_flashing =
+| status_usbnet   = Y
+| status_emmc     = Y
+| status_sdcard   = -
+| status_battery  = Y
+| status_screen   = Y
+| status_touch    = Y
+| status_keyboard = -
+| status_touchpad = Y
+| status_stylus   = -
+
+
+<!-- Multimedia Features -->
+| status_3d     = Y
+| status_dvb    = -
+| status_audio  = N
+| status_camera = N
+| status_cameraflash =
+| status_irtx   = -
+| status_irrx   = -
+
+
+<!-- Connectivity Features -->
+| status_wifi  = Y
+| status_bluetooth = Y
+| status_ethernet = -
+| status_gps   =
+| status_nfc   = -
+| status_calls = -
+| status_sms   = -
+| status_mobiledata = -
+
+
+<!-- Miscellaneous Features -->
+| status_fde  =
+| status_usba = -
+| status_sata = -
+| status_otg  = N
+| status_hdmidp =
+| status_fingerprint = -
+
+
+<!-- Sensors -->
+| status_accel     = Y
+| status_magnet    = Y
+| status_light     = Y
+| status_proximity = N
+| status_hall      =
+| status_haptics   = Y
+| status_barometer =
+| status_powersensor = Y
+
+}}
+
+== Contributors ==
+* [[User:Artillect]]
+
+== Users owning this device ==
+{{Device owners}}
+
+== How to enter flash mode ==
+=== Using the buttons ===
+# Power off the device.
+# Plug it into your computer.
+# Hold {{Button|Shutter}} and {{Button|Power}}.
+# When the device turns on, release {{Button|Power}} but keep holding {{Button|Shutter}}.
+
+The screen stays on the Light logo; there is no fastboot menu. Run <code>fastboot devices</code> to check that the device is in flash mode.
+
+{{note|With the USB cable unplugged, the same buttons boot into recovery instead.}}
+
+=== From Android ===
+If USB debugging is enabled, run:
+
+<syntaxhighlight lang="shell-session">
+$ adb reboot bootloader
+</syntaxhighlight>
+
+=== Leaving flash mode ===
+Run <code>fastboot reboot</code>, or hold {{Button|Power}} for about 15 seconds.
+
+=== Windows driver ===
+{{note|This is only needed on Windows.}}
+
+In flash mode, the L16 shows up as <code>18D1:D00D</code>. The Google USB Driver doesn't include this ID, so fastboot can't see the device until you set up a driver for it.
+
+# Enter flash mode.
+# In [https://zadig.akeo.ie/ Zadig], choose ''Options → List All Devices'', select the device with USB ID <code>18D1 D00D</code>, and install ''WinUSB''.
+# In Device Manager, open the device's properties and find its ''Device instance path'' on the ''Details'' tab. The serial is the part after the last backslash, e.g. <code>LFCXXXXXXXXXXXXX</code> in <code>USB\VID_18D1&PID_D00D\LFCXXXXXXXXXXXXX</code>.
+# Zadig registers a different interface GUID than the one fastboot looks for. In PowerShell as administrator, add fastboot's GUID, replacing <code><serial></code> with the serial from the previous step:<syntaxhighlight lang="powershell">
+$k = 'HKLM:\SYSTEM\CurrentControlSet\Enum\USB\VID_18D1&PID_D00D\<serial>\Device Parameters'
+Set-ItemProperty -Path $k -Name DeviceInterfaceGUIDs -Type MultiString -Value @('{2520BF43-6602-4851-A5BE-33CAE90B7028}','{F72FE0D4-CBCB-407D-8814-9ED673D0DD6B}')
+</syntaxhighlight>
+# Unplug the device and plug it back in. <code>fastboot devices</code> should now list it.
+
+== How to unlock the bootloader ==
+# Enter flash mode.
+# Run:<syntaxhighlight lang="shell-session">
+$ fastboot oem devlock off
+$ fastboot reboot
+</syntaxhighlight>
+
+No unlock code is needed, and nothing appears on screen. Your data is not erased.
+
+== Installation ==
+{{note|The installation method is not finalized yet.}}
+<!-- Uncomment once the device package is in pmaports
+=== Using pmbootstrap ===
+Follow [[Installation/Using pmbootstrap]]. When asked for the device's vendor/codename, select ''light'' as the vendor and ''lfc'' as the codename.
+
+Then choose whether to replace Android or dual boot alongside it.
+
+==== Replacing Android ====
+{{warning|This erases Android and everything stored on the device.}}
+
+# Enter flash mode (see [[#How to enter flash mode]]).
+# Run <code>pmbootstrap flasher flash_rootfs</code>.
+# Run <code>pmbootstrap flasher flash_kernel</code>.
+
+==== Dual booting with Android ====
+postmarketOS goes in the <code>recovery</code> partition, and its rootfs on a separate <code>linux</code> partition. Android keeps booting normally.
+
+{{note|Creating the <code>linux</code> partition shrinks <code>userdata</code>, so Android's data is erased.}}
+
+# Create the <code>linux</code> partition. (instructions TBD)
+# Enter flash mode (see [[#How to enter flash mode]]).
+# Run <code>pmbootstrap flasher flash_rootfs --partition linux</code>.
+# Run <code>pmbootstrap flasher flash_kernel --partition recovery</code>.
+
+To boot postmarketOS, hold {{Button|Shutter}} and {{Button|Power}} with the USB cable unplugged, or run <code>reboot recovery</code> from Android (requires root). Powering on normally boots Android.
+-->
+
+
+== Photos ==
+<gallery>
+File:Light-lfc-back.jpg|Lens array
+File:Light-lfc-phosh.jpg|Phosh in landscape
+</gallery>
+
+== See also ==
+{{Special:PrefixIndex/{{FULLPAGENAME}}/}}

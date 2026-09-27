@@ -1,0 +1,13 @@
+#!/bin/sh
+# Minimal systemd-cat for OpenRC: run a command with its output going to syslog.
+# Only "-t TAG" is supported, which is what phosh-session and phrog use.
+# The command is exec()ed (so it stays the session process and its exit ends the
+# session even if daemons it started keep the log channel open); logger reads a FIFO.
+tag=systemd-cat
+if [ "$1" = "-t" ]; then tag=$2; shift 2; fi
+fifo=$(mktemp -u /tmp/systemd-cat.XXXXXX)
+mkfifo -m 600 "$fifo" || exec "$@"
+logger -t "$tag" < "$fifo" &
+exec > "$fifo" 2>&1
+rm -f "$fifo"
+exec "$@"

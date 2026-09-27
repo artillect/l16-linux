@@ -1,0 +1,32 @@
+#!/bin/sh
+# Record a qcom-smgr sensor while cueing the user with the vibration motor.
+# usage: l16-sensor-test gyro|mag|accel <phases> <seconds per phase>
+# One buzz at the start of each phase, a double buzz at the end. Prints the
+# peak (largest magnitude) value per axis for every half second.
+S=$1; P=${2:-1}; L=${3:-4}
+D=$(grep -l "qcom-smgr-$S\$" /sys/bus/iio/devices/iio:device*/name | xargs dirname)
+N=$(basename $D)
+V=$(grep -l "dw7800-haptics" /sys/class/input/event*/device/name | head -1 | sed 's|/sys/class/input/\(event[0-9]*\)/.*|/dev/input/\1|')
+buzz() { python3 /usr/local/bin/ffrumble.py $V $1 > /dev/null 2>&1; }
+
+for e in $D/scan_elements/*_en; do echo 1 > $e; done
+echo 1 > $D/buffer/enable
+cat /dev/$N > /tmp/l16-sensor-test.bin &
+R=$(cat $D/*sampling_frequency | head -1)
+[ "$R" -gt 0 ] 2>/dev/null || R=200
+C=$!
+i=0
+while [ $i -lt $P ]; do
+	buzz 150 &
+	sleep $L
+	i=$((i + 1))
+done
+buzz 120; sleep 0.1; buzz 120
+kill $C
+echo 0 > $D/buffer/enable
+od -A n -t d4 -w24 -v /tmp/l16-sensor-test.bin | awk -v r=$R '
+	{ n++; b = int((n - 1) / (r / 2)); k = 1 / 65536
+	  for (a = 1; a <= 3; a++) { v = $a * k; if (v * v > m[b, a] * m[b, a]) m[b, a] = v }
+	  last = b }
+	END { printf "(%d samples at %d Hz)\n    t      x      y      z\n", n, r
+	  for (b = 0; b <= last; b++) printf "%5.1f %6.2f %6.2f %6.2f\n", b / 2, m[b, 1], m[b, 2], m[b, 3] }'

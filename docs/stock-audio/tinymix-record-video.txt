@@ -1,0 +1,1529 @@
+Mixer name: 'msm8996-tasha-cdp-snd-card'
+Number of controls: 1526
+ctl	type	num	name                                     value
+0	INT	3	Voice Rx Device Mute                     -1 -1 -1
+1	INT	3	Voice Tx Device Mute                     -1 -1 -1
+2	INT	3	Voice Tx Mute                            -1 -1 -1
+3	INT	3	Voice Rx Gain                            -1 -1 -1
+4	ENUM	1	TTY Mode                                 OFF
+5	INT	2	Slowtalk Enable                          -1 -1
+6	INT	2	Voice Topology Disable                   -1 -1
+7	INT	2	HD Voice Enable                          -1 -1
+8	BYTE	31	CVD Version                              0x32 0x2e 0x32 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+9	INT	2	Voip Tx Mute                             -1 -1
+10	INT	2	Voip Rx Gain                             -1 -1
+11	INT	1	Voip Mode Config                         12
+12	INT	1	Voip Rate Config                         -1
+13	INT	2	Voip Evrc Min Max Rate Config            1 4
+14	BOOL	1	Voip Dtx Mode                            Off
+15	BOOL	1	Compress Gapless Playback                Off
+16	INT	1	HPHL Impedance                           0
+17	INT	1	HPHR Impedance                           0
+18	INT	1	HPH Type                                 0
+19	ENUM	1	EAR PA Gain                              G_6_DB
+20	INT	1	HPHL Volume                              20
+21	INT	1	HPHR Volume                              20
+22	INT	1	LINEOUT1 Volume                          13
+23	INT	1	LINEOUT2 Volume                          13
+24	INT	1	LINEOUT3 Volume                          13
+25	INT	1	LINEOUT4 Volume                          13
+26	INT	1	ADC1 Volume                              12
+27	INT	1	ADC2 Volume                              12
+28	INT	1	ADC3 Volume                              0
+29	INT	1	ADC4 Volume                              0
+30	INT	1	ADC5 Volume                              12
+31	INT	1	ADC6 Volume                              12
+32	INT	1	RX0 Digital Volume                       84
+33	INT	1	RX1 Digital Volume                       84
+34	INT	1	RX2 Digital Volume                       84
+35	INT	1	RX3 Digital Volume                       84
+36	INT	1	RX4 Digital Volume                       84
+37	INT	1	RX5 Digital Volume                       84
+38	INT	1	RX6 Digital Volume                       84
+39	INT	1	RX7 Digital Volume                       84
+40	INT	1	RX8 Digital Volume                       84
+41	INT	1	RX0 Mix Digital Volume                   84
+42	INT	1	RX1 Mix Digital Volume                   84
+43	INT	1	RX2 Mix Digital Volume                   84
+44	INT	1	RX3 Mix Digital Volume                   84
+45	INT	1	RX4 Mix Digital Volume                   84
+46	INT	1	RX5 Mix Digital Volume                   84
+47	INT	1	RX6 Mix Digital Volume                   84
+48	INT	1	RX7 Mix Digital Volume                   84
+49	INT	1	RX8 Mix Digital Volume                   84
+50	INT	1	DEC0 Volume                              84
+51	INT	1	DEC1 Volume                              84
+52	INT	1	DEC2 Volume                              84
+53	INT	1	DEC3 Volume                              84
+54	INT	1	DEC4 Volume                              84
+55	INT	1	DEC5 Volume                              84
+56	INT	1	DEC6 Volume                              84
+57	INT	1	DEC7 Volume                              84
+58	INT	1	DEC8 Volume                              84
+59	INT	1	IIR0 INP0 Volume                         310
+60	INT	1	IIR0 INP1 Volume                         84
+61	INT	1	IIR0 INP2 Volume                         84
+62	INT	1	IIR0 INP3 Volume                         84
+63	INT	1	IIR1 INP0 Volume                         84
+64	INT	1	IIR1 INP1 Volume                         84
+65	INT	1	IIR1 INP2 Volume                         84
+66	INT	1	IIR1 INP3 Volume                         84
+67	INT	1	ANC Slot                                 0
+68	ENUM	1	ANC Function                             OFF
+69	ENUM	1	TX0 HPF cut off                          CF_NEG_3DB_4HZ
+70	ENUM	1	TX1 HPF cut off                          CF_NEG_3DB_4HZ
+71	ENUM	1	TX2 HPF cut off                          CF_NEG_3DB_4HZ
+72	ENUM	1	TX3 HPF cut off                          CF_NEG_3DB_4HZ
+73	ENUM	1	TX4 HPF cut off                          CF_NEG_3DB_4HZ
+74	ENUM	1	TX5 HPF cut off                          CF_NEG_3DB_4HZ
+75	ENUM	1	TX6 HPF cut off                          CF_NEG_3DB_4HZ
+76	ENUM	1	TX7 HPF cut off                          CF_NEG_3DB_4HZ
+77	ENUM	1	TX8 HPF cut off                          CF_NEG_3DB_4HZ
+78	ENUM	1	RX INT0_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+79	ENUM	1	RX INT0_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+80	ENUM	1	RX INT1_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+81	ENUM	1	RX INT1_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+82	ENUM	1	RX INT2_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+83	ENUM	1	RX INT2_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+84	ENUM	1	RX INT3_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+85	ENUM	1	RX INT3_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+86	ENUM	1	RX INT4_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+87	ENUM	1	RX INT4_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+88	ENUM	1	RX INT5_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+89	ENUM	1	RX INT5_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+90	ENUM	1	RX INT6_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+91	ENUM	1	RX INT6_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+92	ENUM	1	RX INT7_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+93	ENUM	1	RX INT7_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+94	ENUM	1	RX INT8_1 HPF cut off                    CF_NEG_3DB_0P48HZ
+95	ENUM	1	RX INT8_2 HPF cut off                    CF_NEG_3DB_0P48HZ
+96	BOOL	1	IIR0 Enable Band1                        Off
+97	BOOL	1	IIR0 Enable Band2                        Off
+98	BOOL	1	IIR0 Enable Band3                        Off
+99	BOOL	1	IIR0 Enable Band4                        Off
+100	BOOL	1	IIR0 Enable Band5                        Off
+101	BOOL	1	IIR1 Enable Band1                        Off
+102	BOOL	1	IIR1 Enable Band2                        Off
+103	BOOL	1	IIR1 Enable Band3                        Off
+104	BOOL	1	IIR1 Enable Band4                        Off
+105	BOOL	1	IIR1 Enable Band5                        Off
+106	INT	5	IIR0 Band1                               0 0 0 0 0
+107	INT	5	IIR0 Band2                               0 0 0 0 0
+108	INT	5	IIR0 Band3                               0 0 0 0 0
+109	INT	5	IIR0 Band4                               0 0 0 0 0
+110	INT	5	IIR0 Band5                               0 0 0 0 0
+111	INT	5	IIR1 Band1                               0 0 0 0 0
+112	INT	5	IIR1 Band2                               0 0 0 0 0
+113	INT	5	IIR1 Band3                               0 0 0 0 0
+114	INT	5	IIR1 Band4                               0 0 0 0 0
+115	INT	5	IIR1 Band5                               0 0 0 0 0
+116	BOOL	1	COMP1 Switch                             On
+117	BOOL	1	COMP2 Switch                             On
+118	BOOL	1	COMP3 Switch                             Off
+119	BOOL	1	COMP4 Switch                             Off
+120	BOOL	1	COMP5 Switch                             Off
+121	BOOL	1	COMP6 Switch                             Off
+122	BOOL	1	COMP7 Switch                             On
+123	BOOL	1	COMP8 Switch                             On
+124	ENUM	1	RX HPH Mode                              CLS_H_LP
+125	ENUM	1	MAD Input                                NOTUSED1
+126	BOOL	1	DMIC1_CLK_PIN_MODE                       Off
+127	BOOL	1	DMIC1_DATA_PIN_MODE                      Off
+128	BOOL	1	DMIC2_CLK_PIN_MODE                       Off
+129	BOOL	1	DMIC2_DATA_PIN_MODE                      Off
+130	BOOL	1	DMIC3_CLK_PIN_MODE                       Off
+131	BOOL	1	DMIC3_DATA_PIN_MODE                      Off
+132	ENUM	1	AMIC_1_2 PWR MODE                        DEFAULT
+133	ENUM	1	AMIC_3_4 PWR MODE                        DEFAULT
+134	ENUM	1	AMIC_5_6 PWR MODE                        DEFAULT
+135	INT	2	Vbat ADC data                            314 796
+136	ENUM	1	GSM mode Enable                          OFF
+137	ENUM	1	AUDIO_REF_EC_UL9 MUX                     None
+138	ENUM	1	AUDIO_REF_EC_UL8 MUX                     None
+139	ENUM	1	AUDIO_REF_EC_UL6 MUX                     None
+140	ENUM	1	AUDIO_REF_EC_UL5 MUX                     None
+141	ENUM	1	AUDIO_REF_EC_UL4 MUX                     None
+142	ENUM	1	AUDIO_REF_EC_UL2 MUX                     None
+143	ENUM	1	AUDIO_REF_EC_UL1 MUX                     None
+144	ENUM	1	VOC_EXT_EC MUX                          
+145	ENUM	2	PRI_MI2S_RX_VI_FB_MUX                    ZERO ZERO
+146	ENUM	2	SLIM0_RX_VI_FB_RCH_MUX                   ZERO ZERO
+147	ENUM	2	SLIM0_RX_VI_FB_LCH_MUX                   ZERO ZERO
+148	BOOL	1	QCHAT_Tx Mixer PRI_TX_QCHAT              Off
+149	BOOL	1	QCHAT_Tx Mixer SLIM_0_TX_QCHAT           Off
+150	BOOL	1	QCHAT_Tx Mixer INTERNAL_BT_SCO_TX_QCHAT  Off
+151	BOOL	1	QCHAT_Tx Mixer AFE_PCM_TX_QCHAT          Off
+152	BOOL	1	QCHAT_Tx Mixer AUX_PCM_TX_QCHAT          Off
+153	BOOL	1	QCHAT_Tx Mixer SEC_AUX_PCM_TX_QCHAT      Off
+154	BOOL	1	QCHAT_Tx Mixer MI2S_TX_QCHAT             Off
+155	BOOL	1	QCHAT_Tx Mixer PRI_MI2S_TX_QCHAT         Off
+156	BOOL	1	QCHAT_Tx Mixer TERT_MI2S_TX_QCHAT        Off
+157	BOOL	1	QUAT_TDM_RX_3 Port Mixer PRI_MI2S_TX     Off
+158	BOOL	1	QUAT_TDM_RX_3 Port Mixer SEC_MI2S_TX     Off
+159	BOOL	1	QUAT_TDM_RX_3 Port Mixer TERT_MI2S_TX    Off
+160	BOOL	1	QUAT_TDM_RX_3 Port Mixer INTERNAL_FM_TX  Off
+161	BOOL	1	QUAT_TDM_RX_3 Port Mixer INTERNAL_BT_SCO_TX Off
+162	BOOL	1	QUAT_TDM_RX_3 Port Mixer AFE_PCM_TX      Off
+163	BOOL	1	QUAT_TDM_RX_3 Port Mixer AUX_PCM_UL_TX   Off
+164	BOOL	1	QUAT_TDM_RX_3 Port Mixer SEC_AUX_PCM_UL_TX Off
+165	BOOL	1	QUAT_TDM_RX_3 Port Mixer TERT_TDM_TX_0   Off
+166	BOOL	1	QUAT_TDM_RX_3 Port Mixer TERT_TDM_TX_1   Off
+167	BOOL	1	QUAT_TDM_RX_3 Port Mixer TERT_TDM_TX_2   Off
+168	BOOL	1	QUAT_TDM_RX_3 Port Mixer TERT_TDM_TX_3   Off
+169	BOOL	1	QUAT_TDM_RX_3 Port Mixer QUAT_TDM_TX_0   Off
+170	BOOL	1	QUAT_TDM_RX_3 Port Mixer QUAT_TDM_TX_1   Off
+171	BOOL	1	QUAT_TDM_RX_3 Port Mixer QUAT_TDM_TX_2   Off
+172	BOOL	1	QUAT_TDM_RX_3 Port Mixer QUAT_TDM_TX_3   Off
+173	BOOL	1	QUAT_TDM_RX_2 Port Mixer PRI_MI2S_TX     Off
+174	BOOL	1	QUAT_TDM_RX_2 Port Mixer SEC_MI2S_TX     Off
+175	BOOL	1	QUAT_TDM_RX_2 Port Mixer TERT_MI2S_TX    Off
+176	BOOL	1	QUAT_TDM_RX_2 Port Mixer INTERNAL_FM_TX  Off
+177	BOOL	1	QUAT_TDM_RX_2 Port Mixer INTERNAL_BT_SCO_TX Off
+178	BOOL	1	QUAT_TDM_RX_2 Port Mixer AFE_PCM_TX      Off
+179	BOOL	1	QUAT_TDM_RX_2 Port Mixer AUX_PCM_UL_TX   Off
+180	BOOL	1	QUAT_TDM_RX_2 Port Mixer SEC_AUX_PCM_UL_TX Off
+181	BOOL	1	QUAT_TDM_RX_2 Port Mixer TERT_TDM_TX_0   Off
+182	BOOL	1	QUAT_TDM_RX_2 Port Mixer TERT_TDM_TX_1   Off
+183	BOOL	1	QUAT_TDM_RX_2 Port Mixer TERT_TDM_TX_2   Off
+184	BOOL	1	QUAT_TDM_RX_2 Port Mixer TERT_TDM_TX_3   Off
+185	BOOL	1	QUAT_TDM_RX_2 Port Mixer QUAT_TDM_TX_0   Off
+186	BOOL	1	QUAT_TDM_RX_2 Port Mixer QUAT_TDM_TX_1   Off
+187	BOOL	1	QUAT_TDM_RX_2 Port Mixer QUAT_TDM_TX_2   Off
+188	BOOL	1	QUAT_TDM_RX_2 Port Mixer QUAT_TDM_TX_3   Off
+189	BOOL	1	QUAT_TDM_RX_1 Port Mixer PRI_MI2S_TX     Off
+190	BOOL	1	QUAT_TDM_RX_1 Port Mixer SEC_MI2S_TX     Off
+191	BOOL	1	QUAT_TDM_RX_1 Port Mixer TERT_MI2S_TX    Off
+192	BOOL	1	QUAT_TDM_RX_1 Port Mixer INTERNAL_FM_TX  Off
+193	BOOL	1	QUAT_TDM_RX_1 Port Mixer INTERNAL_BT_SCO_TX Off
+194	BOOL	1	QUAT_TDM_RX_1 Port Mixer AFE_PCM_TX      Off
+195	BOOL	1	QUAT_TDM_RX_1 Port Mixer AUX_PCM_UL_TX   Off
+196	BOOL	1	QUAT_TDM_RX_1 Port Mixer SEC_AUX_PCM_UL_TX Off
+197	BOOL	1	QUAT_TDM_RX_1 Port Mixer TERT_TDM_TX_0   Off
+198	BOOL	1	QUAT_TDM_RX_1 Port Mixer TERT_TDM_TX_1   Off
+199	BOOL	1	QUAT_TDM_RX_1 Port Mixer TERT_TDM_TX_2   Off
+200	BOOL	1	QUAT_TDM_RX_1 Port Mixer TERT_TDM_TX_3   Off
+201	BOOL	1	QUAT_TDM_RX_1 Port Mixer QUAT_TDM_TX_0   Off
+202	BOOL	1	QUAT_TDM_RX_1 Port Mixer QUAT_TDM_TX_1   Off
+203	BOOL	1	QUAT_TDM_RX_1 Port Mixer QUAT_TDM_TX_2   Off
+204	BOOL	1	QUAT_TDM_RX_1 Port Mixer QUAT_TDM_TX_3   Off
+205	BOOL	1	QUAT_TDM_RX_0 Port Mixer PRI_MI2S_TX     Off
+206	BOOL	1	QUAT_TDM_RX_0 Port Mixer SEC_MI2S_TX     Off
+207	BOOL	1	QUAT_TDM_RX_0 Port Mixer TERT_MI2S_TX    Off
+208	BOOL	1	QUAT_TDM_RX_0 Port Mixer INTERNAL_FM_TX  Off
+209	BOOL	1	QUAT_TDM_RX_0 Port Mixer INTERNAL_BT_SCO_TX Off
+210	BOOL	1	QUAT_TDM_RX_0 Port Mixer AFE_PCM_TX      Off
+211	BOOL	1	QUAT_TDM_RX_0 Port Mixer AUX_PCM_UL_TX   Off
+212	BOOL	1	QUAT_TDM_RX_0 Port Mixer SEC_AUX_PCM_UL_TX Off
+213	BOOL	1	QUAT_TDM_RX_0 Port Mixer TERT_TDM_TX_0   Off
+214	BOOL	1	QUAT_TDM_RX_0 Port Mixer TERT_TDM_TX_1   Off
+215	BOOL	1	QUAT_TDM_RX_0 Port Mixer TERT_TDM_TX_2   Off
+216	BOOL	1	QUAT_TDM_RX_0 Port Mixer TERT_TDM_TX_3   Off
+217	BOOL	1	QUAT_TDM_RX_0 Port Mixer QUAT_TDM_TX_0   Off
+218	BOOL	1	QUAT_TDM_RX_0 Port Mixer QUAT_TDM_TX_1   Off
+219	BOOL	1	QUAT_TDM_RX_0 Port Mixer QUAT_TDM_TX_2   Off
+220	BOOL	1	QUAT_TDM_RX_0 Port Mixer QUAT_TDM_TX_3   Off
+221	BOOL	1	TERT_TDM_RX_3 Port Mixer PRI_MI2S_TX     Off
+222	BOOL	1	TERT_TDM_RX_3 Port Mixer SEC_MI2S_TX     Off
+223	BOOL	1	TERT_TDM_RX_3 Port Mixer QUAT_MI2S_TX    Off
+224	BOOL	1	TERT_TDM_RX_3 Port Mixer INTERNAL_FM_TX  Off
+225	BOOL	1	TERT_TDM_RX_3 Port Mixer INTERNAL_BT_SCO_TX Off
+226	BOOL	1	TERT_TDM_RX_3 Port Mixer AFE_PCM_TX      Off
+227	BOOL	1	TERT_TDM_RX_3 Port Mixer AUX_PCM_UL_TX   Off
+228	BOOL	1	TERT_TDM_RX_3 Port Mixer SEC_AUX_PCM_UL_TX Off
+229	BOOL	1	TERT_TDM_RX_3 Port Mixer TERT_TDM_TX_0   Off
+230	BOOL	1	TERT_TDM_RX_3 Port Mixer TERT_TDM_TX_1   Off
+231	BOOL	1	TERT_TDM_RX_3 Port Mixer TERT_TDM_TX_2   Off
+232	BOOL	1	TERT_TDM_RX_3 Port Mixer TERT_TDM_TX_3   Off
+233	BOOL	1	TERT_TDM_RX_3 Port Mixer QUAT_TDM_TX_0   Off
+234	BOOL	1	TERT_TDM_RX_3 Port Mixer QUAT_TDM_TX_1   Off
+235	BOOL	1	TERT_TDM_RX_3 Port Mixer QUAT_TDM_TX_2   Off
+236	BOOL	1	TERT_TDM_RX_3 Port Mixer QUAT_TDM_TX_3   Off
+237	BOOL	1	TERT_TDM_RX_2 Port Mixer PRI_MI2S_TX     Off
+238	BOOL	1	TERT_TDM_RX_2 Port Mixer SEC_MI2S_TX     Off
+239	BOOL	1	TERT_TDM_RX_2 Port Mixer QUAT_MI2S_TX    Off
+240	BOOL	1	TERT_TDM_RX_2 Port Mixer INTERNAL_FM_TX  Off
+241	BOOL	1	TERT_TDM_RX_2 Port Mixer INTERNAL_BT_SCO_TX Off
+242	BOOL	1	TERT_TDM_RX_2 Port Mixer AFE_PCM_TX      Off
+243	BOOL	1	TERT_TDM_RX_2 Port Mixer AUX_PCM_UL_TX   Off
+244	BOOL	1	TERT_TDM_RX_2 Port Mixer SEC_AUX_PCM_UL_TX Off
+245	BOOL	1	TERT_TDM_RX_2 Port Mixer TERT_TDM_TX_0   Off
+246	BOOL	1	TERT_TDM_RX_2 Port Mixer TERT_TDM_TX_1   Off
+247	BOOL	1	TERT_TDM_RX_2 Port Mixer TERT_TDM_TX_2   Off
+248	BOOL	1	TERT_TDM_RX_2 Port Mixer TERT_TDM_TX_3   Off
+249	BOOL	1	TERT_TDM_RX_2 Port Mixer QUAT_TDM_TX_0   Off
+250	BOOL	1	TERT_TDM_RX_2 Port Mixer QUAT_TDM_TX_1   Off
+251	BOOL	1	TERT_TDM_RX_2 Port Mixer QUAT_TDM_TX_2   Off
+252	BOOL	1	TERT_TDM_RX_2 Port Mixer QUAT_TDM_TX_3   Off
+253	BOOL	1	TERT_TDM_RX_1 Port Mixer PRI_MI2S_TX     Off
+254	BOOL	1	TERT_TDM_RX_1 Port Mixer SEC_MI2S_TX     Off
+255	BOOL	1	TERT_TDM_RX_1 Port Mixer QUAT_MI2S_TX    Off
+256	BOOL	1	TERT_TDM_RX_1 Port Mixer INTERNAL_FM_TX  Off
+257	BOOL	1	TERT_TDM_RX_1 Port Mixer INTERNAL_BT_SCO_TX Off
+258	BOOL	1	TERT_TDM_RX_1 Port Mixer AFE_PCM_TX      Off
+259	BOOL	1	TERT_TDM_RX_1 Port Mixer AUX_PCM_UL_TX   Off
+260	BOOL	1	TERT_TDM_RX_1 Port Mixer SEC_AUX_PCM_UL_TX Off
+261	BOOL	1	TERT_TDM_RX_1 Port Mixer TERT_TDM_TX_0   Off
+262	BOOL	1	TERT_TDM_RX_1 Port Mixer TERT_TDM_TX_1   Off
+263	BOOL	1	TERT_TDM_RX_1 Port Mixer TERT_TDM_TX_2   Off
+264	BOOL	1	TERT_TDM_RX_1 Port Mixer TERT_TDM_TX_3   Off
+265	BOOL	1	TERT_TDM_RX_1 Port Mixer QUAT_TDM_TX_0   Off
+266	BOOL	1	TERT_TDM_RX_1 Port Mixer QUAT_TDM_TX_1   Off
+267	BOOL	1	TERT_TDM_RX_1 Port Mixer QUAT_TDM_TX_2   Off
+268	BOOL	1	TERT_TDM_RX_1 Port Mixer QUAT_TDM_TX_3   Off
+269	BOOL	1	TERT_TDM_RX_0 Port Mixer PRI_MI2S_TX     Off
+270	BOOL	1	TERT_TDM_RX_0 Port Mixer SEC_MI2S_TX     Off
+271	BOOL	1	TERT_TDM_RX_0 Port Mixer QUAT_MI2S_TX    Off
+272	BOOL	1	TERT_TDM_RX_0 Port Mixer INTERNAL_FM_TX  Off
+273	BOOL	1	TERT_TDM_RX_0 Port Mixer INTERNAL_BT_SCO_TX Off
+274	BOOL	1	TERT_TDM_RX_0 Port Mixer AFE_PCM_TX      Off
+275	BOOL	1	TERT_TDM_RX_0 Port Mixer AUX_PCM_UL_TX   Off
+276	BOOL	1	TERT_TDM_RX_0 Port Mixer SEC_AUX_PCM_UL_TX Off
+277	BOOL	1	TERT_TDM_RX_0 Port Mixer TERT_TDM_TX_0   Off
+278	BOOL	1	TERT_TDM_RX_0 Port Mixer TERT_TDM_TX_1   Off
+279	BOOL	1	TERT_TDM_RX_0 Port Mixer TERT_TDM_TX_2   Off
+280	BOOL	1	TERT_TDM_RX_0 Port Mixer TERT_TDM_TX_3   Off
+281	BOOL	1	TERT_TDM_RX_0 Port Mixer QUAT_TDM_TX_0   Off
+282	BOOL	1	TERT_TDM_RX_0 Port Mixer QUAT_TDM_TX_1   Off
+283	BOOL	1	TERT_TDM_RX_0 Port Mixer QUAT_TDM_TX_2   Off
+284	BOOL	1	TERT_TDM_RX_0 Port Mixer QUAT_TDM_TX_3   Off
+285	BOOL	1	QUAT_MI2S_RX Port Mixer PRI_MI2S_TX      Off
+286	BOOL	1	QUAT_MI2S_RX Port Mixer INTERNAL_FM_TX   Off
+287	BOOL	1	PRI_MI2S_RX Port Mixer SEC_MI2S_TX       Off
+288	BOOL	1	PRI_MI2S_RX Port Mixer TERT_MI2S_TX      Off
+289	BOOL	1	PRI_MI2S_RX Port Mixer INTERNAL_FM_TX    Off
+290	BOOL	1	PRI_MI2S_RX Port Mixer QUAT_MI2S_TX      Off
+291	BOOL	1	PRI_MI2S_RX Port Mixer INTERNAL_BT_SCO_TX Off
+292	BOOL	1	PRI_MI2S_RX Port Mixer PRI_MI2S_TX       Off
+293	BOOL	1	MI2S_RX Port Mixer SLIM_1_TX             Off
+294	BOOL	1	MI2S_RX Port Mixer MI2S_TX               Off
+295	BOOL	1	SLIMBUS_6_RX Port Mixer INTERNAL_FM_TX   Off
+296	BOOL	1	SLIMBUS_6_RX Port Mixer SLIM_0_TX        Off
+297	BOOL	1	SLIMBUS_6_RX Port Mixer SLIM_1_TX        Off
+298	BOOL	1	SLIMBUS_6_RX Port Mixer AUX_PCM_UL_TX    Off
+299	BOOL	1	SLIMBUS_6_RX Port Mixer SEC_AUX_PCM_UL_TX Off
+300	BOOL	1	SLIMBUS_6_RX Port Mixer MI2S_TX          Off
+301	BOOL	1	SLIMBUS_6_RX Port Mixer PRI_MI2S_TX      Off
+302	BOOL	1	SLIMBUS_6_RX Port Mixer TERT_MI2S_TX     Off
+303	BOOL	1	SLIMBUS_6_RX Port Mixer QUAT_MI2S_TX     Off
+304	BOOL	1	SLIMBUS_6_RX Port Mixer INTERNAL_BT_SCO_TX Off
+305	BOOL	1	SLIMBUS_3_RX Port Mixer INTERNAL_BT_SCO_RX Off
+306	BOOL	1	SLIMBUS_3_RX Port Mixer MI2S_TX          Off
+307	BOOL	1	SLIMBUS_3_RX Port Mixer AFE_PCM_RX       Off
+308	BOOL	1	SLIMBUS_3_RX Port Mixer AUX_PCM_RX       Off
+309	BOOL	1	SLIMBUS_3_RX Port Mixer SLIM_0_RX        Off
+310	BOOL	1	SEC_I2S_RX Port Mixer MI2S_TX            Off
+311	BOOL	1	HDMI_RX Port Mixer MI2S_TX               Off
+312	BOOL	1	AFE_PCM_RX Port Mixer INTERNAL_FM_TX     Off
+313	BOOL	1	AFE_PCM_RX Port Mixer SLIM_1_TX          Off
+314	BOOL	1	INTERNAL_BT_SCO_RX Port Mixer SLIM_1_TX  Off
+315	BOOL	1	INTERNAL_BT_SCO_RX Port Mixer SLIM_0_TX  Off
+316	BOOL	1	SLIMBUS_1_RX Port Mixer INTERNAL_BT_SCO_TX Off
+317	BOOL	1	SLIMBUS_1_RX Port Mixer AFE_PCM_TX       Off
+318	BOOL	1	SLIMBUS_1_RX Port Mixer AUX_PCM_UL_TX    Off
+319	BOOL	1	SEC_AUXPCM_RX Port Mixer SEC_AUX_PCM_UL_TX Off
+320	BOOL	1	SEC_AUXPCM_RX Port Mixer SLIM_0_TX       Off
+321	BOOL	1	SEC_AUXPCM_RX Port Mixer AUX_PCM_UL_TX   Off
+322	BOOL	1	AUX_PCM_RX Port Mixer AUX_PCM_UL_TX      Off
+323	BOOL	1	AUX_PCM_RX Port Mixer SLIM_0_TX          Off
+324	BOOL	1	AUX_PCM_RX Port Mixer SLIM_1_TX          Off
+325	BOOL	1	AUX_PCM_RX Port Mixer SEC_AUX_PCM_UL_TX  Off
+326	BOOL	1	SLIMBUS_0_RX Port Mixer INTERNAL_FM_TX   Off
+327	BOOL	1	SLIMBUS_0_RX Port Mixer SLIM_0_TX        Off
+328	BOOL	1	SLIMBUS_0_RX Port Mixer SLIM_1_TX        Off
+329	BOOL	1	SLIMBUS_0_RX Port Mixer AUX_PCM_UL_TX    Off
+330	BOOL	1	SLIMBUS_0_RX Port Mixer SEC_AUX_PCM_UL_TX Off
+331	BOOL	1	SLIMBUS_0_RX Port Mixer MI2S_TX          Off
+332	BOOL	1	SLIMBUS_0_RX Port Mixer PRI_MI2S_TX      Off
+333	BOOL	1	SLIMBUS_0_RX Port Mixer TERT_MI2S_TX     Off
+334	BOOL	1	SLIMBUS_0_RX Port Mixer QUAT_MI2S_TX     Off
+335	BOOL	1	SLIMBUS_0_RX Port Mixer INTERNAL_BT_SCO_TX Off
+336	BOOL	1	SLIM_6_RX_Voice Mixer CSVoice            Off
+337	BOOL	1	SLIM_6_RX_Voice Mixer Voice2             Off
+338	BOOL	1	SLIM_6_RX_Voice Mixer Voip               Off
+339	BOOL	1	SLIM_6_RX_Voice Mixer Voice Stub         Off
+340	BOOL	1	SLIM_6_RX_Voice Mixer Voice2 Stub        Off
+341	BOOL	1	SLIM_6_RX_Voice Mixer VoLTE              Off
+342	BOOL	1	SLIM_6_RX_Voice Mixer VoLTE Stub         Off
+343	BOOL	1	SLIM_6_RX_Voice Mixer VoWLAN             Off
+344	BOOL	1	SLIM_6_RX_Voice Mixer DTMF               Off
+345	BOOL	1	SLIM_6_RX_Voice Mixer QCHAT              Off
+346	BOOL	1	SLIM_6_RX_Voice Mixer VoiceMMode1        Off
+347	BOOL	1	SLIM_6_RX_Voice Mixer VoiceMMode2        Off
+348	BOOL	1	SLIMBUS_3_RX_Voice Mixer Voice Stub      Off
+349	BOOL	1	SLIMBUS_3_RX_Voice Mixer Voice2 Stub     Off
+350	BOOL	1	SLIMBUS_3_RX_Voice Mixer VoLTE Stub      Off
+351	BOOL	1	SLIMBUS_1_RX Mixer Voice Stub            Off
+352	BOOL	1	SLIMBUS_1_RX Mixer Voice2 Stub           Off
+353	BOOL	1	SLIMBUS_1_RX Mixer VoLTE Stub            Off
+354	BOOL	1	STUB_RX Mixer Voice Stub                 Off
+355	BOOL	1	STUB_RX Mixer Voice2 Stub                Off
+356	BOOL	1	STUB_RX Mixer VoLTE Stub                 Off
+357	BOOL	1	VoLTE Stub Tx Mixer STUB_TX_HL           Off
+358	BOOL	1	VoLTE Stub Tx Mixer SLIM_1_TX            Off
+359	BOOL	1	VoLTE Stub Tx Mixer STUB_1_TX_HL         Off
+360	BOOL	1	VoLTE Stub Tx Mixer AUX_PCM_UL_TX        Off
+361	BOOL	1	VoLTE Stub Tx Mixer SLIM_0_TX            Off
+362	BOOL	1	VoLTE Stub Tx Mixer SLIM_3_TX            Off
+363	BOOL	1	VoLTE Stub Tx Mixer AFE_PCM_TX           Off
+364	BOOL	1	VoLTE Stub Tx Mixer PRI_MI2S_TX          Off
+365	BOOL	1	VoLTE Stub Tx Mixer QUAT_MI2S_TX         Off
+366	BOOL	1	Voice2 Stub Tx Mixer STUB_TX_HL          Off
+367	BOOL	1	Voice2 Stub Tx Mixer SLIM_1_TX           Off
+368	BOOL	1	Voice2 Stub Tx Mixer STUB_1_TX_HL        Off
+369	BOOL	1	Voice2 Stub Tx Mixer AUX_PCM_UL_TX       Off
+370	BOOL	1	Voice2 Stub Tx Mixer SLIM_0_TX           Off
+371	BOOL	1	Voice2 Stub Tx Mixer SLIM_3_TX           Off
+372	BOOL	1	Voice2 Stub Tx Mixer AFE_PCM_TX          Off
+373	BOOL	1	Voice2 Stub Tx Mixer PRI_MI2S_TX         Off
+374	BOOL	1	Voice2 Stub Tx Mixer QUAT_MI2S_TX        Off
+375	BOOL	1	Voice Stub Tx Mixer STUB_TX_HL           Off
+376	BOOL	1	Voice Stub Tx Mixer INTERNAL_BT_SCO_TX   Off
+377	BOOL	1	Voice Stub Tx Mixer SLIM_1_TX            Off
+378	BOOL	1	Voice Stub Tx Mixer STUB_1_TX_HL         Off
+379	BOOL	1	Voice Stub Tx Mixer MI2S_TX              Off
+380	BOOL	1	Voice Stub Tx Mixer PRI_MI2S_TX          Off
+381	BOOL	1	Voice Stub Tx Mixer TERT_MI2S_TX         Off
+382	BOOL	1	Voice Stub Tx Mixer QUAT_MI2S_TX         Off
+383	BOOL	1	Voice Stub Tx Mixer AUX_PCM_UL_TX        Off
+384	BOOL	1	Voice Stub Tx Mixer SEC_AUX_PCM_UL_TX    Off
+385	BOOL	1	Voice Stub Tx Mixer SLIM_0_TX            Off
+386	BOOL	1	Voice Stub Tx Mixer SLIM_3_TX            Off
+387	BOOL	1	Voice Stub Tx Mixer AFE_PCM_TX           Off
+388	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia1       Off
+389	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia2       Off
+390	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia3       Off
+391	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia4       Off
+392	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia5       Off
+393	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia6       Off
+394	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia7       Off
+395	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia8       Off
+396	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia9       Off
+397	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia10      Off
+398	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia11      Off
+399	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia12      Off
+400	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia13      Off
+401	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia14      Off
+402	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia15      Off
+403	BOOL	1	AFE_PCM_RX Audio Mixer MultiMedia16      Off
+404	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia1   Off
+405	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia2   Off
+406	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia3   Off
+407	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia4   Off
+408	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia5   Off
+409	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia6   Off
+410	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia7   Off
+411	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia8   Off
+412	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia9   Off
+413	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia10  Off
+414	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia11  Off
+415	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia12  Off
+416	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia13  Off
+417	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia14  Off
+418	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia15  Off
+419	BOOL	1	INTERNAL_FM_RX Audio Mixer MultiMedia16  Off
+420	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia1 Off
+421	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia2 Off
+422	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia3 Off
+423	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia4 Off
+424	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia5 Off
+425	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia6 Off
+426	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia7 Off
+427	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia8 Off
+428	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia9 Off
+429	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia10 Off
+430	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia11 Off
+431	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia12 Off
+432	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia13 Off
+433	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia14 Off
+434	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia15 Off
+435	BOOL	1	INTERNAL_BT_SCO_RX Audio Mixer MultiMedia16 Off
+436	BOOL	1	VoiceMMode2_Tx Mixer PRI_TX_MMode2       Off
+437	BOOL	1	VoiceMMode2_Tx Mixer MI2S_TX_MMode2      Off
+438	BOOL	1	VoiceMMode2_Tx Mixer SLIM_0_TX_MMode2    Off
+439	BOOL	1	VoiceMMode2_Tx Mixer INT_BT_SCO_TX_MMode2 Off
+440	BOOL	1	VoiceMMode2_Tx Mixer AFE_PCM_TX_MMode2   Off
+441	BOOL	1	VoiceMMode2_Tx Mixer AUX_PCM_TX_MMode2   Off
+442	BOOL	1	VoiceMMode2_Tx Mixer SEC_AUX_PCM_TX_MMode2 Off
+443	BOOL	1	VoiceMMode2_Tx Mixer PRI_MI2S_TX_MMode2  Off
+444	BOOL	1	VoiceMMode2_Tx Mixer TERT_MI2S_TX_MMode2 Off
+445	BOOL	1	VoiceMMode1_Tx Mixer PRI_TX_MMode1       Off
+446	BOOL	1	VoiceMMode1_Tx Mixer MI2S_TX_MMode1      Off
+447	BOOL	1	VoiceMMode1_Tx Mixer SLIM_0_TX_MMode1    Off
+448	BOOL	1	VoiceMMode1_Tx Mixer INT_BT_SCO_TX_MMode1 Off
+449	BOOL	1	VoiceMMode1_Tx Mixer AFE_PCM_TX_MMode1   Off
+450	BOOL	1	VoiceMMode1_Tx Mixer AUX_PCM_TX_MMode1   Off
+451	BOOL	1	VoiceMMode1_Tx Mixer SEC_AUX_PCM_TX_MMode1 Off
+452	BOOL	1	VoiceMMode1_Tx Mixer PRI_MI2S_TX_MMode1  Off
+453	BOOL	1	VoiceMMode1_Tx Mixer TERT_MI2S_TX_MMode1 Off
+454	BOOL	1	VoWLAN_Tx Mixer PRI_TX_VoWLAN            Off
+455	BOOL	1	VoWLAN_Tx Mixer SLIM_0_TX_VoWLAN         Off
+456	BOOL	1	VoWLAN_Tx Mixer INTERNAL_BT_SCO_TX_VoWLAN Off
+457	BOOL	1	VoWLAN_Tx Mixer AFE_PCM_TX_VoWLAN        Off
+458	BOOL	1	VoWLAN_Tx Mixer AUX_PCM_TX_VoWLAN        Off
+459	BOOL	1	VoWLAN_Tx Mixer SEC_AUX_PCM_TX_VoWLAN    Off
+460	BOOL	1	VoWLAN_Tx Mixer MI2S_TX_VoWLAN           Off
+461	BOOL	1	VoWLAN_Tx Mixer PRI_MI2S_TX_VoWLAN       Off
+462	BOOL	1	VoWLAN_Tx Mixer TERT_MI2S_TX_VoWLAN      Off
+463	BOOL	1	VoLTE_Tx Mixer PRI_TX_VoLTE              Off
+464	BOOL	1	VoLTE_Tx Mixer SLIM_0_TX_VoLTE           Off
+465	BOOL	1	VoLTE_Tx Mixer INTERNAL_BT_SCO_TX_VoLTE  Off
+466	BOOL	1	VoLTE_Tx Mixer AFE_PCM_TX_VoLTE          Off
+467	BOOL	1	VoLTE_Tx Mixer AUX_PCM_TX_VoLTE          Off
+468	BOOL	1	VoLTE_Tx Mixer SEC_AUX_PCM_TX_VoLTE      Off
+469	BOOL	1	VoLTE_Tx Mixer MI2S_TX_VoLTE             Off
+470	BOOL	1	VoLTE_Tx Mixer PRI_MI2S_TX_VoLTE         Off
+471	BOOL	1	VoLTE_Tx Mixer TERT_MI2S_TX_VoLTE        Off
+472	BOOL	1	Voip_Tx Mixer PRI_TX_Voip                Off
+473	BOOL	1	Voip_Tx Mixer MI2S_TX_Voip               Off
+474	BOOL	1	Voip_Tx Mixer SLIM_0_TX_Voip             Off
+475	BOOL	1	Voip_Tx Mixer INTERNAL_BT_SCO_TX_Voip    Off
+476	BOOL	1	Voip_Tx Mixer AFE_PCM_TX_Voip            Off
+477	BOOL	1	Voip_Tx Mixer AUX_PCM_TX_Voip            Off
+478	BOOL	1	Voip_Tx Mixer SEC_AUX_PCM_TX_Voip        Off
+479	BOOL	1	Voip_Tx Mixer PRI_MI2S_TX_Voip           Off
+480	BOOL	1	Voip_Tx Mixer TERT_MI2S_TX_Voip          Off
+481	BOOL	1	Voice2_Tx Mixer PRI_TX_Voice2            Off
+482	BOOL	1	Voice2_Tx Mixer MI2S_TX_Voice2           Off
+483	BOOL	1	Voice2_Tx Mixer SLIM_0_TX_Voice2         Off
+484	BOOL	1	Voice2_Tx Mixer INTERNAL_BT_SCO_TX_Voice2 Off
+485	BOOL	1	Voice2_Tx Mixer AFE_PCM_TX_Voice2        Off
+486	BOOL	1	Voice2_Tx Mixer AUX_PCM_TX_Voice2        Off
+487	BOOL	1	Voice2_Tx Mixer SEC_AUX_PCM_TX_Voice2    Off
+488	BOOL	1	Voice2_Tx Mixer PRI_MI2S_TX_Voice2       Off
+489	BOOL	1	Voice2_Tx Mixer TERT_MI2S_TX_Voice2      Off
+490	BOOL	1	Voice_Tx Mixer PRI_TX_Voice              Off
+491	BOOL	1	Voice_Tx Mixer MI2S_TX_Voice             Off
+492	BOOL	1	Voice_Tx Mixer SLIM_0_TX_Voice           Off
+493	BOOL	1	Voice_Tx Mixer INTERNAL_BT_SCO_TX_Voice  Off
+494	BOOL	1	Voice_Tx Mixer AFE_PCM_TX_Voice          Off
+495	BOOL	1	Voice_Tx Mixer AUX_PCM_TX_Voice          Off
+496	BOOL	1	Voice_Tx Mixer SEC_AUX_PCM_TX_Voice      Off
+497	BOOL	1	Voice_Tx Mixer PRI_MI2S_TX_Voice         Off
+498	BOOL	1	Voice_Tx Mixer TERT_MI2S_TX_Voice        Off
+499	BOOL	1	QUIN_MI2S_RX_Voice Mixer CSVoice         Off
+500	BOOL	1	QUIN_MI2S_RX_Voice Mixer Voice2          Off
+501	BOOL	1	QUIN_MI2S_RX_Voice Mixer Voip            Off
+502	BOOL	1	QUIN_MI2S_RX_Voice Mixer Voice Stub      Off
+503	BOOL	1	QUIN_MI2S_RX_Voice Mixer Voice2 Stub     Off
+504	BOOL	1	QUIN_MI2S_RX_Voice Mixer VoLTE           Off
+505	BOOL	1	QUIN_MI2S_RX_Voice Mixer VoLTE Stub      Off
+506	BOOL	1	QUIN_MI2S_RX_Voice Mixer VoWLAN          Off
+507	BOOL	1	QUIN_MI2S_RX_Voice Mixer QCHAT           Off
+508	BOOL	1	QUAT_MI2S_RX_Voice Mixer CSVoice         Off
+509	BOOL	1	QUAT_MI2S_RX_Voice Mixer Voice2          Off
+510	BOOL	1	QUAT_MI2S_RX_Voice Mixer Voip            Off
+511	BOOL	1	QUAT_MI2S_RX_Voice Mixer Voice Stub      Off
+512	BOOL	1	QUAT_MI2S_RX_Voice Mixer Voice2 Stub     Off
+513	BOOL	1	QUAT_MI2S_RX_Voice Mixer VoLTE           Off
+514	BOOL	1	QUAT_MI2S_RX_Voice Mixer VoLTE Stub      Off
+515	BOOL	1	QUAT_MI2S_RX_Voice Mixer VoWLAN          Off
+516	BOOL	1	QUAT_MI2S_RX_Voice Mixer QCHAT           Off
+517	BOOL	1	QUAT_MI2S_RX_Voice Mixer VoiceMMode1     Off
+518	BOOL	1	QUAT_MI2S_RX_Voice Mixer VoiceMMode2     Off
+519	BOOL	1	TERT_MI2S_RX_Voice Mixer CSVoice         Off
+520	BOOL	1	TERT_MI2S_RX_Voice Mixer Voice2          Off
+521	BOOL	1	TERT_MI2S_RX_Voice Mixer Voip            Off
+522	BOOL	1	TERT_MI2S_RX_Voice Mixer Voice Stub      Off
+523	BOOL	1	TERT_MI2S_RX_Voice Mixer Voice2 Stub     Off
+524	BOOL	1	TERT_MI2S_RX_Voice Mixer VoLTE           Off
+525	BOOL	1	TERT_MI2S_RX_Voice Mixer VoLTE Stub      Off
+526	BOOL	1	TERT_MI2S_RX_Voice Mixer VoWLAN          Off
+527	BOOL	1	TERT_MI2S_RX_Voice Mixer DTMF            Off
+528	BOOL	1	TERT_MI2S_RX_Voice Mixer QCHAT           Off
+529	BOOL	1	TERT_MI2S_RX_Voice Mixer VoiceMMode1     Off
+530	BOOL	1	TERT_MI2S_RX_Voice Mixer VoiceMMode2     Off
+531	BOOL	1	PRI_MI2S_RX_Voice Mixer CSVoice          Off
+532	BOOL	1	PRI_MI2S_RX_Voice Mixer Voice2           Off
+533	BOOL	1	PRI_MI2S_RX_Voice Mixer Voip             Off
+534	BOOL	1	PRI_MI2S_RX_Voice Mixer Voice Stub       Off
+535	BOOL	1	PRI_MI2S_RX_Voice Mixer Voice2 Stub      Off
+536	BOOL	1	PRI_MI2S_RX_Voice Mixer VoLTE            Off
+537	BOOL	1	PRI_MI2S_RX_Voice Mixer VoLTE Stub       Off
+538	BOOL	1	PRI_MI2S_RX_Voice Mixer VoWLAN           Off
+539	BOOL	1	PRI_MI2S_RX_Voice Mixer DTMF             Off
+540	BOOL	1	PRI_MI2S_RX_Voice Mixer QCHAT            Off
+541	BOOL	1	PRI_MI2S_RX_Voice Mixer VoiceMMode1      Off
+542	BOOL	1	PRI_MI2S_RX_Voice Mixer VoiceMMode2      Off
+543	BOOL	1	MI2S_RX_Voice Mixer CSVoice              Off
+544	BOOL	1	MI2S_RX_Voice Mixer Voice2               Off
+545	BOOL	1	MI2S_RX_Voice Mixer Voip                 Off
+546	BOOL	1	MI2S_RX_Voice Mixer Voice Stub           Off
+547	BOOL	1	MI2S_RX_Voice Mixer VoLTE                Off
+548	BOOL	1	MI2S_RX_Voice Mixer VoWLAN               Off
+549	BOOL	1	MI2S_RX_Voice Mixer DTMF                 Off
+550	BOOL	1	MI2S_RX_Voice Mixer QCHAT                Off
+551	BOOL	1	MI2S_RX_Voice Mixer VoiceMMode1          Off
+552	BOOL	1	MI2S_RX_Voice Mixer VoiceMMode2          Off
+553	BOOL	1	HDMI_RX_Voice Mixer CSVoice              Off
+554	BOOL	1	HDMI_RX_Voice Mixer Voice2               Off
+555	BOOL	1	HDMI_RX_Voice Mixer Voip                 Off
+556	BOOL	1	HDMI_RX_Voice Mixer VoLTE                Off
+557	BOOL	1	HDMI_RX_Voice Mixer VoWLAN               Off
+558	BOOL	1	HDMI_RX_Voice Mixer DTMF                 Off
+559	BOOL	1	HDMI_RX_Voice Mixer QCHAT                Off
+560	BOOL	1	HDMI_RX_Voice Mixer VoiceMMode1          Off
+561	BOOL	1	HDMI_RX_Voice Mixer VoiceMMode2          Off
+562	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer CSVoice       Off
+563	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer Voice2        Off
+564	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer Voip          Off
+565	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer Voice Stub    Off
+566	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer VoLTE         Off
+567	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer VoWLAN        Off
+568	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer DTMF          Off
+569	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer QCHAT         Off
+570	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer VoiceMMode1   Off
+571	BOOL	1	SEC_AUX_PCM_RX_Voice Mixer VoiceMMode2   Off
+572	BOOL	1	AUX_PCM_RX_Voice Mixer CSVoice           Off
+573	BOOL	1	AUX_PCM_RX_Voice Mixer Voice2            Off
+574	BOOL	1	AUX_PCM_RX_Voice Mixer Voip              Off
+575	BOOL	1	AUX_PCM_RX_Voice Mixer Voice Stub        Off
+576	BOOL	1	AUX_PCM_RX_Voice Mixer Voice2 Stub       Off
+577	BOOL	1	AUX_PCM_RX_Voice Mixer VoLTE             Off
+578	BOOL	1	AUX_PCM_RX_Voice Mixer VoLTE Stub        Off
+579	BOOL	1	AUX_PCM_RX_Voice Mixer VoWLAN            Off
+580	BOOL	1	AUX_PCM_RX_Voice Mixer DTMF              Off
+581	BOOL	1	AUX_PCM_RX_Voice Mixer QCHAT             Off
+582	BOOL	1	AUX_PCM_RX_Voice Mixer VoiceMMode1       Off
+583	BOOL	1	AUX_PCM_RX_Voice Mixer VoiceMMode2       Off
+584	BOOL	1	AFE_PCM_RX_Voice Mixer CSVoice           Off
+585	BOOL	1	AFE_PCM_RX_Voice Mixer Voice2            Off
+586	BOOL	1	AFE_PCM_RX_Voice Mixer Voip              Off
+587	BOOL	1	AFE_PCM_RX_Voice Mixer Voice Stub        Off
+588	BOOL	1	AFE_PCM_RX_Voice Mixer Voice2 Stub       Off
+589	BOOL	1	AFE_PCM_RX_Voice Mixer VoLTE             Off
+590	BOOL	1	AFE_PCM_RX_Voice Mixer VoLTE Stub        Off
+591	BOOL	1	AFE_PCM_RX_Voice Mixer VoWLAN            Off
+592	BOOL	1	AFE_PCM_RX_Voice Mixer DTMF              Off
+593	BOOL	1	AFE_PCM_RX_Voice Mixer QCHAT             Off
+594	BOOL	1	AFE_PCM_RX_Voice Mixer VoiceMMode1       Off
+595	BOOL	1	AFE_PCM_RX_Voice Mixer VoiceMMode2       Off
+596	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer CSVoice   Off
+597	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer Voice2    Off
+598	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer Voip      Off
+599	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer Voice Stub Off
+600	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer VoLTE     Off
+601	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer VoWLAN    Off
+602	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer DTMF      Off
+603	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer QCHAT     Off
+604	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer VoiceMMode1 Off
+605	BOOL	1	INTERNAL_BT_SCO_RX_Voice Mixer VoiceMMode2 Off
+606	BOOL	1	SLIM_0_RX_Voice Mixer CSVoice            Off
+607	BOOL	1	SLIM_0_RX_Voice Mixer Voice2             Off
+608	BOOL	1	SLIM_0_RX_Voice Mixer Voip               Off
+609	BOOL	1	SLIM_0_RX_Voice Mixer Voice Stub         Off
+610	BOOL	1	SLIM_0_RX_Voice Mixer Voice2 Stub        Off
+611	BOOL	1	SLIM_0_RX_Voice Mixer VoLTE              Off
+612	BOOL	1	SLIM_0_RX_Voice Mixer VoLTE Stub         Off
+613	BOOL	1	SLIM_0_RX_Voice Mixer VoWLAN             Off
+614	BOOL	1	SLIM_0_RX_Voice Mixer DTMF               Off
+615	BOOL	1	SLIM_0_RX_Voice Mixer QCHAT              Off
+616	BOOL	1	SLIM_0_RX_Voice Mixer VoiceMMode1        Off
+617	BOOL	1	SLIM_0_RX_Voice Mixer VoiceMMode2        Off
+618	BOOL	1	SEC_MI2S_RX_Voice Mixer CSVoice          Off
+619	BOOL	1	SEC_MI2S_RX_Voice Mixer Voice2           Off
+620	BOOL	1	SEC_MI2S_RX_Voice Mixer Voip             Off
+621	BOOL	1	SEC_MI2S_RX_Voice Mixer VoLTE            Off
+622	BOOL	1	SEC_MI2S_RX_Voice Mixer VoWLAN           Off
+623	BOOL	1	SEC_MI2S_RX_Voice Mixer DTMF             Off
+624	BOOL	1	SEC_MI2S_RX_Voice Mixer QCHAT            Off
+625	BOOL	1	SEC_RX_Voice Mixer CSVoice               Off
+626	BOOL	1	SEC_RX_Voice Mixer Voice2                Off
+627	BOOL	1	SEC_RX_Voice Mixer Voip                  Off
+628	BOOL	1	SEC_RX_Voice Mixer VoLTE                 Off
+629	BOOL	1	SEC_RX_Voice Mixer VoWLAN                Off
+630	BOOL	1	SEC_RX_Voice Mixer DTMF                  Off
+631	BOOL	1	SEC_RX_Voice Mixer QCHAT                 Off
+632	BOOL	1	PRI_RX_Voice Mixer CSVoice               Off
+633	BOOL	1	PRI_RX_Voice Mixer Voice2                Off
+634	BOOL	1	PRI_RX_Voice Mixer Voip                  Off
+635	BOOL	1	PRI_RX_Voice Mixer VoLTE                 Off
+636	BOOL	1	PRI_RX_Voice Mixer VoWLAN                Off
+637	BOOL	1	PRI_RX_Voice Mixer VoiceMMode1           Off
+638	BOOL	1	PRI_RX_Voice Mixer VoiceMMode2           Off
+639	BOOL	1	PRI_RX_Voice Mixer DTMF                  Off
+640	BOOL	1	PRI_RX_Voice Mixer QCHAT                 Off
+641	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia1     Off
+642	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia2     Off
+643	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia3     Off
+644	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia4     Off
+645	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia5     Off
+646	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia6     Off
+647	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia7     Off
+648	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia8     Off
+649	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia9     Off
+650	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia10    Off
+651	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia11    Off
+652	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia12    Off
+653	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia13    Off
+654	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia14    Off
+655	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia15    Off
+656	BOOL	1	SLIMBUS_6_RX Audio Mixer MultiMedia16    Off
+657	BOOL	1	SLIMBUS_4_RX Audio Mixer MultiMedia1     Off
+658	BOOL	1	SLIMBUS_4_RX Audio Mixer MultiMedia2     Off
+659	BOOL	1	SLIMBUS_4_RX Audio Mixer MultiMedia5     Off
+660	BOOL	1	SLIMBUS_4_RX Audio Mixer MultiMedia9     Off
+661	BOOL	1	Incall_Music_2 Audio Mixer MultiMedia1   Off
+662	BOOL	1	Incall_Music_2 Audio Mixer MultiMedia2   Off
+663	BOOL	1	Incall_Music_2 Audio Mixer MultiMedia5   Off
+664	BOOL	1	Incall_Music_2 Audio Mixer MultiMedia9   Off
+665	BOOL	1	Incall_Music Audio Mixer MultiMedia1     Off
+666	BOOL	1	Incall_Music Audio Mixer MultiMedia2     Off
+667	BOOL	1	Incall_Music Audio Mixer MultiMedia5     Off
+668	BOOL	1	Incall_Music Audio Mixer MultiMedia9     Off
+669	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia1   Off
+670	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia2   Off
+671	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia3   Off
+672	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia4   Off
+673	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia5   Off
+674	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia6   Off
+675	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia7   Off
+676	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia8   Off
+677	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia9   Off
+678	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia10  Off
+679	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia11  Off
+680	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia12  Off
+681	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia13  Off
+682	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia14  Off
+683	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia15  Off
+684	BOOL	1	SEC_AUX_PCM_RX Audio Mixer MultiMedia16  Off
+685	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia1       Off
+686	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia2       Off
+687	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia3       Off
+688	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia4       Off
+689	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia5       Off
+690	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia6       Off
+691	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia7       Off
+692	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia8       Off
+693	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia9       Off
+694	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia10      Off
+695	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia11      Off
+696	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia12      Off
+697	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia13      Off
+698	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia14      Off
+699	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia15      Off
+700	BOOL	1	AUX_PCM_RX Audio Mixer MultiMedia16      Off
+701	BOOL	1	MultiMedia8 Mixer SLIM_0_TX              Off
+702	BOOL	1	MultiMedia8 Mixer PRI_MI2S_TX            Off
+703	BOOL	1	MultiMedia8 Mixer INTERNAL_FM_TX         Off
+704	BOOL	1	MultiMedia8 Mixer INTERNAL_BT_SCO_TX     Off
+705	BOOL	1	MultiMedia8 Mixer AFE_PCM_TX             Off
+706	BOOL	1	MultiMedia8 Mixer VOC_REC_DL             Off
+707	BOOL	1	MultiMedia8 Mixer VOC_REC_UL             Off
+708	BOOL	1	MultiMedia8 Mixer SLIM_6_TX              Off
+709	BOOL	1	MultiMedia8 Mixer TERT_TDM_TX_0          Off
+710	BOOL	1	MultiMedia8 Mixer TERT_TDM_TX_1          Off
+711	BOOL	1	MultiMedia8 Mixer TERT_TDM_TX_2          Off
+712	BOOL	1	MultiMedia8 Mixer TERT_TDM_TX_3          Off
+713	BOOL	1	MultiMedia8 Mixer QUAT_TDM_TX_0          Off
+714	BOOL	1	MultiMedia8 Mixer QUAT_TDM_TX_1          Off
+715	BOOL	1	MultiMedia8 Mixer QUAT_TDM_TX_2          Off
+716	BOOL	1	MultiMedia8 Mixer QUAT_TDM_TX_3          Off
+717	BOOL	1	MultiMedia6 Mixer INTERNAL_FM_TX         Off
+718	BOOL	1	MultiMedia6 Mixer SLIM_0_TX              Off
+719	BOOL	1	MultiMedia6 Mixer TERT_MI2S_TX           Off
+720	BOOL	1	MultiMedia6 Mixer PRI_MI2S_TX            Off
+721	BOOL	1	MultiMedia6 Mixer AUX_PCM_UL_TX          Off
+722	BOOL	1	MultiMedia6 Mixer SEC_AUX_PCM_UL_TX      Off
+723	BOOL	1	MultiMedia6 Mixer TERT_TDM_TX_0          Off
+724	BOOL	1	MultiMedia6 Mixer TERT_TDM_TX_1          Off
+725	BOOL	1	MultiMedia6 Mixer TERT_TDM_TX_2          Off
+726	BOOL	1	MultiMedia6 Mixer TERT_TDM_TX_3          Off
+727	BOOL	1	MultiMedia6 Mixer QUAT_TDM_TX_0          Off
+728	BOOL	1	MultiMedia6 Mixer QUAT_TDM_TX_1          Off
+729	BOOL	1	MultiMedia6 Mixer QUAT_TDM_TX_2          Off
+730	BOOL	1	MultiMedia6 Mixer QUAT_TDM_TX_3          Off
+731	BOOL	1	MultiMedia5 Mixer SLIM_0_TX              Off
+732	BOOL	1	MultiMedia5 Mixer INTERNAL_FM_TX         Off
+733	BOOL	1	MultiMedia5 Mixer MI2S_TX                Off
+734	BOOL	1	MultiMedia5 Mixer AFE_PCM_TX             Off
+735	BOOL	1	MultiMedia5 Mixer INTERNAL_BT_SCO_TX     Off
+736	BOOL	1	MultiMedia5 Mixer AUX_PCM_TX             Off
+737	BOOL	1	MultiMedia5 Mixer SEC_AUX_PCM_TX         Off
+738	BOOL	1	MultiMedia5 Mixer TERT_MI2S_TX           Off
+739	BOOL	1	MultiMedia5 Mixer TERT_TDM_TX_0          Off
+740	BOOL	1	MultiMedia5 Mixer TERT_TDM_TX_1          Off
+741	BOOL	1	MultiMedia5 Mixer TERT_TDM_TX_2          Off
+742	BOOL	1	MultiMedia5 Mixer TERT_TDM_TX_3          Off
+743	BOOL	1	MultiMedia5 Mixer QUAT_TDM_TX_0          Off
+744	BOOL	1	MultiMedia5 Mixer QUAT_TDM_TX_1          Off
+745	BOOL	1	MultiMedia5 Mixer QUAT_TDM_TX_2          Off
+746	BOOL	1	MultiMedia5 Mixer QUAT_TDM_TX_3          Off
+747	BOOL	1	MultiMedia4 Mixer SLIM_0_TX              Off
+748	BOOL	1	MultiMedia4 Mixer PRI_MI2S_TX            Off
+749	BOOL	1	MultiMedia4 Mixer INTERNAL_FM_TX         Off
+750	BOOL	1	MultiMedia4 Mixer INTERNAL_BT_SCO_TX     Off
+751	BOOL	1	MultiMedia4 Mixer AFE_PCM_TX             Off
+752	BOOL	1	MultiMedia4 Mixer VOC_REC_DL             Off
+753	BOOL	1	MultiMedia4 Mixer VOC_REC_UL             Off
+754	BOOL	1	MultiMedia4 Mixer TERT_TDM_TX_0          Off
+755	BOOL	1	MultiMedia4 Mixer TERT_TDM_TX_1          Off
+756	BOOL	1	MultiMedia4 Mixer TERT_TDM_TX_2          Off
+757	BOOL	1	MultiMedia4 Mixer TERT_TDM_TX_3          Off
+758	BOOL	1	MultiMedia4 Mixer QUAT_TDM_TX_0          Off
+759	BOOL	1	MultiMedia4 Mixer QUAT_TDM_TX_1          Off
+760	BOOL	1	MultiMedia4 Mixer QUAT_TDM_TX_2          Off
+761	BOOL	1	MultiMedia4 Mixer QUAT_TDM_TX_3          Off
+762	BOOL	1	MultiMedia2 Mixer INTERNAL_FM_TX         Off
+763	BOOL	1	MultiMedia2 Mixer MI2S_TX                Off
+764	BOOL	1	MultiMedia2 Mixer PRI_MI2S_TX            Off
+765	BOOL	1	MultiMedia2 Mixer TERT_MI2S_TX           Off
+766	BOOL	1	MultiMedia2 Mixer QUAT_MI2S_TX           Off
+767	BOOL	1	MultiMedia2 Mixer SLIM_0_TX              Off
+768	BOOL	1	MultiMedia2 Mixer QUIN_MI2S_TX           Off
+769	BOOL	1	MultiMedia2 Mixer TERT_TDM_TX_0          Off
+770	BOOL	1	MultiMedia2 Mixer TERT_TDM_TX_1          Off
+771	BOOL	1	MultiMedia2 Mixer TERT_TDM_TX_2          Off
+772	BOOL	1	MultiMedia2 Mixer TERT_TDM_TX_3          Off
+773	BOOL	1	MultiMedia2 Mixer QUAT_TDM_TX_0          Off
+774	BOOL	1	MultiMedia2 Mixer QUAT_TDM_TX_1          Off
+775	BOOL	1	MultiMedia2 Mixer QUAT_TDM_TX_2          Off
+776	BOOL	1	MultiMedia2 Mixer QUAT_TDM_TX_3          Off
+777	BOOL	1	MultiMedia1 Mixer PRI_TX                 Off
+778	BOOL	1	MultiMedia1 Mixer MI2S_TX                Off
+779	BOOL	1	MultiMedia1 Mixer PRI_MI2S_TX            Off
+780	BOOL	1	MultiMedia1 Mixer QUAT_MI2S_TX           Off
+781	BOOL	1	MultiMedia1 Mixer TERT_MI2S_TX           Off
+782	BOOL	1	MultiMedia1 Mixer SEC_MI2S_TX            Off
+783	BOOL	1	MultiMedia1 Mixer SLIM_0_TX              On
+784	BOOL	1	MultiMedia1 Mixer AUX_PCM_UL_TX          Off
+785	BOOL	1	MultiMedia1 Mixer SEC_AUX_PCM_UL_TX      Off
+786	BOOL	1	MultiMedia1 Mixer INTERNAL_BT_SCO_TX     Off
+787	BOOL	1	MultiMedia1 Mixer INTERNAL_FM_TX         Off
+788	BOOL	1	MultiMedia1 Mixer AFE_PCM_TX             Off
+789	BOOL	1	MultiMedia1 Mixer VOC_REC_DL             Off
+790	BOOL	1	MultiMedia1 Mixer VOC_REC_UL             Off
+791	BOOL	1	MultiMedia1 Mixer SLIM_4_TX              Off
+792	BOOL	1	MultiMedia1 Mixer SLIM_6_TX              Off
+793	BOOL	1	MultiMedia1 Mixer QUIN_MI2S_TX           Off
+794	BOOL	1	MultiMedia1 Mixer TERT_TDM_TX_0          Off
+795	BOOL	1	MultiMedia1 Mixer TERT_TDM_TX_1          Off
+796	BOOL	1	MultiMedia1 Mixer TERT_TDM_TX_2          Off
+797	BOOL	1	MultiMedia1 Mixer TERT_TDM_TX_3          Off
+798	BOOL	1	MultiMedia1 Mixer QUAT_TDM_TX_0          Off
+799	BOOL	1	MultiMedia1 Mixer QUAT_TDM_TX_1          Off
+800	BOOL	1	MultiMedia1 Mixer QUAT_TDM_TX_2          Off
+801	BOOL	1	MultiMedia1 Mixer QUAT_TDM_TX_3          Off
+802	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia1    Off
+803	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia2    Off
+804	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia3    Off
+805	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia4    Off
+806	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia5    Off
+807	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia6    Off
+808	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia7    Off
+809	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia8    Off
+810	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia9    Off
+811	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia10   Off
+812	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia11   Off
+813	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia12   Off
+814	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia13   Off
+815	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia14   Off
+816	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia15   Off
+817	BOOL	1	QUAT_TDM_RX_3 Audio Mixer MultiMedia16   Off
+818	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia1    Off
+819	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia2    Off
+820	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia3    Off
+821	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia4    Off
+822	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia5    Off
+823	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia6    Off
+824	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia7    Off
+825	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia8    Off
+826	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia9    Off
+827	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia10   Off
+828	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia11   Off
+829	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia12   Off
+830	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia13   Off
+831	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia14   Off
+832	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia15   Off
+833	BOOL	1	QUAT_TDM_RX_2 Audio Mixer MultiMedia16   Off
+834	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia1    Off
+835	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia2    Off
+836	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia3    Off
+837	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia4    Off
+838	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia5    Off
+839	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia6    Off
+840	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia7    Off
+841	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia8    Off
+842	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia9    Off
+843	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia10   Off
+844	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia11   Off
+845	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia12   Off
+846	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia13   Off
+847	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia14   Off
+848	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia15   Off
+849	BOOL	1	QUAT_TDM_RX_1 Audio Mixer MultiMedia16   Off
+850	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia1    Off
+851	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia2    Off
+852	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia3    Off
+853	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia4    Off
+854	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia5    Off
+855	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia6    Off
+856	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia7    Off
+857	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia8    Off
+858	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia9    Off
+859	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia10   Off
+860	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia11   Off
+861	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia12   Off
+862	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia13   Off
+863	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia14   Off
+864	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia15   Off
+865	BOOL	1	QUAT_TDM_RX_0 Audio Mixer MultiMedia16   Off
+866	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia1    Off
+867	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia2    Off
+868	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia3    Off
+869	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia4    Off
+870	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia5    Off
+871	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia6    Off
+872	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia7    Off
+873	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia8    Off
+874	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia9    Off
+875	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia10   Off
+876	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia11   Off
+877	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia12   Off
+878	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia13   Off
+879	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia14   Off
+880	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia15   Off
+881	BOOL	1	TERT_TDM_RX_3 Audio Mixer MultiMedia16   Off
+882	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia1    Off
+883	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia2    Off
+884	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia3    Off
+885	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia4    Off
+886	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia5    Off
+887	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia6    Off
+888	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia7    Off
+889	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia8    Off
+890	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia9    Off
+891	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia10   Off
+892	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia11   Off
+893	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia12   Off
+894	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia13   Off
+895	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia14   Off
+896	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia15   Off
+897	BOOL	1	TERT_TDM_RX_2 Audio Mixer MultiMedia16   Off
+898	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia1    Off
+899	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia2    Off
+900	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia3    Off
+901	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia4    Off
+902	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia5    Off
+903	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia6    Off
+904	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia7    Off
+905	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia8    Off
+906	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia9    Off
+907	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia10   Off
+908	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia11   Off
+909	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia12   Off
+910	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia13   Off
+911	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia14   Off
+912	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia15   Off
+913	BOOL	1	TERT_TDM_RX_1 Audio Mixer MultiMedia16   Off
+914	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia1    Off
+915	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia2    Off
+916	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia3    Off
+917	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia4    Off
+918	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia5    Off
+919	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia6    Off
+920	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia7    Off
+921	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia8    Off
+922	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia9    Off
+923	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia10   Off
+924	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia11   Off
+925	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia12   Off
+926	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia13   Off
+927	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia14   Off
+928	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia15   Off
+929	BOOL	1	TERT_TDM_RX_0 Audio Mixer MultiMedia16   Off
+930	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia1     Off
+931	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia2     Off
+932	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia3     Off
+933	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia4     Off
+934	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia5     Off
+935	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia6     Off
+936	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia7     Off
+937	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia8     Off
+938	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia10    Off
+939	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia11    Off
+940	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia12    Off
+941	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia13    Off
+942	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia14    Off
+943	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia15    Off
+944	BOOL	1	QUIN_MI2S_RX Audio Mixer MultiMedia16    Off
+945	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia1      Off
+946	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia2      Off
+947	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia3      Off
+948	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia4      Off
+949	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia5      Off
+950	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia6      Off
+951	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia7      Off
+952	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia10     Off
+953	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia11     Off
+954	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia12     Off
+955	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia13     Off
+956	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia14     Off
+957	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia15     Off
+958	BOOL	1	PRI_MI2S_RX Audio Mixer MultiMedia16     Off
+959	BOOL	1	SEC_MI2S_RX Port Mixer PRI_MI2S_TX       Off
+960	BOOL	1	SEC_MI2S_RX Port Mixer INTERNAL_FM_TX    Off
+961	BOOL	1	SEC_MI2S_RX_SD1 Audio Mixer MultiMedia6  Off
+962	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia1      Off
+963	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia2      Off
+964	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia3      Off
+965	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia4      Off
+966	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia5      Off
+967	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia7      Off
+968	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia10     Off
+969	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia11     Off
+970	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia12     Off
+971	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia13     Off
+972	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia14     Off
+973	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia15     Off
+974	BOOL	1	SEC_MI2S_RX Audio Mixer MultiMedia16     Off
+975	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia1     Off
+976	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia2     Off
+977	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia3     Off
+978	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia4     Off
+979	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia7     Off
+980	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia10    Off
+981	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia11    Off
+982	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia12    Off
+983	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia13    Off
+984	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia14    Off
+985	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia15    Off
+986	BOOL	1	TERT_MI2S_RX Audio Mixer MultiMedia16    Off
+987	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia1     Off
+988	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia2     Off
+989	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia3     Off
+990	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia4     Off
+991	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia5     Off
+992	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia6     Off
+993	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia7     Off
+994	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia8     Off
+995	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia10    Off
+996	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia11    Off
+997	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia12    Off
+998	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia13    Off
+999	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia14    Off
+1000	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia15    Off
+1001	BOOL	1	QUAT_MI2S_RX Audio Mixer MultiMedia16    Off
+1002	BOOL	1	MI2S_RX Audio Mixer MultiMedia1          Off
+1003	BOOL	1	MI2S_RX Audio Mixer MultiMedia2          Off
+1004	BOOL	1	MI2S_RX Audio Mixer MultiMedia3          Off
+1005	BOOL	1	MI2S_RX Audio Mixer MultiMedia4          Off
+1006	BOOL	1	MI2S_RX Audio Mixer MultiMedia5          Off
+1007	BOOL	1	MI2S_RX Audio Mixer MultiMedia6          Off
+1008	BOOL	1	MI2S_RX Audio Mixer MultiMedia7          Off
+1009	BOOL	1	MI2S_RX Audio Mixer MultiMedia8          Off
+1010	BOOL	1	MI2S_RX Audio Mixer MultiMedia9          Off
+1011	BOOL	1	MI2S_RX Audio Mixer MultiMedia10         Off
+1012	BOOL	1	MI2S_RX Audio Mixer MultiMedia11         Off
+1013	BOOL	1	MI2S_RX Audio Mixer MultiMedia12         Off
+1014	BOOL	1	MI2S_RX Audio Mixer MultiMedia13         Off
+1015	BOOL	1	MI2S_RX Audio Mixer MultiMedia14         Off
+1016	BOOL	1	MI2S_RX Audio Mixer MultiMedia15         Off
+1017	BOOL	1	MI2S_RX Audio Mixer MultiMedia16         Off
+1018	BOOL	1	SPDIF_RX Audio Mixer MultiMedia1         Off
+1019	BOOL	1	SPDIF_RX Audio Mixer MultiMedia2         Off
+1020	BOOL	1	SPDIF_RX Audio Mixer MultiMedia3         Off
+1021	BOOL	1	SPDIF_RX Audio Mixer MultiMedia4         Off
+1022	BOOL	1	SPDIF_RX Audio Mixer MultiMedia5         Off
+1023	BOOL	1	SPDIF_RX Audio Mixer MultiMedia6         Off
+1024	BOOL	1	SPDIF_RX Audio Mixer MultiMedia7         Off
+1025	BOOL	1	SPDIF_RX Audio Mixer MultiMedia8         Off
+1026	BOOL	1	SPDIF_RX Audio Mixer MultiMedia9         Off
+1027	BOOL	1	SPDIF_RX Audio Mixer MultiMedia10        Off
+1028	BOOL	1	SPDIF_RX Audio Mixer MultiMedia11        Off
+1029	BOOL	1	SPDIF_RX Audio Mixer MultiMedia12        Off
+1030	BOOL	1	SPDIF_RX Audio Mixer MultiMedia13        Off
+1031	BOOL	1	SPDIF_RX Audio Mixer MultiMedia14        Off
+1032	BOOL	1	SPDIF_RX Audio Mixer MultiMedia15        Off
+1033	BOOL	1	SPDIF_RX Audio Mixer MultiMedia16        Off
+1034	BOOL	1	HDMI Mixer MultiMedia1                   Off
+1035	BOOL	1	HDMI Mixer MultiMedia2                   Off
+1036	BOOL	1	HDMI Mixer MultiMedia3                   Off
+1037	BOOL	1	HDMI Mixer MultiMedia4                   Off
+1038	BOOL	1	HDMI Mixer MultiMedia5                   Off
+1039	BOOL	1	HDMI Mixer MultiMedia6                   Off
+1040	BOOL	1	HDMI Mixer MultiMedia7                   Off
+1041	BOOL	1	HDMI Mixer MultiMedia8                   Off
+1042	BOOL	1	HDMI Mixer MultiMedia9                   Off
+1043	BOOL	1	HDMI Mixer MultiMedia10                  Off
+1044	BOOL	1	HDMI Mixer MultiMedia11                  Off
+1045	BOOL	1	HDMI Mixer MultiMedia12                  Off
+1046	BOOL	1	HDMI Mixer MultiMedia13                  Off
+1047	BOOL	1	HDMI Mixer MultiMedia14                  Off
+1048	BOOL	1	HDMI Mixer MultiMedia15                  Off
+1049	BOOL	1	HDMI Mixer MultiMedia16                  Off
+1050	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia1     Off
+1051	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia2     Off
+1052	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia3     Off
+1053	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia4     Off
+1054	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia5     Off
+1055	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia6     Off
+1056	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia7     Off
+1057	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia8     Off
+1058	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia9     Off
+1059	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia10    Off
+1060	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia11    Off
+1061	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia12    Off
+1062	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia13    Off
+1063	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia14    Off
+1064	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia15    Off
+1065	BOOL	1	SLIMBUS_5_RX Audio Mixer MultiMedia16    Off
+1066	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia1     Off
+1067	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia2     Off
+1068	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia3     Off
+1069	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia4     Off
+1070	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia5     Off
+1071	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia6     Off
+1072	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia7     Off
+1073	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia8     Off
+1074	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia9     Off
+1075	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia10    Off
+1076	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia11    Off
+1077	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia12    Off
+1078	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia13    Off
+1079	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia14    Off
+1080	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia15    Off
+1081	BOOL	1	SLIMBUS_0_RX Audio Mixer MultiMedia16    Off
+1082	BOOL	1	SEC_RX Audio Mixer MultiMedia1           Off
+1083	BOOL	1	SEC_RX Audio Mixer MultiMedia2           Off
+1084	BOOL	1	SEC_RX Audio Mixer MultiMedia3           Off
+1085	BOOL	1	SEC_RX Audio Mixer MultiMedia4           Off
+1086	BOOL	1	SEC_RX Audio Mixer MultiMedia5           Off
+1087	BOOL	1	SEC_RX Audio Mixer MultiMedia6           Off
+1088	BOOL	1	SEC_RX Audio Mixer MultiMedia7           Off
+1089	BOOL	1	SEC_RX Audio Mixer MultiMedia8           Off
+1090	BOOL	1	SEC_RX Audio Mixer MultiMedia9           Off
+1091	BOOL	1	SEC_RX Audio Mixer MultiMedia10          Off
+1092	BOOL	1	SEC_RX Audio Mixer MultiMedia11          Off
+1093	BOOL	1	SEC_RX Audio Mixer MultiMedia12          Off
+1094	BOOL	1	SEC_RX Audio Mixer MultiMedia13          Off
+1095	BOOL	1	SEC_RX Audio Mixer MultiMedia14          Off
+1096	BOOL	1	SEC_RX Audio Mixer MultiMedia15          Off
+1097	BOOL	1	SEC_RX Audio Mixer MultiMedia16          Off
+1098	BOOL	1	PRI_RX Audio Mixer MultiMedia1           Off
+1099	BOOL	1	PRI_RX Audio Mixer MultiMedia2           Off
+1100	BOOL	1	PRI_RX Audio Mixer MultiMedia3           Off
+1101	BOOL	1	PRI_RX Audio Mixer MultiMedia4           Off
+1102	BOOL	1	PRI_RX Audio Mixer MultiMedia5           Off
+1103	BOOL	1	PRI_RX Audio Mixer MultiMedia6           Off
+1104	BOOL	1	PRI_RX Audio Mixer MultiMedia7           Off
+1105	BOOL	1	PRI_RX Audio Mixer MultiMedia8           Off
+1106	BOOL	1	PRI_RX Audio Mixer MultiMedia9           Off
+1107	BOOL	1	PRI_RX Audio Mixer MultiMedia10          Off
+1108	BOOL	1	PRI_RX Audio Mixer MultiMedia11          Off
+1109	BOOL	1	PRI_RX Audio Mixer MultiMedia12          Off
+1110	BOOL	1	PRI_RX Audio Mixer MultiMedia13          Off
+1111	BOOL	1	PRI_RX Audio Mixer MultiMedia14          Off
+1112	BOOL	1	PRI_RX Audio Mixer MultiMedia15          Off
+1113	BOOL	1	PRI_RX Audio Mixer MultiMedia16          Off
+1114	ENUM	1	LSM8 MUX                                 None
+1115	ENUM	1	LSM7 MUX                                 None
+1116	ENUM	1	LSM6 MUX                                 None
+1117	ENUM	1	LSM5 MUX                                 None
+1118	ENUM	1	LSM4 MUX                                 None
+1119	ENUM	1	LSM3 MUX                                 None
+1120	ENUM	1	LSM2 MUX                                 None
+1121	ENUM	1	LSM1 MUX                                 None
+1122	BOOL	1	HFP_INT_UL_HL Switch                     Off
+1123	BOOL	1	HFP_AUX_UL_HL Switch                     Off
+1124	BOOL	1	HFP_PRI_AUX_UL_HL Switch                 Off
+1125	BOOL	1	QUAT_MI2S_RX_DL_HL Switch                Off
+1126	BOOL	1	PRI_MI2S_RX_DL_HL Switch                 Off
+1127	BOOL	1	PCM_RX_DL_HL Switch                      Off
+1128	BOOL	1	SLIMBUS6_DL_HL Switch                    Off
+1129	BOOL	1	SLIMBUS4_DL_HL Switch                    Off
+1130	BOOL	1	SLIMBUS3_DL_HL Switch                    Off
+1131	BOOL	1	SLIMBUS1_DL_HL Switch                    Off
+1132	BOOL	1	SLIMBUS_DL_HL Switch                     Off
+1133	BOOL	1	ANC LINEOUT2 Enable Switch               Off
+1134	BOOL	1	ANC LINEOUT1 Enable Switch               Off
+1135	BOOL	1	ANC EAR Enable Switch                    Off
+1136	BOOL	1	ANC HPHR Enable Switch                   Off
+1137	BOOL	1	ANC HPHL Enable Switch                   Off
+1138	BOOL	1	MAD_BROADCAST Switch                     On
+1139	BOOL	1	MADONOFF Switch                          Off
+1140	ENUM	1	MAD_SEL MUX                              MSM
+1141	BOOL	1	ADC US MUX8 US_Switch                    Off
+1142	BOOL	1	ADC US MUX7 US_Switch                    Off
+1143	BOOL	1	ADC US MUX6 US_Switch                    Off
+1144	BOOL	1	ADC US MUX5 US_Switch                    Off
+1145	BOOL	1	ADC US MUX4 US_Switch                    Off
+1146	BOOL	1	ADC US MUX3 US_Switch                    Off
+1147	BOOL	1	ADC US MUX2 US_Switch                    Off
+1148	BOOL	1	ADC US MUX1 US_Switch                    Off
+1149	BOOL	1	ADC US MUX0 US_Switch                    Off
+1150	ENUM	1	RX INT8 INTERP                           ZERO
+1151	ENUM	1	RX INT7 INTERP                           ZERO
+1152	ENUM	1	RX INT6 INTERP                           ZERO
+1153	ENUM	1	RX INT5 INTERP                           ZERO
+1154	ENUM	1	RX INT4 INTERP                           ZERO
+1155	ENUM	1	RX INT3 INTERP                           ZERO
+1156	ENUM	1	RX INT2 INTERP                           ZERO
+1157	ENUM	1	RX INT1 INTERP                           ZERO
+1158	ENUM	1	RX INT0 INTERP                           ZERO
+1159	ENUM	1	RX INT2 DEM MUX                          CLSH_DSM_OUT
+1160	ENUM	1	RX INT1 DEM MUX                          CLSH_DSM_OUT
+1161	ENUM	1	RX INT0 DEM MUX                          CLSH_DSM_OUT
+1162	ENUM	1	RX MIX TX8 MUX                           ZERO
+1163	ENUM	1	RX MIX TX7 MUX                           ZERO
+1164	ENUM	1	RX MIX TX6 MUX                           ZERO
+1165	ENUM	1	RX MIX TX5 MUX                           ZERO
+1166	ENUM	1	RX MIX TX4 MUX                           ZERO
+1167	ENUM	1	RX MIX TX3 MUX                           ZERO
+1168	ENUM	1	RX MIX TX2 MUX                           ZERO
+1169	ENUM	1	RX MIX TX1 MUX                           ZERO
+1170	ENUM	1	RX MIX TX0 MUX                           ZERO
+1171	ENUM	1	IIR1 INP3 MUX                            ZERO
+1172	ENUM	1	IIR1 INP2 MUX                            ZERO
+1173	ENUM	1	IIR1 INP1 MUX                            ZERO
+1174	ENUM	1	IIR1 INP0 MUX                            ZERO
+1175	ENUM	1	IIR0 INP3 MUX                            ZERO
+1176	ENUM	1	IIR0 INP2 MUX                            ZERO
+1177	ENUM	1	IIR0 INP1 MUX                            ZERO
+1178	ENUM	1	IIR0 INP0 MUX                            DEC7
+1179	BOOL	1	AIF4_MAD Mixer SLIM TX12                 On
+1180	BOOL	1	AIF4_MAD Mixer SLIM TX13                 On
+1181	BOOL	1	AIF3_CAP Mixer SLIM TX0                  On
+1182	BOOL	1	AIF3_CAP Mixer SLIM TX1                  On
+1183	BOOL	1	AIF3_CAP Mixer SLIM TX2                  On
+1184	BOOL	1	AIF3_CAP Mixer SLIM TX3                  On
+1185	BOOL	1	AIF3_CAP Mixer SLIM TX4                  On
+1186	BOOL	1	AIF3_CAP Mixer SLIM TX5                  On
+1187	BOOL	1	AIF3_CAP Mixer SLIM TX6                  On
+1188	BOOL	1	AIF3_CAP Mixer SLIM TX7                  On
+1189	BOOL	1	AIF3_CAP Mixer SLIM TX8                  On
+1190	BOOL	1	AIF3_CAP Mixer SLIM TX9                  On
+1191	BOOL	1	AIF3_CAP Mixer SLIM TX10                 On
+1192	BOOL	1	AIF3_CAP Mixer SLIM TX11                 On
+1193	BOOL	1	AIF3_CAP Mixer SLIM TX13                 On
+1194	BOOL	1	AIF2_CAP Mixer SLIM TX0                  On
+1195	BOOL	1	AIF2_CAP Mixer SLIM TX1                  On
+1196	BOOL	1	AIF2_CAP Mixer SLIM TX2                  On
+1197	BOOL	1	AIF2_CAP Mixer SLIM TX3                  On
+1198	BOOL	1	AIF2_CAP Mixer SLIM TX4                  On
+1199	BOOL	1	AIF2_CAP Mixer SLIM TX5                  On
+1200	BOOL	1	AIF2_CAP Mixer SLIM TX6                  On
+1201	BOOL	1	AIF2_CAP Mixer SLIM TX7                  On
+1202	BOOL	1	AIF2_CAP Mixer SLIM TX8                  On
+1203	BOOL	1	AIF2_CAP Mixer SLIM TX9                  On
+1204	BOOL	1	AIF2_CAP Mixer SLIM TX10                 On
+1205	BOOL	1	AIF2_CAP Mixer SLIM TX11                 On
+1206	BOOL	1	AIF2_CAP Mixer SLIM TX13                 On
+1207	BOOL	1	AIF1_CAP Mixer SLIM TX0                  On
+1208	BOOL	1	AIF1_CAP Mixer SLIM TX1                  On
+1209	BOOL	1	AIF1_CAP Mixer SLIM TX2                  On
+1210	BOOL	1	AIF1_CAP Mixer SLIM TX3                  On
+1211	BOOL	1	AIF1_CAP Mixer SLIM TX4                  On
+1212	BOOL	1	AIF1_CAP Mixer SLIM TX5                  On
+1213	BOOL	1	AIF1_CAP Mixer SLIM TX6                  On
+1214	BOOL	1	AIF1_CAP Mixer SLIM TX7                  On
+1215	BOOL	1	AIF1_CAP Mixer SLIM TX8                  On
+1216	BOOL	1	AIF1_CAP Mixer SLIM TX9                  On
+1217	BOOL	1	AIF1_CAP Mixer SLIM TX10                 On
+1218	BOOL	1	AIF1_CAP Mixer SLIM TX11                 On
+1219	BOOL	1	AIF1_CAP Mixer SLIM TX13                 On
+1220	BOOL	1	AIF4_VI Mixer SPKR_VI_1                  Off
+1221	BOOL	1	AIF4_VI Mixer SPKR_VI_2                  Off
+1222	ENUM	1	ANC1 FB MUX                              ZERO
+1223	ENUM	1	ANC0 FB MUX                              ZERO
+1224	ENUM	1	AMIC MUX13                               ZERO
+1225	ENUM	1	AMIC MUX12                               ZERO
+1226	ENUM	1	AMIC MUX11                               ZERO
+1227	ENUM	1	AMIC MUX10                               ZERO
+1228	ENUM	1	AMIC MUX8                                ZERO
+1229	ENUM	1	AMIC MUX7                                ZERO
+1230	ENUM	1	AMIC MUX6                                ZERO
+1231	ENUM	1	AMIC MUX5                                ZERO
+1232	ENUM	1	AMIC MUX4                                ZERO
+1233	ENUM	1	AMIC MUX3                                ZERO
+1234	ENUM	1	AMIC MUX2                                ZERO
+1235	ENUM	1	AMIC MUX1                                ZERO
+1236	ENUM	1	AMIC MUX0                                ZERO
+1237	ENUM	1	DMIC MUX13                               ZERO
+1238	ENUM	1	DMIC MUX12                               ZERO
+1239	ENUM	1	DMIC MUX11                               ZERO
+1240	ENUM	1	DMIC MUX10                               ZERO
+1241	ENUM	1	DMIC MUX8                                DMIC0
+1242	ENUM	1	DMIC MUX7                                DMIC2
+1243	ENUM	1	DMIC MUX6                                ZERO
+1244	ENUM	1	DMIC MUX5                                ZERO
+1245	ENUM	1	DMIC MUX4                                ZERO
+1246	ENUM	1	DMIC MUX3                                ZERO
+1247	ENUM	1	DMIC MUX2                                ZERO
+1248	ENUM	1	DMIC MUX1                                ZERO
+1249	ENUM	1	DMIC MUX0                                ZERO
+1250	ENUM	1	ADC MUX13                                AMIC
+1251	ENUM	1	ADC MUX12                                AMIC
+1252	ENUM	1	ADC MUX11                                AMIC
+1253	ENUM	1	ADC MUX10                                AMIC
+1254	ENUM	1	ADC MUX8                                 DMIC
+1255	ENUM	1	ADC MUX7                                 DMIC
+1256	ENUM	1	ADC MUX6                                 AMIC
+1257	ENUM	1	ADC MUX5                                 AMIC
+1258	ENUM	1	ADC MUX4                                 AMIC
+1259	ENUM	1	ADC MUX3                                 AMIC
+1260	ENUM	1	ADC MUX2                                 AMIC
+1261	ENUM	1	ADC MUX1                                 AMIC
+1262	ENUM	1	ADC MUX0                                 AMIC
+1263	ENUM	1	TX13 INP MUX                             CDC_DEC_5
+1264	ENUM	1	SLIM TX13 MUX                            ZERO
+1265	ENUM	1	SLIM TX11 INP1 MUX                       ZERO
+1266	ENUM	1	SLIM TX11 MUX                            DEC_0_5
+1267	ENUM	1	SLIM TX10 MUX                            ZERO
+1268	ENUM	1	SLIM TX9 MUX                             ZERO
+1269	ENUM	1	SLIM TX8 MUX                             DEC8
+1270	ENUM	1	SLIM TX7 MUX                             DEC7
+1271	ENUM	1	SLIM TX6 MUX                             ZERO
+1272	ENUM	1	SLIM TX5 MUX                             ZERO
+1273	ENUM	1	SLIM TX4 MUX                             ZERO
+1274	ENUM	1	SLIM TX3 MUX                             ZERO
+1275	ENUM	1	SLIM TX2 MUX                             ZERO
+1276	ENUM	1	SLIM TX1 MUX                             ZERO
+1277	ENUM	1	SLIM TX0 MUX                             ZERO
+1278	ENUM	1	RX INT7 MIX2 INP                         ZERO
+1279	ENUM	1	RX INT4 MIX2 INP                         ZERO
+1280	ENUM	1	RX INT3 MIX2 INP                         ZERO
+1281	ENUM	1	RX INT2 MIX2 INP                         ZERO
+1282	ENUM	1	RX INT1 MIX2 INP                         ZERO
+1283	ENUM	1	RX INT0 MIX2 INP                         ZERO
+1284	BOOL	1	RX INT8 VBAT SPKRR VBAT Enable           Off
+1285	BOOL	1	RX INT7 VBAT SPKRL VBAT Enable           Off
+1286	BOOL	1	RX INT6 VBAT LO4 VBAT Enable             Off
+1287	BOOL	1	RX INT5 VBAT LO3 VBAT Enable             Off
+1288	BOOL	1	RX INT8 SPLINE MIX SPKRR Switch          Off
+1289	BOOL	1	RX INT7 SPLINE MIX SPKRL Switch          Off
+1290	BOOL	1	RX INT6 SPLINE MIX LO4 Switch            Off
+1291	BOOL	1	RX INT5 SPLINE MIX LO3 Switch            Off
+1292	BOOL	1	RX INT4 SPLINE MIX LO2 Switch            Off
+1293	BOOL	1	RX INT4 SPLINE MIX LO2 Native Switch     Off
+1294	BOOL	1	RX INT3 SPLINE MIX LO1 Switch            Off
+1295	BOOL	1	RX INT3 SPLINE MIX LO1 Native Switch     Off
+1296	BOOL	1	RX INT2 SPLINE MIX HPHR Switch           Off
+1297	BOOL	1	RX INT2 SPLINE MIX HPHR Native Switch    Off
+1298	BOOL	1	RX INT1 SPLINE MIX HPHL Switch           Off
+1299	BOOL	1	RX INT1 SPLINE MIX HPHL Native Switch    Off
+1300	ENUM	1	RX INT8_1 MIX1 INP2                      ZERO
+1301	ENUM	1	RX INT8_1 MIX1 INP1                      ZERO
+1302	ENUM	1	RX INT8_1 MIX1 INP0                      ZERO
+1303	ENUM	1	RX INT7_1 MIX1 INP2                      ZERO
+1304	ENUM	1	RX INT7_1 MIX1 INP1                      ZERO
+1305	ENUM	1	RX INT7_1 MIX1 INP0                      ZERO
+1306	ENUM	1	RX INT6_1 MIX1 INP2                      ZERO
+1307	ENUM	1	RX INT6_1 MIX1 INP1                      ZERO
+1308	ENUM	1	RX INT6_1 MIX1 INP0                      ZERO
+1309	ENUM	1	RX INT5_1 MIX1 INP2                      ZERO
+1310	ENUM	1	RX INT5_1 MIX1 INP1                      ZERO
+1311	ENUM	1	RX INT5_1 MIX1 INP0                      ZERO
+1312	ENUM	1	RX INT4_1 MIX1 INP2                      ZERO
+1313	ENUM	1	RX INT4_1 MIX1 INP1                      ZERO
+1314	ENUM	1	RX INT4_1 MIX1 INP0                      ZERO
+1315	ENUM	1	RX INT3_1 MIX1 INP2                      ZERO
+1316	ENUM	1	RX INT3_1 MIX1 INP1                      ZERO
+1317	ENUM	1	RX INT3_1 MIX1 INP0                      ZERO
+1318	ENUM	1	RX INT2_1 MIX1 INP2                      ZERO
+1319	ENUM	1	RX INT2_1 MIX1 INP1                      ZERO
+1320	ENUM	1	RX INT2_1 MIX1 INP0                      ZERO
+1321	ENUM	1	RX INT1_1 MIX1 INP2                      ZERO
+1322	ENUM	1	RX INT1_1 MIX1 INP1                      ZERO
+1323	ENUM	1	RX INT1_1 MIX1 INP0                      ZERO
+1324	ENUM	1	RX INT0_1 MIX1 INP2                      ZERO
+1325	ENUM	1	RX INT0_1 MIX1 INP1                      ZERO
+1326	ENUM	1	RX INT0_1 MIX1 INP0                      ZERO
+1327	ENUM	1	RX INT8_2 MUX                            ZERO
+1328	ENUM	1	RX INT7_2 MUX                            ZERO
+1329	ENUM	1	RX INT6_2 MUX                            ZERO
+1330	ENUM	1	RX INT5_2 MUX                            ZERO
+1331	ENUM	1	RX INT4_2 MUX                            ZERO
+1332	ENUM	1	RX INT3_2 MUX                            ZERO
+1333	ENUM	1	RX INT2_2 MUX                            ZERO
+1334	ENUM	1	RX INT1_2 MUX                            ZERO
+1335	ENUM	1	RX INT0_2 MUX                            ZERO
+1336	ENUM	1	SPL SRC3 MUX                             ZERO
+1337	ENUM	1	SPL SRC2 MUX                             ZERO
+1338	ENUM	1	SPL SRC1 MUX                             ZERO
+1339	ENUM	1	SPL SRC0 MUX                             ZERO
+1340	ENUM	1	SLIM RX7 MUX                             ZERO
+1341	ENUM	1	SLIM RX6 MUX                             ZERO
+1342	ENUM	1	SLIM RX5 MUX                             ZERO
+1343	ENUM	1	SLIM RX4 MUX                             ZERO
+1344	ENUM	1	SLIM RX3 MUX                             ZERO
+1345	ENUM	1	SLIM RX2 MUX                             ZERO
+1346	ENUM	1	SLIM RX1 MUX                             ZERO
+1347	ENUM	1	SLIM RX0 MUX                             ZERO
+1348	ENUM	1	SLIMBUS_0_TX LSM Function                None
+1349	ENUM	1	SLIMBUS_1_TX LSM Function                None
+1350	ENUM	1	SLIMBUS_2_TX LSM Function                None
+1351	ENUM	1	SLIMBUS_3_TX LSM Function                None
+1352	ENUM	1	SLIMBUS_4_TX LSM Function                None
+1353	ENUM	1	SLIMBUS_5_TX LSM Function                None
+1354	ENUM	1	TERT_MI2S_TX LSM Function                None
+1355	ENUM	1	AANC_SLIM_0_RX MUX                       ZERO
+1356	INT	1	Voc VSID                                 -1
+1357	INT	128	App Type Config                          0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1358	BOOL	1	Set Custom Stereo OnOff                  Off
+1359	INT	1	Internal FM RX Volume                    0
+1360	INT	1	Quat MI2S FM RX Volume                   0
+1361	INT	1	PRI MI2S LOOPBACK Volume                 0
+1362	INT	1	Tert MI2S LOOPBACK Volume                0
+1363	INT	1	Internal HFP RX Volume                   0
+1364	INT	1	PRI AUXPCM LOOPBACK Volume               0
+1365	INT	1	SEC AUXPCM LOOPBACK Volume               0
+1366	INT	8	Playback Device Channel Map              80 80 1 236 127 0 0 0
+1367	INT	1	Get RMS                                  -1
+1368	BOOL	1	MultiMedia1 EQ Enable                    On
+1369	BOOL	1	MultiMedia2 EQ Enable                    On
+1370	BOOL	1	MultiMedia3 EQ Enable                    On
+1371	INT	1	MultiMedia1 EQ Band Count                -1
+1372	INT	1	MultiMedia2 EQ Band Count                -1
+1373	INT	1	MultiMedia3 EQ Band Count                -1
+1374	INT	5	MultiMedia1 EQ Band1                     0 0 0 0 0
+1375	INT	5	MultiMedia1 EQ Band2                     0 0 0 0 0
+1376	INT	5	MultiMedia1 EQ Band3                     0 0 0 0 0
+1377	INT	5	MultiMedia1 EQ Band4                     0 0 0 0 0
+1378	INT	5	MultiMedia1 EQ Band5                     0 0 0 0 0
+1379	INT	5	MultiMedia1 EQ Band6                     0 0 0 0 0
+1380	INT	5	MultiMedia1 EQ Band7                     0 0 0 0 0
+1381	INT	5	MultiMedia1 EQ Band8                     0 0 0 0 0
+1382	INT	5	MultiMedia1 EQ Band9                     0 0 0 0 0
+1383	INT	5	MultiMedia1 EQ Band10                    0 0 0 0 0
+1384	INT	5	MultiMedia1 EQ Band11                    0 0 0 0 0
+1385	INT	5	MultiMedia1 EQ Band12                    0 0 0 0 0
+1386	INT	5	MultiMedia2 EQ Band1                     0 0 0 0 0
+1387	INT	5	MultiMedia2 EQ Band2                     0 0 0 0 0
+1388	INT	5	MultiMedia2 EQ Band3                     0 0 0 0 0
+1389	INT	5	MultiMedia2 EQ Band4                     0 0 0 0 0
+1390	INT	5	MultiMedia2 EQ Band5                     0 0 0 0 0
+1391	INT	5	MultiMedia2 EQ Band6                     0 0 0 0 0
+1392	INT	5	MultiMedia2 EQ Band7                     0 0 0 0 0
+1393	INT	5	MultiMedia2 EQ Band8                     0 0 0 0 0
+1394	INT	5	MultiMedia2 EQ Band9                     0 0 0 0 0
+1395	INT	5	MultiMedia2 EQ Band10                    0 0 0 0 0
+1396	INT	5	MultiMedia2 EQ Band11                    0 0 0 0 0
+1397	INT	5	MultiMedia2 EQ Band12                    0 0 0 0 0
+1398	INT	5	MultiMedia3 EQ Band1                     0 0 0 0 0
+1399	INT	5	MultiMedia3 EQ Band2                     0 0 0 0 0
+1400	INT	5	MultiMedia3 EQ Band3                     0 0 0 0 0
+1401	INT	5	MultiMedia3 EQ Band4                     0 0 0 0 0
+1402	INT	5	MultiMedia3 EQ Band5                     0 0 0 0 0
+1403	INT	5	MultiMedia3 EQ Band6                     0 0 0 0 0
+1404	INT	5	MultiMedia3 EQ Band7                     0 0 0 0 0
+1405	INT	5	MultiMedia3 EQ Band8                     0 0 0 0 0
+1406	INT	5	MultiMedia3 EQ Band9                     0 0 0 0 0
+1407	INT	5	MultiMedia3 EQ Band10                    0 0 0 0 0
+1408	INT	5	MultiMedia3 EQ Band11                    0 0 0 0 0
+1409	INT	5	MultiMedia3 EQ Band12                    0 0 0 0 0
+1410	INT	2	MSM ASphere Set Param                    -1 -1
+1411	INT	1	SRS TruMedia                             0
+1412	INT	1	SRS TruMedia HDMI                        0
+1413	INT	1	SRS TruMedia I2S                         0
+1414	INT	1	SRS TruMedia MI2S                        0
+1415	BOOL	1	DS2 OnOff                                Off
+1416	INT	3	Device PP Params                         0 0 0
+1417	BOOL	1	Set HPX OnOff                            Off
+1418	BYTE	26	Sound Focus Voice Tx SLIMBUS_0           0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1419	BYTE	376	Source Tracking Voice Tx SLIMBUS_0       0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1420	BYTE	26	Sound Focus Audio Tx SLIMBUS_0           0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1421	BYTE	376	Source Tracking Audio Tx SLIMBUS_0       0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1422	BYTE	26	Sound Focus Voice Tx TERT_MI2S           0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1423	BYTE	376	Source Tracking Voice Tx TERT_MI2S       0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1424	BYTE	26	Sound Focus Audio Tx TERT_MI2S           0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1425	BYTE	376	Source Tracking Audio Tx TERT_MI2S       0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+1426	Unknown	0	HDMI EDID                               
+1427	ENUM	1	RT_PROXY_1_TX SetCalMode                 CAL_MODE_NONE
+1428	ENUM	1	SLIM_4_TX Format                         UNPACKED
+1429	ENUM	1	SLIM_2_RX SetCalMode                     CAL_MODE_DEFAULT
+1430	ENUM	1	RT_PROXY_1_RX SetCalMode                 CAL_MODE_NONE
+1431	ENUM	1	TERT MI2S RX Format                      LPCM
+1432	ENUM	1	SEC MI2S TX Format                       LPCM
+1433	ENUM	1	HDMI RX Format                           LPCM
+1434	INT	1	HDMI RX CA                               0
+1435	INT	8	Playback Channel Map0                    0 0 0 0 0 0 0 0
+1436	INT	128	Audio Stream 0 App Type Cfg              69938 110 48000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1437	INT	1	Playback 0 Volume                        0
+1438	INT	8	Playback Channel Map1                    0 0 0 0 0 0 0 0
+1439	INT	128	Audio Stream 1 App Type Cfg              0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1440	INT	1	Playback 1 Volume                        0
+1441	INT	8	Playback Channel Map4                    0 0 0 0 0 0 0 0
+1442	INT	128	Audio Stream 4 App Type Cfg              0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1443	INT	1	Playback 4 Volume                        0
+1444	INT	2	Compress Playback 9 Volume               8192 8192
+1445	INT	128	Audio Effects Config 9                   -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1446	INT	128	Query Audio Effect Param 9               -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1447	INT	128	Audio Stream 9 Dec Params                0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1448	INT	5	Audio Stream 9 App Type Cfg              0 0 0 0 0
+1449	INT	8	Playback Channel Map9                    0 0 0 0 0 0 0 0
+1450	INT	8	Playback Channel Map15                   0 0 0 0 0 0 0 0
+1451	INT	128	Audio Stream 15 App Type Cfg             69937 15 48000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1452	INT	1	Playback 15 Volume                       0
+1453	INT	2	Compress Playback 17 Volume              8192 8192
+1454	INT	128	Audio Effects Config 17                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1455	INT	128	Query Audio Effect Param 17              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1456	INT	128	Audio Stream 17 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1457	INT	5	Audio Stream 17 App Type Cfg             0 0 0 0 0
+1458	INT	8	Playback Channel Map17                   0 0 0 0 0 0 0 0
+1459	INT	2	Compress Playback 18 Volume              8192 8192
+1460	INT	128	Audio Effects Config 18                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1461	INT	128	Query Audio Effect Param 18              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1462	INT	128	Audio Stream 18 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1463	INT	5	Audio Stream 18 App Type Cfg             0 0 0 0 0
+1464	INT	8	Playback Channel Map18                   0 0 0 0 0 0 0 0
+1465	INT	1	Playback 19 Volume                       0
+1466	INT	1	Playback 24 Volume                       -1
+1467	INT	8	Playback Channel Map32                   0 0 0 0 0 0 0 0
+1468	INT	128	Audio Stream 32 App Type Cfg             0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1469	INT	1	Playback 32 Volume                       0
+1470	INT	2	Compress Playback 34 Volume              8192 8192
+1471	INT	128	Audio Effects Config 34                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1472	INT	128	Query Audio Effect Param 34              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1473	INT	128	Audio Stream 34 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1474	INT	5	Audio Stream 34 App Type Cfg             0 0 0 0 0
+1475	INT	8	Playback Channel Map34                   0 0 0 0 0 0 0 0
+1476	INT	2	Compress Playback 35 Volume              8192 8192
+1477	INT	128	Audio Effects Config 35                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1478	INT	128	Query Audio Effect Param 35              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1479	INT	128	Audio Stream 35 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1480	INT	5	Audio Stream 35 App Type Cfg             0 0 0 0 0
+1481	INT	8	Playback Channel Map35                   0 0 0 0 0 0 0 0
+1482	INT	2	Compress Playback 36 Volume              8192 8192
+1483	INT	128	Audio Effects Config 36                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1484	INT	128	Query Audio Effect Param 36              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1485	INT	128	Audio Stream 36 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1486	INT	5	Audio Stream 36 App Type Cfg             0 0 0 0 0
+1487	INT	8	Playback Channel Map36                   0 0 0 0 0 0 0 0
+1488	INT	2	Compress Playback 37 Volume              8192 8192
+1489	INT	128	Audio Effects Config 37                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1490	INT	128	Query Audio Effect Param 37              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1491	INT	128	Audio Stream 37 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1492	INT	5	Audio Stream 37 App Type Cfg             0 0 0 0 0
+1493	INT	8	Playback Channel Map37                   0 0 0 0 0 0 0 0
+1494	INT	2	Compress Playback 38 Volume              8192 8192
+1495	INT	128	Audio Effects Config 38                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1496	INT	128	Query Audio Effect Param 38              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1497	INT	128	Audio Stream 38 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1498	INT	5	Audio Stream 38 App Type Cfg             0 0 0 0 0
+1499	INT	8	Playback Channel Map38                   0 0 0 0 0 0 0 0
+1500	INT	2	Compress Playback 39 Volume              8192 8192
+1501	INT	128	Audio Effects Config 39                  -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1502	INT	128	Query Audio Effect Param 39              -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+1503	INT	128	Audio Stream 39 Dec Params               0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+1504	INT	5	Audio Stream 39 App Type Cfg             0 0 0 0 0
+1505	INT	8	Playback Channel Map39                   0 0 0 0 0 0 0 0
+1506	ENUM	1	Speaker Function                         On
+1507	ENUM	1	SLIM_0_RX Channels                       One
+1508	ENUM	1	SLIM_5_RX Channels                       One
+1509	ENUM	1	SLIM_6_RX Channels                       One
+1510	ENUM	1	SLIM_0_TX Channels                       Two
+1511	ENUM	1	SLIM_1_TX Channels                       One
+1512	ENUM	1	AUX PCM SampleRate                      
+1513	ENUM	1	HDMI_RX Channels                         Two
+1514	ENUM	1	SLIM_0_RX Format                         S16_LE
+1515	ENUM	1	SLIM_5_RX Format                         S16_LE
+1516	ENUM	1	SLIM_6_RX Format                         S16_LE
+1517	ENUM	1	SLIM_0_RX SampleRate                     KHZ_48
+1518	ENUM	1	SLIM_5_RX SampleRate                     KHZ_48
+1519	ENUM	1	SLIM_6_RX SampleRate                     KHZ_48
+1520	ENUM	1	HDMI_RX Bit Format                       S16_LE
+1521	ENUM	1	PROXY_RX Channels                        Two
+1522	ENUM	1	HDMI_RX SampleRate                       KHZ_48
+1523	ENUM	1	SLIM_0_TX SampleRate                     KHZ_48
+1524	ENUM	1	SLIM_0_TX Format                         S16_LE
+1525	ENUM	1	VI_FEED_TX Channels                      Two

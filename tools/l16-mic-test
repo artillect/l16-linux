@@ -1,0 +1,31 @@
+#!/bin/sh
+# Record the stereo mics through the user's PulseAudio in buzz-cued phases and print
+# the RMS of each channel per half second.
+# usage: l16-mic-test <phases> <seconds per phase>
+P=${1:-2}; L=${2:-4}
+U=$(id -u riley)
+V=$(grep -l dw7800-haptics /sys/class/input/event*/device/name | head -1 | sed 's|/sys/class/input/\(event[0-9]*\)/.*|/dev/input/\1|')
+buzz() { python3 /usr/local/bin/ffrumble.py $V $1 > /dev/null 2>&1; }
+rm -f /tmp/l16-mic-test.raw
+su riley -c "XDG_RUNTIME_DIR=/run/user/$U parecord --raw --format=s16le --rate=48000 --channels=2 /tmp/l16-mic-test.raw" &
+sleep 0.5
+i=0
+while [ $i -lt $P ]; do
+	buzz 150 &
+	sleep $L
+	i=$((i + 1))
+done
+buzz 120; sleep 0.1; buzz 120
+pkill -f "parecord --raw" 
+sleep 0.3
+python3 - <<'PY'
+import math, struct
+d = open('/tmp/l16-mic-test.raw', 'rb').read()
+s = struct.unpack('<%dh' % (len(d) // 2), d[:len(d) // 4 * 4])
+n = 24000
+print('   t   ch0   ch1')
+for i in range(0, len(s) // 2, n):
+    a = s[2 * i:2 * (i + n):2]; b = s[2 * i + 1:2 * (i + n):2]
+    r = lambda x: int(math.sqrt(sum(v * v for v in x) / max(len(x), 1)))
+    print('%4.1f %5d %5d' % (i / 48000, r(a), r(b)))
+PY

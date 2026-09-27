@@ -1,0 +1,34 @@
+#!/sbin/openrc-run
+# The L16's PMIC RTC is read-only (stock never writes it either) and counts from an
+# arbitrary epoch. Like stock Android's time daemon, keep the offset between real time
+# and the RTC in a file: set the clock from RTC + offset at boot, save it at shutdown.
+# chrony corrects the clock over the network whenever it can.
+
+description="Set the system clock from the read-only RTC plus a saved offset"
+
+OFFSET_FILE=/var/lib/l16-rtc-offset
+RTC=/sys/class/rtc/rtc0/since_epoch
+# anything earlier than this is not a real time (the RTC epoch is ~1970)
+VALID_AFTER=1767225600	# 2026-01-01
+
+depend() {
+	need localmount
+	before chronyd
+}
+
+start() {
+	ebegin "Setting the clock from the RTC and saved offset"
+	if [ -r "$OFFSET_FILE" ] && [ -r "$RTC" ]; then
+		date -u -s "@$(( $(cat $RTC) + $(cat $OFFSET_FILE) ))" > /dev/null
+	fi
+	eend $?
+}
+
+stop() {
+	now=$(date +%s)
+	if [ "$now" -gt "$VALID_AFTER" ] && [ -r "$RTC" ]; then
+		ebegin "Saving the RTC offset"
+		echo $(( now - $(cat $RTC) )) > "$OFFSET_FILE"
+		eend $?
+	fi
+}
