@@ -1,0 +1,74 @@
+# Reference: <https://postmarketos.org/devicepkg>
+# Maintainer: Riley <oreo4455@gmail.com>
+pkgname=device-light-l16
+pkgdesc="Light L16"
+pkgver=1
+pkgrel=0
+url="https://postmarketos.org"
+license="MIT"
+arch="aarch64"
+options="!check !archcheck"
+depends="
+	linux-firmware-ath10k
+	linux-firmware-qca
+	linux-firmware-qcom
+	linux-light-l16
+	mkbootimg
+	postmarketos-base
+	"
+makedepends="devicepkg-dev"
+subpackages="
+	$pkgname-phosh
+	"
+source="
+	50-light-l16-suspend.rules
+	90-device-light-l16.rules
+	HiFi.conf
+	L16.conf
+	deviceinfo
+	initfs-hook.sh
+	l16-mics.pa
+	modules-initfs
+	phoc.ini
+	"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+
+	# the user at the device may suspend it even while other sessions (ssh) exist
+	install -Dm644 "$srcdir"/50-light-l16-suspend.rules \
+		"$pkgdir"/usr/share/polkit-1/rules.d/50-light-l16-suspend.rules
+
+	# UCM for the "Light L16" card (apq8096 machine driver)
+	install -Dm644 "$srcdir"/L16.conf "$srcdir"/HiFi.conf \
+		-t "$pkgdir"/usr/share/alsa/ucm2/Light/L16
+	mkdir -p "$pkgdir"/usr/share/alsa/ucm2/conf.d/apq8096
+	ln -s ../../Light/L16/L16.conf \
+		"$pkgdir/usr/share/alsa/ucm2/conf.d/apq8096/Light L16.conf"
+
+	# front and rear microphones as separate mono inputs
+	install -Dm644 "$srcdir"/l16-mics.pa \
+		"$pkgdir"/etc/pulse/default.pa.d/light-l16-mics.pa
+}
+
+phosh() {
+	install_if="$pkgname=$pkgver-r$pkgrel postmarketos-ui-phosh"
+
+	install -Dm644 "$srcdir"/phoc.ini \
+		"$subpkgdir"/usr/share/phosh/phoc.ini
+}
+sha512sums="
+c873fb95a4ae4fed4529ff61080d5487918e7ad9e79ec3475981fec648863dfda460fafa081b3f1b94fe42f37381d5221776bb645bbb8908ebc4a2cd8ec39415  50-light-l16-suspend.rules
+7b4783a45c6c2f479cde0187315a3c745eebb896b92c50b875bc9ae159025ba3ec07464eb4464eccda267b79eb5081aebd900f8f0a3a81c86c20b541e75b1a38  90-device-light-l16.rules
+e3c9490fc8fc8f8c1019635711c6b97a6ce4b78f5a6fbe735eb1fdee633146d467e351018492eaac35eb1940a3327927e8a51d818d42d81ac928968a1f961ba6  HiFi.conf
+97b14e6ab622d1fc3fa2841dc9ea6c3b53328675b8910a64eabc8c99c28b7bebf3281d7333bab8ff19947c8645ab28c6aa62a2496433cd9c7c358829c7468a4d  L16.conf
+3eb7cd89ca08639033460358d025af7b8cdaae384787f142eb3351add7de0655e12f693ae178d375f212241dbd859eaa3fd7c9590895ba62edad7b73fe962038  deviceinfo
+01da95e84f883dc0e1308220bfb2e2fb8f9a233d130e0943bbcb564b64bb9240eb66ffd9259aff1f9df67ff7d9b4171b993c36e924e9f45c0aef75268e808594  initfs-hook.sh
+3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
+b669fa078424f136be06dfece7fa279aae244a960c5d0349e4ae6cefd8d3f566d29e14d006175d248dedf7476d6b15487522368c494a541689f41d916b471b58  modules-initfs
+032b3770c95904db7f795263b6a34de186708c1ed85b5845bffb0b46f00f3a902521ebedb388b6d2e8a45aff22c7ad07cf8a3b2e77d7a934fc1386ca7944cc22  phoc.ini
+"

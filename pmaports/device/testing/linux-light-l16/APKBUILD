@@ -1,0 +1,94 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# Kernel config: the config the L16 port was tested with (msm8996-mainline arm64
+# defconfig + the L16 fragment); patches: l16-linux kernel/patches (mkpatches.sh)
+_flavor="light-l16"
+pkgname=linux-$_flavor
+pkgver=6.19.5
+pkgrel=0
+pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
+arch="aarch64"
+_carch="arm64"
+url="https://gitlab.com/msm8996-mainline/linux"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps pmb:cross-native"
+makedepends="
+	bash
+	bison
+	findutils
+	flex
+	installkernel
+	openssl-dev
+	perl
+	python3
+	zstd
+	"
+
+# Source
+_tag=v${pkgver//_/-}-msm8996
+source="
+	linux-$_tag.tar.gz::$url/-/archive/$_tag/linux-$_tag.tar.gz
+	config-$_flavor.$arch
+	0001-arm64-dts-qcom-add-light-l16.patch
+	0002-drm-panel-add-innolux-nt35695-l16.patch
+	0003-backlight-add-lm3630-l16.patch
+	0004-input-add-l16-touchstrip-and-dw7800.patch
+	0005-usb-misc-add-anx7688.patch
+	0006-soc-qcom-add-l16-canary.patch
+	0007-power-supply-smbchg-l16.patch
+	0008-power-supply-qcom-fg-current-sign.patch
+	0009-usb-gadget-u-ether-keep-endpoints.patch
+	0010-drm-msm-mdp5-first-pairable-mixer.patch
+	0011-drm-msm-mdp5-stale-hwpipe.patch
+	0012-clk-qcom-gcc-msm8996-pcie0-retention.patch
+	0013-input-pm8941-pwrkey-abort-suspend.patch
+	0014-iio-qcom-smgr-metadata-array.patch
+	0015-iio-qcom-smgr-l16-light.patch
+	0016-asoc-wcd9335-dec-volume.patch
+	"
+builddir="$srcdir/linux-$_tag"
+
+prepare() {
+	default_prepare
+	cp "$srcdir/config-$_flavor.$CARCH" .config
+	make ARCH="$_carch" olddefconfig
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-$_flavor"
+}
+
+package() {
+	install -Dm644 "$builddir/arch/$_carch/boot/Image.gz" \
+		"$pkgdir/boot/vmlinuz"
+
+	install -D "$builddir/include/config/kernel.release" \
+		"$pkgdir/usr/share/kernel/$_flavor/kernel.release"
+
+	make modules_install dtbs_install \
+		ARCH="$_carch" \
+		INSTALL_MOD_PATH="$pkgdir" \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+}
+sha512sums="
+dd30dd113ad9f0b4ab3771ea655de2becce7ddaf5066d2f860b7bb1eb78573137313191d9da740b152348f9f89894ace2bb94fb195e340f7b6dabedeebbc929f  linux-v6.19.5-msm8996.tar.gz
+f622222ce6379d9383362903c738ce46781aa54daf8b8e1030b9750db9a7409352ecf1e526cca3acc3c38aa057c7b0a2a4177b44aae16f5962d6d613ff149aa8  config-light-l16.aarch64
+b9558e0da9bdf5aec42d3795e80357b56f6de360705516c022076966c515e75d57732d195d3d77402c8366df05f162a8d54e27a974f5d9cc51188a8b210cce58  0001-arm64-dts-qcom-add-light-l16.patch
+728f52d2e5159989f4216a54be4bfde81495080eb14c72b7993e37906ac4a4317166a4a798a2f374ba5dbf0644c89fc5765c78eb6251c4ea042502580df65638  0002-drm-panel-add-innolux-nt35695-l16.patch
+bc0767edd3df6550d6d8be31712940a133691477c74d552cfe7a48bcdcf70991dd1d7b9248f6a9a816cc84df74f9d78e5fcd6c5f243cf799cee8b9fb37c782c5  0003-backlight-add-lm3630-l16.patch
+66a666bdae3fbefbb05649e99a5aac9b24682ff1c7e3fab8984983925302a6fad5613f4aef30e0381db25ed7fa3677c7cf0a98bff981ca854c7cb596249bb394  0004-input-add-l16-touchstrip-and-dw7800.patch
+50f7e593c4bf7b73e848b26757bf63c9fac0ac2518e072ab8320c1faeede84a1bd74f9fe82bfaf9dd3139ce9a1f549baa898974f3cb4e9d5c788680f964a28bc  0005-usb-misc-add-anx7688.patch
+94c861b402e82979bb08ac890f88458b32fa0fdb021779b3f74aa601ab529eda34bda5e3a3a55d1d2a35efaad64d9c949a2619e4ee6d9932e4e7a25dfdbc9eb8  0006-soc-qcom-add-l16-canary.patch
+ae13038c43afa361ba83269cf4ac4f9bd1d5b04f638ce2454171f347ef2858d95167690630453fe4f5664c8f4fe239eddc61c16b2302e009d862ff683e5e9c1d  0007-power-supply-smbchg-l16.patch
+dad17a0ef9406e075cd8aa0c2c1b8ae43eaff9425dd6eb9bf12d087deb8626b0d1b93e1bf3127e3f828bcc881503d137101a26544b0d633b9f8da6bd92d0e2f9  0008-power-supply-qcom-fg-current-sign.patch
+2b4586f76972093ce059fbc2acb3d9a4827e176028948406a94f37ec1059961c6ec4686080957d4196a349c394ae768cbef225252139e5b3fab6bcb4fd29370b  0009-usb-gadget-u-ether-keep-endpoints.patch
+09ee537f537045aedfe32e4ff35b8d0c47f39baae1ed61cc1c2899929100d4f48bed77584db8492f37e668f674e7bdd7606a388e451ab9738a6f6de155c5a7f9  0010-drm-msm-mdp5-first-pairable-mixer.patch
+a9583d00dabdf2103ed5f63a08024db5cb4eb06b3eb699bcf4c799cb1a4e5d95c95ff66240afa02d667c1cca60830bb12444ded8f3e7f7b541eb74b8b8e5c4d2  0011-drm-msm-mdp5-stale-hwpipe.patch
+64a0f626ae04fd8375ccec73789a5f42a52313ec5aeaf8845184fa90d083335f2f1f5af21414043f75d8b6483d5ce09cfae1de82341881690318bc8fdc6d7578  0012-clk-qcom-gcc-msm8996-pcie0-retention.patch
+cfad5dcc8c8fc84a8ff44228d9a30675a25116500c31df6a74f4f9d1f646ee5d12df6abfe714a5535792b8cf073ca0f1d78c0175097cd7b071e851e1126f80ba  0013-input-pm8941-pwrkey-abort-suspend.patch
+3e419bb52aaf6fc67f5c683005b8dde1d38877ef5978023061175e935fbddc9f034ce1d6737cb33cfd190ceacd14c745a082b2cb6ffe21bc5318714fc401c9c6  0014-iio-qcom-smgr-metadata-array.patch
+d728d95b22ef2d5eceb15eb2af9e33fdae6ad1711ca680b000b8609a1637fd6320aacc3dbad0b3397440e2399e0e18d4e5c2a070b26bcfb9dbd234d32373c7ab  0015-iio-qcom-smgr-l16-light.patch
+d5bf6155d5aaf388c28e35443c12a8eb50128e5182a6389cd95001fa63f2debff06a1e7fac3c2029bc2172204544d56cd973bd6b79e8cf64a2920025c2839cae  0016-asoc-wcd9335-dec-volume.patch
+"

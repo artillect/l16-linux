@@ -1,0 +1,20 @@
+# Light L16
+
+# SLPI accelerometer (BMI160 via qcom_smgr). Relative to the panel's native (portrait)
+# orientation, as iio-sensor-proxy/Phosh expect: the camera held upright in landscape reads
+# as "right-up", matching the panel rotation. X/Y as the driver's own in_mount_matrix
+# (from the sensor registry); Z flipped (lying screen up read face-down with it).
+SUBSYSTEM=="iio", ATTR{name}=="qcom-smgr-accel", ENV{ACCEL_MOUNT_MATRIX}="0, -1, 0; -1, 0, 0; 0, 0, -1"
+
+# feedbackd: the L16 vibration motor (DW7800)
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT}=="1", SUBSYSTEMS=="input", ATTRS{name}=="dw7800-haptics", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
+
+# L16: l16-suspend-on-blank (running as the logged-in user, group wheel) re-arms the
+# RTC alarm when a power-button press lands while a suspend is starting.
+ACTION=="add", SUBSYSTEM=="rtc", KERNEL=="rtc0", RUN+="/bin/chgrp wheel /sys%p/wakealarm", RUN+="/bin/chmod g+w /sys%p/wakealarm"
+
+# L16 touchscreen (Synaptics RMI4). In landscape (phoc transform 270) the bottom screen
+# edge is raw X = 0, and a swipe from the bezel reports exactly 0, which maps onto the
+# output's far boundary: the touch lands on no surface and Phosh's home bar swipe is
+# missed. Pull raw X in by 1% so the edge lands a few pixels inside the screen.
+ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="Synaptics s2726", ENV{LIBINPUT_CALIBRATION_MATRIX}="0.99 0 0.01 0 1 0"
