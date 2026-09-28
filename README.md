@@ -12,7 +12,7 @@ Light L16 camera (codename `lfc`, APQ8096), dual-booted with the stock LightOS
 > [docs/wiki-light-l16.txt](docs/wiki-light-l16.txt)). There is no warranty of any
 > kind.
 >
-> Most of this port was written by an AI (Claude, by Anthropic): the kernel drivers,
+> Most of this port was written by an AI (Claude Opus 5.5, by Anthropic): the kernel drivers,
 > device tree, packaging and docs. A human tested it on real hardware along the way.
 > Expect rough edges. postmarketOS doesn't accept AI-generated contributions, so this
 > lives here rather than upstream.

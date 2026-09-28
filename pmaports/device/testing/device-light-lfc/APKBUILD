@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=14
+pkgrel=15
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -40,6 +40,8 @@ source="
 	L16.conf
 	deviceinfo
 	initfs-hook.sh
+	l16-linux.list
+	l16-linux@artillect-6ab9d2e0.rsa.pub
 	l16-mics.pa
 	light-lfc-bootmode.initd
 	light-lfc-bootsig
@@ -104,6 +106,12 @@ package() {
 		"$pkgdir"/usr/libexec/light-lfc-bootsig
 	install -Dm644 "$srcdir"/light-lfc-postprocess.sh \
 		"$pkgdir"/usr/share/light-lfc/postprocess.sh
+
+	# updates: the l16-linux package repository and its signing key
+	install -Dm644 "$srcdir"/l16-linux.list \
+		-t "$pkgdir"/lib/apk/repositories.d
+	install -Dm644 "$srcdir"/l16-linux@artillect-6ab9d2e0.rsa.pub \
+		-t "$pkgdir"/etc/apk/keys
 }
 
 openrc() {
@@ -163,6 +171,8 @@ bf64c5c716e7072ecdc6e3019fbc14dae0877ab8fb04d8db8dc6c6386f4e71b61b6433f906344242
 97b14e6ab622d1fc3fa2841dc9ea6c3b53328675b8910a64eabc8c99c28b7bebf3281d7333bab8ff19947c8645ab28c6aa62a2496433cd9c7c358829c7468a4d  L16.conf
 ca5622d0cc254d776a1111ce3fc88dd9b03b781765c3276f1241f0685f0e4302f95b3b9ecf8948a891d9231c0a61f81ecea4251f486e3fa9afa0aab82e497961  deviceinfo
 01da95e84f883dc0e1308220bfb2e2fb8f9a233d130e0943bbcb564b64bb9240eb66ffd9259aff1f9df67ff7d9b4171b993c36e924e9f45c0aef75268e808594  initfs-hook.sh
+0779d528d56ad004960318affd715fbe57901a1793923522d0bd03d1ac63eae3de3739331b62b8376c5f116dbea170a1e477c12e73dc3c9685aad4b2e8d33df3  l16-linux.list
+b985667d6242d84247b88aed2f931b71250257bab199355f3ed9376065ec4a574670795a2938b19e5aeee9cceb9ec92d0596d70b6dc01ab83e69e05ce5a08bfb  l16-linux@artillect-6ab9d2e0.rsa.pub
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
 b654dae938fb3bccf624a8e097734742c693d47d7ec7a35a5675a20e49cb3c16ff5c500656f1a46d2a0d09e13ece3c13b9cc49e7e6948336d1409c7c694d285c  light-lfc-bootmode.initd
 1871f2c94d4df3e71e077288391ebbd2cd511848abc065c1fe2e0cf548da1560a07240fefe3fa08b56e409dc504573feffb9817f0e953e64fbd7afed1704a921  light-lfc-bootsig
