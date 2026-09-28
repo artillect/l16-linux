@@ -72,14 +72,14 @@ readq() {
 	echo "$type $len $5 $6 $7 $8 $rest"
 }
 
-# wait up to $2 tenths of a second for a message of type $1; print it
+# wait up to $2 tenths of a second of empty queue for a message of type $1; print it.
+# Other messages (AE pushes arrive every frame) are read straight through, not waited on.
 waitq() {
 	i=0
 	while [ $i -lt "$2" ]; do
 		m=$(readq)
 		[ "${m%% *}" = "$1" ] && { echo "$m"; return 0; }
-		sleep 0.1
-		i=$((i + 1))
+		case "$m" in 2\ *|none*) sleep 0.1; i=$((i + 1)) ;; esac
 	done
 	return 1
 }
