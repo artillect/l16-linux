@@ -1,0 +1,37 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# Chiaro: open tools for Light L16 captures, by shinf1x (MIT). Packaged unmodified from
+# their tagged releases, command-line apps only for now (the gallery is a desktop GUI).
+pkgname=chiaro
+pkgver=0.4.0
+pkgrel=0
+pkgdesc="Tools for decoding, fusing and stacking Light L16 captures (LRI files)"
+url="https://github.com/shinf1x/chiaro"
+arch="aarch64"
+license="MIT"
+makedepends="cargo cargo-auditable"
+options="net !check"	# net: cargo fetches the crates in prepare()
+source="$pkgname-$pkgver.tar.gz::https://github.com/shinf1x/chiaro/archive/refs/tags/$pkgver.tar.gz"
+
+_apps="chiaro-fuse chiaro-hotpixel chiaro-stack-app"
+
+prepare() {
+	default_prepare
+	rm -f rust-toolchain.toml
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	for _app in $_apps; do
+		cargo auditable build --frozen --release -p $_app
+	done
+}
+
+package() {
+	for _bin in chiaro-fuse chiaro-hotpixel chiaro-stack; do
+		install -Dm755 target/release/$_bin "$pkgdir"/usr/bin/$_bin
+	done
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+sha512sums="
+cc4be5e2f253cfcb5831c7d8fcd35338cadaa3e5ef510735f1f636506fe59f023b0f5c2f0a6b7c9528332ec1e42a03bf77c79764248c3e8bcb7105460a3f4a0d  chiaro-0.4.0.tar.gz
+"

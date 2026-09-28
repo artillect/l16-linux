@@ -17,6 +17,14 @@ done
 cp "$REPO"/kernel/patches/*.patch "$REPO/kernel/config-light-lfc.aarch64" \
 	"$DST/linux-light-lfc/"
 
+# other packages (not device-specific) go to main/
+for pkg in chiaro; do
+	rm -rf "${PMAPORTS:?}/main/$pkg"
+	mkdir -p "$PMAPORTS/main/$pkg"
+	cp -r "$REPO/pmaports/main/$pkg/." "$PMAPORTS/main/$pkg/"
+	find "$PMAPORTS/main/$pkg" -type f -exec sed -i 's/\r$//' {} +
+done
+
 # strip CR in case a file was edited on Windows
 find "$DST/device-light-lfc" "$DST/linux-light-lfc" -type f -exec sed -i 's/\r$//' {} +
 echo "synced to $DST"
