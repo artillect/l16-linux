@@ -109,3 +109,8 @@ If `attach` fails to load `vhci_hcd`, run `sudo modprobe vhci_hcd` in WSL first.
 
 - XDA: [Light L16 Firmware](https://xdaforums.com/t/light-l16-firmware.4403267/)
 - Discord: https://discord.gg/e3c2wEVDU4
+
+## License
+
+Kernel changes are GPL-2.0-only, docs CC BY-SA 4.0, everything else MIT; see
+[LICENSE](LICENSE).

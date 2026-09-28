@@ -1,0 +1,8 @@
+l16-linux is licensed per folder; the full texts are in LICENSES/.
+
+kernel/     GPL-2.0-only (LICENSES/GPL-2.0-only.txt): changes to the Linux kernel.
+docs/       CC-BY-SA-4.0 (LICENSES/CC-BY-SA-4.0.txt), like the postmarketOS wiki.
+Everything
+else        MIT (LICENSES/MIT.txt): the packages, scripts, configuration and tools.
+
+No firmware or other stock LightOS files are included.
