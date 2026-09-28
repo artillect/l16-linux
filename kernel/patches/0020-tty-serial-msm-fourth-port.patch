@@ -1,0 +1,24 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] tty: serial: msm: a fourth port, for the third ASIC's debug UART
+
+---
+diff --git a/drivers/tty/serial/msm_serial.c b/drivers/tty/serial/msm_serial.c
+index 2e999cb9c..1d1d3f782 100644
+--- a/drivers/tty/serial/msm_serial.c
++++ b/drivers/tty/serial/msm_serial.c
+@@ -1595,6 +1595,15 @@ static struct msm_port msm_uart_ports[] = {
+ 			.line = 2,
+ 		},
+ 	},
++	{
++		.uart = {
++			.iotype = UPIO_MEM,
++			.ops = &msm_uart_pops,
++			.flags = UPF_BOOT_AUTOCONF,
++			.fifosize = 64,
++			.line = 3,
++		},
++	},
+ };
+ 
+ #define MSM_UART_NR	ARRAY_SIZE(msm_uart_ports)

@@ -75,6 +75,8 @@ patch media-i2c-add-light-ccb "media: i2c: add the Light L16 camera ASICs as a C
 	drivers/media/i2c/Kconfig drivers/media/i2c/Makefile drivers/media/i2c/light-ccb.c
 patch slimbus-qcom-ngd-base-before-add "slimbus: qcom-ngd-ctrl: set the NGD base before adding its device" \
 	drivers/slimbus/qcom-ngd-ctrl.c
+patch tty-serial-msm-fourth-port "tty: serial: msm: a fourth port, for the third ASIC's debug UART" \
+	drivers/tty/serial/msm_serial.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)
