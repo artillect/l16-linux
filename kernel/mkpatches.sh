@@ -81,7 +81,7 @@ patch media-qcom-camss-l16-capture "media: qcom: camss: L16 captures (virtual ch
 	drivers/media/platform/qcom/camss/camss.h drivers/media/platform/qcom/camss/camss.c \
 	drivers/media/platform/qcom/camss/camss-csid-4-7.c drivers/media/platform/qcom/camss/camss-ispif.c \
 	drivers/media/platform/qcom/camss/camss-csid.c drivers/media/platform/qcom/camss/camss-csiphy.c \
-	drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c \
+	drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c drivers/media/platform/qcom/camss/camss-vfe-gen1.c \
 	drivers/media/platform/qcom/camss/camss-vfe.c drivers/media/platform/qcom/camss/camss-video.c
 
 # everything changed must be in exactly one patch

@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=17
+pkgrel=21
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -100,5 +100,5 @@ e3ed7b18db4bae18e05e549fd6ea654ee7fd74118f5a5cf826aabb5a9cdcc33c64d72a17c7b0b1da
 333f87dbcfe4228f80a28e98af03480c580c1ee150589b1295acca06e7c507e6ca62dfff4baf43d00e450aa611dd4a54796daa97eb6a8d4d80d5d6132e86ab9f  0018-media-i2c-add-light-ccb.patch
 044f43d58b9b35be4332f8e857c13ee50e8e9e3c57320f5e11b6ba2ec1ef956c4b5ed9647010f6c125ec6efd6df7a166fcd20a51332efe516cbbaf895421f403  0019-slimbus-qcom-ngd-base-before-add.patch
 772c2c3989297c736c2780816aae40c2c987f9130184ff306d3d6403c8b4e801c089969755ee0f11595d37f7ccf83a4825107982f1e9334cf761631780ccf529  0020-tty-serial-msm-fourth-port.patch
-8fe3fd4fe6bc875458cc1f8d82c3d19ef5e04c62ec0ae5d7cda44785d89443413d77af8d491aa1c784ac02791e782bbe81231001f5092e68cd5244c774eee785  0021-media-qcom-camss-l16-capture.patch
+ca60371d59c4a0218386283e9d12b5a134a459895057344c4ab131abae814fa7ea715da65234cb90583d208f756eb795cc4c6c139d83fcbe354678e14a955581  0021-media-qcom-camss-l16-capture.patch
 "

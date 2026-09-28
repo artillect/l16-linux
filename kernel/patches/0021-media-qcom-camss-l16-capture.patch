@@ -95,6 +95,19 @@ index 43d3b133f..f4f90004b 100644
  
  		fmt->field = V4L2_FIELD_NONE;
  		fmt->colorspace = V4L2_COLORSPACE_SRGB;
+diff --git a/drivers/media/platform/qcom/camss/camss-vfe-gen1.c b/drivers/media/platform/qcom/camss/camss-vfe-gen1.c
+index d84a375e3..0c2eb73c4 100644
+--- a/drivers/media/platform/qcom/camss/camss-vfe-gen1.c
++++ b/drivers/media/platform/qcom/camss/camss-vfe-gen1.c
+@@ -241,7 +241,7 @@ static int vfe_enable_output(struct vfe_line *line)
+ 		vfe->ops_gen1->enable_irq_wm_line(vfe, output->wm_idx[0], line->id, 1);
+ 		vfe->ops_gen1->bus_connect_wm_to_rdi(vfe, output->wm_idx[0], line->id);
+ 		vfe->ops_gen1->wm_set_subsample(vfe, output->wm_idx[0]);
+-		vfe->ops_gen1->set_rdi_cid(vfe, line->id, 0);
++		vfe->ops_gen1->set_rdi_cid(vfe, line->id, camss_vc * 4); /* L16: CID of the VC */
+ 		vfe->ops_gen1->wm_set_ub_cfg(vfe, output->wm_idx[0],
+ 					    (ub_size + 1) * output->wm_idx[0], ub_size);
+ 		vfe->ops_gen1->wm_frame_based(vfe, output->wm_idx[0], 1);
 diff --git a/drivers/media/platform/qcom/camss/camss-vfe.c b/drivers/media/platform/qcom/camss/camss-vfe.c
 index d9105f73f..3e1fb9977 100644
 --- a/drivers/media/platform/qcom/camss/camss-vfe.c
