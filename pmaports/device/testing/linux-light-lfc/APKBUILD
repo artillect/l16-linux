@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=3
+pkgrel=4
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -75,7 +75,7 @@ package() {
 }
 sha512sums="
 dd30dd113ad9f0b4ab3771ea655de2becce7ddaf5066d2f860b7bb1eb78573137313191d9da740b152348f9f89894ace2bb94fb195e340f7b6dabedeebbc929f  linux-v6.19.5-msm8996.tar.gz
-f622222ce6379d9383362903c738ce46781aa54daf8b8e1030b9750db9a7409352ecf1e526cca3acc3c38aa057c7b0a2a4177b44aae16f5962d6d613ff149aa8  config-light-lfc.aarch64
+3dbc24576b111cd1dc550415f429cacaca3bdcc507e4c8621fc191d69a11fda4f8a3b258d98a93a789c63321a51d761a5b93ec5ab02169d66926d156915f2d1c  config-light-lfc.aarch64
 e9239937c068abdcaa7fbb49a51adcf36bdb0067e27f448f3a86d4e0a02df121929136491d4e191e9813038af48dbdd0b5fb6475714a7e9e48150f4401f65b9f  0001-arm64-dts-qcom-add-light-l16.patch
 728f52d2e5159989f4216a54be4bfde81495080eb14c72b7993e37906ac4a4317166a4a798a2f374ba5dbf0644c89fc5765c78eb6251c4ea042502580df65638  0002-drm-panel-add-innolux-nt35695-l16.patch
 bc0767edd3df6550d6d8be31712940a133691477c74d552cfe7a48bcdcf70991dd1d7b9248f6a9a816cc84df74f9d78e5fcd6c5f243cf799cee8b9fb37c782c5  0003-backlight-add-lm3630-l16.patch
