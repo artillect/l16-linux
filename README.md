@@ -4,6 +4,19 @@ Mainline Linux (msm8996-mainline 6.19) and postmarketOS v26.06 with Phosh on the
 Light L16 camera (codename `lfc`, APQ8096), dual-booted with the stock LightOS
 (Android 6).
 
+> [!WARNING]
+> **This is an in-development port. Use it at your own risk.** Installing it rewrites
+> partitions on your camera, and a mistake can leave it unable to boot. It also runs
+> new, lightly tested drivers for things like charging and power, which could in
+> principle damage the hardware. Back up the stock partitions before you start (see
+> [docs/wiki-light-l16.txt](docs/wiki-light-l16.txt)). There is no warranty of any
+> kind.
+>
+> Most of this port was written by an AI (Claude, by Anthropic): the kernel drivers,
+> device tree, packaging and docs. A human tested it on real hardware along the way.
+> Expect rough edges. postmarketOS doesn't accept AI-generated contributions, so this
+> lives here rather than upstream.
+
 ## Status
 
 | Works | Not yet |
