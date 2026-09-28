@@ -19,6 +19,8 @@ ln -sf "$HOME/pmbootstrap/pmbootstrap.py" "$HOME/.local/bin/pmbootstrap"
 mkdir -p "$W/cache_git" "$HOME/.config"
 git clone -q --depth 1 -b "$CHANNEL" \
 	https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$W/cache_git/pmaports"
+# pmbootstrap reads channels.cfg from origin/main
+git -C "$W/cache_git/pmaports" fetch -q --depth 1 origin main:refs/remotes/origin/main
 python3 -c "import sys; sys.path.insert(0, '$HOME/pmbootstrap'); import pmb.config; print(pmb.config.work_version)" \
 	> "$W/version"
 cat > "$HOME/.config/pmbootstrap_v3.cfg" <<EOF
