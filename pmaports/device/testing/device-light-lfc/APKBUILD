@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=16
+pkgrel=17
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -56,6 +56,7 @@ source="
 	light-lfc-suspend-on-blank
 	light-lfc-suspend-on-blank.desktop
 	logind-light-lfc.conf
+	megapixels-light,l16.conf
 	modules-initfs
 	phoc.ini
 	"
@@ -77,6 +78,10 @@ package() {
 	mkdir -p "$pkgdir"/usr/share/alsa/ucm2/conf.d/apq8096
 	ln -s ../../Light/L16/L16.conf \
 		"$pkgdir/usr/share/alsa/ucm2/conf.d/apq8096/Light L16.conf"
+
+	# Megapixels (libmegapixels): the light-ccb preview through CAMSS
+	install -Dm644 "$srcdir"/megapixels-light,l16.conf \
+		"$pkgdir"/usr/share/megapixels/config/light,l16.conf
 
 	# front and rear microphones as separate mono inputs
 	install -Dm644 "$srcdir"/l16-mics.pa \
@@ -187,6 +192,7 @@ b1e82e8cc14eb85947cb91ec6bbd85dc96beb841f1c5fa665da51a2fe913b003d41531403d760817
 a82a6e9c2804981842c6910e51d1a295e4abcd9bea18b6129fb3751c88a7980ce7fccda91e67e67ec5af12f3858e87f65391fa190f2117d68a6739124ebfc148  light-lfc-suspend-on-blank
 b1b827b01058a544ed31dafcac7bd3ead8de1bd5134162eb4cb5bb586123cc6624ec4f5d18ec682318eef0329438ca321ac488b5539dbc688c81e2892296fec2  light-lfc-suspend-on-blank.desktop
 d191efa265677cc9d13d968e3190e3176aec89403bd9399c5b20cae97e32416763cea75e4998fd6434e34136ccd2e99e4c6fb05f726fd151852e6d28e3995594  logind-light-lfc.conf
+510b5253cad9f4be6affbcd3a2bc45ae4d5ac46fc105f98f1237c44b1d3bb23ef559b4eeaed6fdcd8bd7f048e2f98ad3e763f324297ce25d81cd07d739690e97  megapixels-light,l16.conf
 b669fa078424f136be06dfece7fa279aae244a960c5d0349e4ae6cefd8d3f566d29e14d006175d248dedf7476d6b15487522368c494a541689f41d916b471b58  modules-initfs
 032b3770c95904db7f795263b6a34de186708c1ed85b5845bffb0b46f00f3a902521ebedb388b6d2e8a45aff22c7ad07cf8a3b2e77d7a934fc1386ca7944cc22  phoc.ini
 "
