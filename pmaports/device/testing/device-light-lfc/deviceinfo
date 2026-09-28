@@ -37,7 +37,8 @@ deviceinfo_flash_kernel_on_update="true"
 # earlycon=l16ram + keep_bootcon: the kernel log goes to stock's pstore console zone
 # for the whole boot. A panic resets the board after 5 s (PANIC_TIMEOUT), and stock
 # then shows the log in /sys/fs/pstore/console-ramoops.
-deviceinfo_kernel_cmdline="earlycon=l16ram,0x91bbe000 keep_bootcon"
+# fbcon=rotate:1: the text console turned 90 degrees clockwise, upright in landscape.
+deviceinfo_kernel_cmdline="earlycon=l16ram,0x91bbe000 keep_bootcon fbcon=rotate:1"
 deviceinfo_generate_bootimg="true"
 deviceinfo_flash_pagesize="4096"
 deviceinfo_flash_offset_base="0x80000000"
