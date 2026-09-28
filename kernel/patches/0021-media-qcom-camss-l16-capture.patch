@@ -135,10 +135,39 @@ index 831486e14..8adfdf6ad 100644
  
  /* -----------------------------------------------------------------------------
 diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
-index 1c9bb62b9..b983a2419 100644
+index 1c9bb62b9..d846bc736 100644
 --- a/drivers/media/platform/qcom/camss/camss.c
 +++ b/drivers/media/platform/qcom/camss/camss.c
-@@ -4059,23 +4059,19 @@ static int camss_of_parse_ports(struct camss *camss)
+@@ -3954,10 +3954,20 @@ int camss_get_pixel_clock(struct media_entity *entity, u64 *pixel_clock)
+ 	return 0;
+ }
+ 
++/*
++ * A CSID powers up through a VFE. SoCs with more CSIDs than VFEs (msm8996: 4 and 2) would
++ * otherwise fail to power CSID2 and CSID3; they share a VFE instead.
++ */
++static int vfe_parent_dev_id(struct camss *camss, int id)
++{
++	return camss->res->vfe_num ? id % camss->res->vfe_num : id;
++}
++
+ static int vfe_parent_dev_ops_get(struct camss *camss, int id)
+ {
+ 	int ret = -EINVAL;
+ 
++	id = vfe_parent_dev_id(camss, id);
+ 	if (id < camss->res->vfe_num) {
+ 		struct vfe_device *vfe = &camss->vfe[id];
+ 
+@@ -3969,6 +3979,7 @@ static int vfe_parent_dev_ops_get(struct camss *camss, int id)
+ 
+ static int vfe_parent_dev_ops_put(struct camss *camss, int id)
+ {
++	id = vfe_parent_dev_id(camss, id);
+ 	if (id < camss->res->vfe_num) {
+ 		struct vfe_device *vfe = &camss->vfe[id];
+ 
+@@ -4059,23 +4070,19 @@ static int camss_of_parse_ports(struct camss *camss)
  {
  	struct device *dev = camss->dev;
  	struct device_node *node = NULL;
@@ -170,7 +199,7 @@ index 1c9bb62b9..b983a2419 100644
  		if (IS_ERR(csd)) {
  			ret = PTR_ERR(csd);
  			goto err_cleanup;
-@@ -4394,11 +4390,30 @@ static int camss_subdev_notifier_bound(struct v4l2_async_notifier *async,
+@@ -4394,11 +4401,30 @@ static int camss_subdev_notifier_bound(struct v4l2_async_notifier *async,
  		container_of(asd, struct camss_async_subdev, asd);
  	u8 id = csd->interface.csiphy_id;
  	struct csiphy_device *csiphy = &camss->csiphy[id];
@@ -203,7 +232,7 @@ index 1c9bb62b9..b983a2419 100644
  }
  
  static int camss_subdev_notifier_complete(struct v4l2_async_notifier *async)
-@@ -4944,6 +4959,18 @@ static const struct of_device_id camss_dt_match[] = {
+@@ -4944,6 +4970,18 @@ static const struct of_device_id camss_dt_match[] = {
  
  MODULE_DEVICE_TABLE(of, camss_dt_match);
  

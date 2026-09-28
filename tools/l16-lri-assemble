@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+# l16-lri-assemble OUT.lri RAW...: build an LRI file from l16-capture's per-ASIC transfers.
+#
+# Each ASIC sends its capture as one LRI block, cut into 16 228 352-byte records (the last one
+# holds the block's LightHeader protobuf). CAMSS receives every record as a 1408 x 9219 RAW10
+# frame, 16 225 440 bytes: the record minus padding after the image. So each RAW here is a
+# series of such frames, the block's records in order. Putting them back together, each padded
+# to the record size, gives the block, and the blocks one after another give the LRI file.
+#
+# Stock LRIs also carry this camera's factory calibration (hw_info, module and device
+# calibration, sensor data) and view preferences in their last blocks, which renderers like
+# lri-rs need. If DEVICE_BLOCKS exists (those blocks cut from one of this camera's own stock
+# LRIs; it holds the camera's unique ID, so it is kept on the device only), it is appended.
+import struct
+import sys
+
+RECORD = 16228352		# 3962 pages of 4 KiB
+FRAME = 1760 * 9219		# what CAMSS stores per record
+DEVICE_BLOCKS = "/var/lib/l16/lri-device-blocks.bin"
+
+
+def block(path):
+	with open(path, "rb") as f:
+		frames = []
+		while True:
+			fr = f.read(FRAME)
+			if not fr:
+				break
+			if len(fr) != FRAME:
+				sys.exit("%s: short frame (%d bytes)" % (path, len(fr)))
+			frames.append(fr)
+	if len(frames) < 2:
+		sys.exit("%s: %d frames, need at least an image and the header" % (path, len(frames)))
+
+	sig, length, msg_off, msg_len, msg_type = struct.unpack_from("<4sQQIB", frames[0])
+	if sig != b"LELR":
+		sys.exit("%s: first record has no LELR block header" % path)
+	# the block ends right after the message (ASIC1) or at the next 4 KiB page (ASIC2)
+	if msg_off != (len(frames) - 1) * RECORD or not msg_off + msg_len <= length <= msg_off + FRAME:
+		sys.exit("%s: block header (length %d, message at %d, %d bytes) does not fit %d records"
+			 % (path, length, msg_off, msg_len, len(frames)))
+
+	pad = bytes(RECORD - FRAME)
+	parts = [fr + pad for fr in frames[:-1]]
+	parts.append(frames[-1][:length - msg_off])
+	print("%s: %d images, LightHeader %d bytes, block %d bytes" % (path, len(frames) - 1, msg_len, length))
+	return parts
+
+
+out = sys.argv[1]
+with open(out, "wb") as o:
+	for path in sys.argv[2:]:
+		for part in block(path):
+			o.write(part)
+	try:
+		with open(DEVICE_BLOCKS, "rb") as f:
+			o.write(f.read())
+		print("appended", DEVICE_BLOCKS)
+	except FileNotFoundError:
+		print("no", DEVICE_BLOCKS, "(calibration); renderers may need it")
+print("wrote", out)

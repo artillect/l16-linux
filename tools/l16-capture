@@ -1,0 +1,75 @@
+#!/bin/sh
+# l16-capture [28|70|150|CAM...] [OUT.lri]: take a photo with the L16's camera modules and
+# save it as an LRI file, the way stock's shutter does:
+#   28   A1-A5 B1-B5 (stock's 28 mm set, the default)   70   B1-B5 C1-C6   150   C1-C6
+# or a list of modules (A1 B4 ...). Resets the ASICs, previews on A1 to settle exposure and
+# focus, captures, then pulls each ASIC's block over its own CSI-2 link (ASICn -> CSIPHY n-1
+# -> CSID -> ISPIF -> VFE0 RDI n-1, virtual channel 1, data type 0x30) and joins them.
+# Needs l16-asic-probe, l16-lri-assemble, media-ctl and v4l2-ctl; kernel r22 or later.
+set -eu
+
+case "${1:-28}" in
+28)	cams="A1 A2 A3 A4 A5 B1 B2 B3 B4 B5" ;;
+70)	cams="B1 B2 B3 B4 B5 C1 C2 C3 C4 C5 C6" ;;
+150)	cams="C1 C2 C3 C4 C5 C6" ;;
+*)	cams="$1" ;;
+esac
+out=${2:-$HOME/L16_$(date +%Y%m%d_%H%M%S).lri}
+tmp=/var/tmp/l16-capture
+P=/sys/module/qcom_camss/parameters
+M="media-ctl -d /dev/media0"
+F="fmt:SGRBG10_1X10/1408x9219"
+
+mkdir -p $tmp
+rm -f $tmp/asic*.raw
+
+# one raw path per ASIC
+S=$($M -p | sed -n 's/^- entity [0-9]*: \(light-ccb [^ ]*\) .*/\1/p')
+$M -r
+for n in 0 1 2; do
+	$M -l "\"msm_csiphy$n\":1->\"msm_csid$n\":0[1],\"msm_csid$n\":1->\"msm_ispif$n\":0[1],\"msm_ispif$n\":1->\"msm_vfe0_rdi$n\":0[1]"
+	$M -V "\"$S\":$n[$F],\"msm_csiphy$n\":0[$F],\"msm_csid$n\":0[$F],\"msm_csid$n\":1[$F],\"msm_ispif$n\":0[$F],\"msm_vfe0_rdi$n\":0[$F]"
+	v4l2-ctl -d /dev/video$n --set-fmt-video=width=1408,height=9219,pixelformat=pgAA
+done
+
+cleanup() {
+	echo 0 > $P/vc; echo 0 > $P/dt
+	l16-asic-probe off >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+echo "== preview on A1 (exposure, focus)"
+l16-asic-probe reset >/dev/null
+sleep 1
+l16-asic-probe start >/dev/null
+sleep 2
+l16-asic-probe focus || true
+
+echo "== capture: $cams"
+l16-asic-probe capture $cams | tee $tmp/capture.log
+# records per ASIC: images plus the header record
+recs() { awk -v a="$1" '$1 == "descriptor:" && $3 == a { n += $7 } END { print n + 0 }' $tmp/capture.log; }
+
+# the capture streams are on VC 1, data type 0x30; set before the streams start
+echo 1 > $P/vc
+echo 48 > $P/dt
+pids=
+for a in 1 2 3; do
+	n=$(recs $a)
+	[ "$n" -gt 0 ] || continue
+	timeout 60 v4l2-ctl -d /dev/video$((a - 1)) --stream-mmap=4 --stream-count=$n \
+		--stream-to=$tmp/asic$a.raw > $tmp/asic$a.log 2>&1 &
+	pids="$pids $!"
+done
+sleep 1
+for a in 1 2 3; do
+	n=$(recs $a)
+	[ "$n" -gt 0 ] || continue
+	echo "== ASIC$a: $n records"
+	l16-asic-probe transfer $a $n > /dev/null
+done
+for p in $pids; do wait $p; done
+
+files=
+for a in 1 2 3; do [ -s $tmp/asic$a.raw ] && files="$files $tmp/asic$a.raw"; done
+l16-lri-assemble "$out" $files
