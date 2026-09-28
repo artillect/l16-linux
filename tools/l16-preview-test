@@ -2,7 +2,8 @@
 # l16-preview-test PHY: first-stream test. Resets ASIC1, links CAMSS csiphyPHY -> csid0 ->
 # ispif0 -> vfe0 RDI0 at RAW10 2080x1560, arms a 10-frame capture to /tmp/f.raw and runs
 # l16-asic-probe start/stop around it. The first ${SKIP:-60} frames are dropped so auto
-# exposure can settle; AF runs during them. ASIC1's preview output is on csiphy0.
+# exposure can settle; AF runs during them. CAM=B4 etc. picks the module (default A1).
+# ASIC1's preview output is on csiphy0.
 P=${1:?phy number}
 M="media-ctl -d /dev/media0"
 F="fmt:SGRBG10_1X10/2080x${H:-1560}"
@@ -18,10 +19,10 @@ echo "== reset"; l16-asic-probe reset
 timeout 20 v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-skip=${SKIP:-60} --stream-count=10 --stream-to=/tmp/f.raw > /tmp/cap.log 2>&1 &
 CAP=$!
 sleep 1
-echo "== start"; l16-asic-probe start
+echo "== start"; l16-asic-probe start ${CAM:-A1}
 echo "== focus"; l16-asic-probe focus
 echo "== drain"; l16-asic-probe drain 6 | head -10
 wait $CAP; echo "capture exit $?"
-echo "== stop"; l16-asic-probe stop
+echo "== stop"; l16-asic-probe stop ${CAM:-A1}
 echo "== capture"; tr '\r' '\n' < /tmp/cap.log | tail -5; ls -l /tmp/f.raw 2>&1
 echo "== kernel"; dmesg | sed -n '/l16-s3 start/,$p' | grep -v -E "l16-s3|spmi|irq|IRQ|handle_irq|action" | tail -15
