@@ -13,10 +13,10 @@ index 821146b2a..5d43ea50e 100644
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 new file mode 100644
-index 000000000..0487a362d
+index 000000000..7293eae7b
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
-@@ -0,0 +1,1194 @@
+@@ -0,0 +1,1225 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera (APQ8096 v3.1 + PM8994 + PMI8996), board "LFC P2 PVT".
@@ -730,6 +730,7 @@ index 000000000..0487a362d
 +			#address-cells = <1>;
 +			#size-cells = <0>;
 +
++			/* ASICn's CSI-2 output goes to CSIPHY n-1 (stock csiphy/csid-sd-index) */
 +			port@0 {
 +				reg = <0>;
 +				ccb_out0: endpoint {
@@ -739,7 +740,23 @@ index 000000000..0487a362d
 +				};
 +			};
 +
++			port@1 {
++				reg = <1>;
++				ccb_out1: endpoint {
++					data-lanes = <1 2 3 4>;
++					link-frequencies = /bits/ 64 <750000000>;
++					remote-endpoint = <&camss_csiphy1_in>;
++				};
++			};
 +
++			port@2 {
++				reg = <2>;
++				ccb_out2: endpoint {
++					data-lanes = <1 2 3 4>;
++					link-frequencies = /bits/ 64 <750000000>;
++					remote-endpoint = <&camss_csiphy2_in>;
++				};
++			};
 +		};
 +	};
 +};
@@ -761,7 +778,21 @@ index 000000000..0487a362d
 +			};
 +		};
 +
++		port@1 {
++			reg = <1>;
++			camss_csiphy1_in: endpoint {
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&ccb_out1>;
++			};
++		};
 +
++		port@2 {
++			reg = <2>;
++			camss_csiphy2_in: endpoint {
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&ccb_out2>;
++			};
++		};
 +	};
 +};
 +

@@ -135,10 +135,75 @@ index 831486e14..8adfdf6ad 100644
  
  /* -----------------------------------------------------------------------------
 diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
-index 1c9bb62b9..8fafaf7b0 100644
+index 1c9bb62b9..b983a2419 100644
 --- a/drivers/media/platform/qcom/camss/camss.c
 +++ b/drivers/media/platform/qcom/camss/camss.c
-@@ -4944,6 +4944,18 @@ static const struct of_device_id camss_dt_match[] = {
+@@ -4059,23 +4059,19 @@ static int camss_of_parse_ports(struct camss *camss)
+ {
+ 	struct device *dev = camss->dev;
+ 	struct device_node *node = NULL;
+-	struct device_node *remote = NULL;
+ 	int ret, num_subdevs = 0;
+ 
+ 	for_each_endpoint_of_node(dev->of_node, node) {
+ 		struct camss_async_subdev *csd;
+ 
+-		remote = of_graph_get_remote_port_parent(node);
+-		if (!remote) {
+-			dev_err(dev, "Cannot get remote parent\n");
+-			ret = -EINVAL;
+-			goto err_cleanup;
+-		}
+-
+-		csd = v4l2_async_nf_add_fwnode(&camss->notifier,
+-					       of_fwnode_handle(remote),
+-					       struct camss_async_subdev);
+-		of_node_put(remote);
++		/*
++		 * Match the remote endpoint rather than the remote device: a source
++		 * with several CSI-2 outputs (the Light L16's camera ASICs) connects to
++		 * several CSIPHYs and gets one bound call per connection.
++		 */
++		csd = v4l2_async_nf_add_fwnode_remote(&camss->notifier,
++						      of_fwnode_handle(node),
++						      struct camss_async_subdev);
+ 		if (IS_ERR(csd)) {
+ 			ret = PTR_ERR(csd);
+ 			goto err_cleanup;
+@@ -4394,11 +4390,30 @@ static int camss_subdev_notifier_bound(struct v4l2_async_notifier *async,
+ 		container_of(asd, struct camss_async_subdev, asd);
+ 	u8 id = csd->interface.csiphy_id;
+ 	struct csiphy_device *csiphy = &camss->csiphy[id];
++	struct media_entity *sensor = &subdev->entity;
++	int pad, ret;
+ 
+ 	csiphy->cfg.csi2 = &csd->interface.csi2;
+-	subdev->host_priv = csiphy;
+ 
+-	return 0;
++	/* the source pad for this connection's endpoint, else the first one */
++	pad = media_entity_get_fwnode_pad(sensor, asd->match.fwnode,
++					  MEDIA_PAD_FL_SOURCE);
++	if (pad < 0)
++		for (pad = 0; pad < sensor->num_pads; pad++)
++			if (sensor->pads[pad].flags & MEDIA_PAD_FL_SOURCE)
++				break;
++	if (pad >= sensor->num_pads) {
++		dev_err(camss->dev, "No source pad in external entity\n");
++		return -EINVAL;
++	}
++
++	ret = media_create_pad_link(sensor, pad, &csiphy->subdev.entity,
++				    MSM_CSIPHY_PAD_SINK,
++				    MEDIA_LNK_FL_IMMUTABLE | MEDIA_LNK_FL_ENABLED);
++	if (ret < 0)
++		camss_link_err(camss, sensor->name, csiphy->subdev.entity.name, ret);
++
++	return ret;
+ }
+ 
+ static int camss_subdev_notifier_complete(struct v4l2_async_notifier *async)
+@@ -4944,6 +4959,18 @@ static const struct of_device_id camss_dt_match[] = {
  
  MODULE_DEVICE_TABLE(of, camss_dt_match);
  
