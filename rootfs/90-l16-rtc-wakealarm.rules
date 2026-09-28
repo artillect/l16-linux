@@ -1,3 +1,0 @@
-# L16: l16-suspend-on-blank (running as the logged-in user, group wheel) re-arms the
-# RTC alarm when a power-button press lands while a suspend is starting.
-ACTION=="add", SUBSYSTEM=="rtc", KERNEL=="rtc0", RUN+="/bin/chgrp wheel /sys%p/wakealarm", RUN+="/bin/chmod g+w /sys%p/wakealarm"

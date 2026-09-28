@@ -1,5 +1,0 @@
-# SLPI accelerometer (BMI160 via qcom_smgr). Relative to the panel's native (portrait)
-# orientation, as iio-sensor-proxy/Phosh expect: the camera held upright in landscape reads
-# as "right-up", matching the panel rotation. X/Y as the driver's own in_mount_matrix
-# (from the sensor registry); Z flipped (lying screen up read face-down with it).
-SUBSYSTEM=="iio", ATTR{name}=="qcom-smgr-accel", ENV{ACCEL_MOUNT_MATRIX}="0, -1, 0; -1, 0, 0; 0, 0, -1"

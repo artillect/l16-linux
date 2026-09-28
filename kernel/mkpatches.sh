@@ -1,6 +1,7 @@
 #!/bin/bash
-# Export the L16 changes in the kernel tree (patched by patch_ml.py + overlay/) as a
-# numbered patch series against the msm8996-mainline base tag, one topic per patch.
+# Export the L16 changes in a kernel tree as a numbered patch series against the
+# msm8996-mainline base tag, one topic per patch. To get such a tree: check out
+# v6.19.5-msm8996 and `git apply kernel/patches/*.patch`.
 # usage: mkpatches.sh [kernel tree]   ->  kernel/patches/*.patch
 set -e
 T=${1:-$HOME/l16/mainline}

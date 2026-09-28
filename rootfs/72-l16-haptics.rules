@@ -1,2 +1,0 @@
-# feedbackd: the L16 vibration motor (DW7800)
-SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT}=="1", SUBSYSTEMS=="input", ATTRS{name}=="dw7800-haptics", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"

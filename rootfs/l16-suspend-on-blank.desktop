@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=L16 suspend on blank
-Exec=/usr/local/bin/l16-suspend-on-blank
-NoDisplay=true
-X-GNOME-AutoRestart=true
