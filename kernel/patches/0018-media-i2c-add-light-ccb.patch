@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..8d37c3c34
+index 000000000..a74c85560
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,207 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -58,7 +58,7 @@ index 000000000..8d37c3c34
 +#define CCB_NUM_PADS	3		/* one CSI-2 link per ASIC */
 +#define CCB_LANES	4
 +#define CCB_BPP		10
-+#define CCB_LINK_FREQ	400000000LL	/* stock captures need >= 386 MHz */
++#define CCB_LINK_FREQ	750000000LL	/* not known; >= 386 MHz from stock capture timing */
 +#define CCB_PIXEL_RATE	(CCB_LINK_FREQ * 2 * CCB_LANES / CCB_BPP)
 +#define CCB_WIDTH	2080		/* preview, UCID 3 */
 +#define CCB_HEIGHT	1560
@@ -107,16 +107,26 @@ index 000000000..8d37c3c34
 +	if (fse->index || fse->code != CCB_CODE)
 +		return -EINVAL;
 +
-+	fse->min_width = fse->max_width = CCB_WIDTH;
-+	fse->min_height = fse->max_height = CCB_HEIGHT;
++	fse->min_width = 64;
++	fse->max_width = 8192;
++	fse->min_height = 64;
++	fse->max_height = 16384;
 +	return 0;
 +}
 +
-+/* the format is fixed for now */
++/*
++ * The ASIC chooses the frame size itself (commands from userspace for now), so accept the
++ * size userspace asks for; only the bus format is fixed.
++ */
 +static int ccb_set_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
 +		       struct v4l2_subdev_format *fmt)
 +{
++	u32 width = clamp_t(u32, fmt->format.width, 64, 8192);
++	u32 height = clamp_t(u32, fmt->format.height, 64, 16384);
++
 +	ccb_fmt(&fmt->format);
++	fmt->format.width = width;
++	fmt->format.height = height;
 +	*v4l2_subdev_state_get_format(state, fmt->pad) = fmt->format;
 +	return 0;
 +}

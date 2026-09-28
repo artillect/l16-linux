@@ -4,13 +4,13 @@
 # l16-asic-probe start/stop around it. ASIC1's preview output is on csiphy0.
 P=${1:?phy number}
 M="media-ctl -d /dev/media0"
-F="fmt:SGRBG10_1X10/2080x1560"
+F="fmt:SGRBG10_1X10/2080x${H:-1560}"
 S=$($M -p | sed -n 's/^- entity [0-9]*: \(light-ccb [^ ]*\) .*/\1/p')
 echo "== pipeline: $S -> csiphy$P"
 $M -r
 $M -l "\"msm_csiphy$P\":1->\"msm_csid0\":0[1],\"msm_csid0\":1->\"msm_ispif0\":0[1],\"msm_ispif0\":1->\"msm_vfe0_rdi0\":0[1]"
 $M -V "\"$S\":0[$F],\"msm_csiphy$P\":0[$F],\"msm_csid0\":0[$F],\"msm_csid0\":1[$F],\"msm_ispif0\":0[$F],\"msm_vfe0_rdi0\":0[$F]"
-v4l2-ctl -d /dev/video0 --set-fmt-video=width=2080,height=1560,pixelformat=pgAA
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=2080,height=${H:-1560},pixelformat=pgAA
 echo "l16-s3 start" > /dev/kmsg
 rm -f /tmp/f.raw
 echo "== reset"; l16-asic-probe reset
