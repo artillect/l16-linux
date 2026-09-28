@@ -14,6 +14,9 @@ source="$pkgname-$pkgver.tar.gz::https://github.com/shinf1x/chiaro/archive/refs/
 
 _apps="chiaro-fuse chiaro-hotpixel chiaro-stack-app"
 
+# pmbootstrap sets RUSTC_WRAPPER=/usr/bin/sccache on native builds without installing it
+unset RUSTC_WRAPPER
+
 prepare() {
 	default_prepare
 	rm -f rust-toolchain.toml
