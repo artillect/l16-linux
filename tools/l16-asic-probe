@@ -16,6 +16,9 @@
 #   l16-asic-probe capture CAM...  full-resolution capture into the ASICs' memory (after
 #                            start), as stock's shutter: prints the transfer descriptors
 #   l16-asic-probe transfer ASIC N  send N captured records of ASIC 1..3 over CSI (VC 1)
+#   l16-asic-probe lock 0|1  AE lock (hold / release the current exposure)
+#   l16-asic-probe ae UCID GAIN NS  set gain and exposure for use case 3 (preview) or 5 (capture)
+#   l16-asic-probe manual GAIN NS  manual exposure (AE off) for preview and capture; auto: back
 #
 # Safety: boot straps GPIO 23/79 are only ever driven LOW (high = the ASICs' programming
 # modes). Only commands the stock camera app sends are used, byte for byte as traced.
@@ -183,7 +186,7 @@ start)
 	raw 0xa0 0x01 0x67 0x00 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 	# stock's camera app (not the cold-boot one) also sends stacked capture mode 1 and a
 	# second preview AE; without them the multi-ASIC focus at zoom > 2.5 fails
-	raw 0xa0 0x02 0x6a 0x00 0x01 0x01
+	[ "${STACK:-1}" = 0 ] || raw 0xa0 0x02 0x6a 0x00 0x01 0x01
 	raw 0x60 0x08 0x33 0x00 0x01 0x00 0x00 0x03 0x00 0x03 0x00 0xa0 0x90 0x40 0x8c 0xcc 0x02 0x01 0 0 0 0 0 0
 	raw 0xa0 0x03 0x60 0x00 0x02 0x00 0x00 0x00 0x3c 0x00
 	echo "auto exposure on (0x0060)"
@@ -213,7 +216,8 @@ capture)
 	on=; off=
 	for cam in "$@"; do on="$on 0x11 0xf1 0x00"; off="$off 0x10 0xf1 0x00"; done
 	uuid=$(od -An -tx1 -N16 /dev/urandom | sed 's/ / 0x/g')
-	raw 0x80 0x00 0x61 0x00 0x02					# precapture trigger
+	# precapture trigger (auto AE meters the shot); stock skips it in manual mode
+	[ -n "${MANUAL:-}" ] || raw 0x80 0x00 0x61 0x00 0x02
 	raw 0x80 0x01 0x02 0x80 $(cammask A1) 0x10 0x00 0x00; acked "preview off (0x8002)"
 	raw 0x80 0x02 0x2e 0x00 0x01 0x00 0x00 0x05 0x00 0x00 0x00 0x00 0x00 0x40 0x10 0x30 0x0c 0x01 0x01
 	raw 0x80 0x03 0x00 0x90 0x05 0x00; acked "use case 5 (0x9000)"
@@ -235,6 +239,29 @@ capture)
 	done
 	[ $i -lt 100 ] || die "no capture-start ack"
 	raw 0x80 0x07 0x02 0x80 $mask $off; acked "capture stop (0x8002)"
+	;;
+lock)
+	# AE lock (0x0061): 1 holds the current exposure, 0 releases it
+	raw 0xa0 0x06 0x61 0x00 ${2:?0 or 1}
+	;;
+ae)
+	# 0x0033 for use case $2 (3 preview, 5 capture): fields 3 = gain and exposure,
+	# f32 gain, u64 exposure in ns, u16 fps (unused with these fields)
+	body=$(python3 -c "import struct,sys; print(' '.join('0x%02x' % b for b in struct.pack('<fQH', float(sys.argv[1]), int(sys.argv[2]), 0)))" "${3:?gain}" "${4:?exposure ns}")
+	raw 0x60 0x0b 0x33 0x00 0x01 0x00 0x00 ${2:?ucid} 0x00 0x03 $body
+	echo "use case $2: gain $3, exposure $4 ns (0x0033)"
+	;;
+manual)
+	# AE config (0x0060) mode 0 = manual (liblight_ccb ccb_config_ae_manual_mode): camera 0,
+	# then {f32 gain, u64 exposure ns, u16 fps} for preview and for capture
+	body=$(python3 -c "import struct,sys; g=float(sys.argv[1]); t=int(sys.argv[2])
+print(' '.join('0x%02x' % b for b in struct.pack('<BBfQHfQH', 0, 0, g, t, 30, g, t, 0)))" "${2:?gain}" "${3:?exposure ns}")
+	raw 0xa0 0x07 0x60 0x00 $body
+	echo "manual exposure: gain $2, $3 ns (0x0060 mode 0)"
+	;;
+auto)
+	raw 0xa0 0x08 0x60 0x00 0x02 0x00 0x00 0x00 0x3c 0x00
+	echo "auto exposure on (0x0060)"
 	;;
 transfer)
 	a=${2:?asic 1..3}; n=${3:?records}
@@ -260,7 +287,7 @@ drain)
 	done
 	;;
 *)
-	sed -n '2,22s/^# \{0,1\}//p' "$0"
+	sed -n '2,25s/^# \{0,1\}//p' "$0"
 	exit 1
 	;;
 esac

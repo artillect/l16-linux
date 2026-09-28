@@ -5,6 +5,9 @@
 # or a list of modules (A1 B4 ...). Resets the ASICs, previews on A1 to settle exposure and
 # focus, captures, then pulls each ASIC's block over its own CSI-2 link (ASICn -> CSIPHY n-1
 # -> CSID -> ISPIF -> VFE0 RDI n-1, virtual channel 1, data type 0x30) and joins them.
+# ISO=100..800 and/or SHUTTER=1/60 (seconds, or a fraction) set a manual exposure for the
+# capture (the ASICs' manual AE mode). ISO 100 = sensor analog gain 1.0, which the ASICs
+# call sensitivity 2.0 (their unit is twice the analog gain).
 # Needs l16-asic-probe, l16-lri-assemble, media-ctl and v4l2-ctl; kernel r22 or later.
 set -eu
 
@@ -44,6 +47,15 @@ sleep 1
 l16-asic-probe start >/dev/null
 sleep 2
 l16-asic-probe focus || true
+
+if [ -n "${ISO:-}${SHUTTER:-}" ]; then
+	set -- $(python3 -c "from fractions import Fraction as F; import sys
+print(float(sys.argv[1]) / 50, int(F(sys.argv[2]) * 1000000000))" "${ISO:-100}" "${SHUTTER:-1/60}")
+	echo "== manual: ISO ${ISO:-100} (gain $1), shutter ${SHUTTER:-1/60} s ($2 ns)"
+	l16-asic-probe manual "$1" "$2"
+	sleep 1
+	export MANUAL=1
+fi
 
 echo "== capture: $cams"
 l16-asic-probe capture $cams | tee $tmp/capture.log
