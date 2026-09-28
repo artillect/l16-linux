@@ -9,7 +9,8 @@
 #   l16-asic-probe off       all five ASIC pins low, as stock leaves them
 #   l16-asic-probe start [CAM]  stock's camera start (from a LightOS I2C trace): preview on
 #                               CAM (default A1; stock previews A1, B4 or C5)
-#   l16-asic-probe focus     autofocus at the centre (after start)
+#   l16-asic-probe focus     autofocus at the centre (after start; A1, B4 or C5 only:
+#                            on B2/B5 it stops ASIC1 answering I2C)
 #   l16-asic-probe stop [CAM]   stream off and close
 #   l16-asic-probe drain N   read and print ASIC1's messages for N seconds
 #
@@ -193,7 +194,7 @@ drain)
 	done
 	;;
 *)
-	sed -n '2,18s/^# \{0,1\}//p' "$0"
+	sed -n '2,19s/^# \{0,1\}//p' "$0"
 	exit 1
 	;;
 esac

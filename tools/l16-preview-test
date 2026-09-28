@@ -20,7 +20,8 @@ timeout 20 v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-skip=${SKIP:-60} --s
 CAP=$!
 sleep 1
 echo "== start"; l16-asic-probe start ${CAM:-A1}
-echo "== focus"; l16-asic-probe focus
+# autofocus only on stock's preview modules: on B2/B5 it stops ASIC1 answering I2C
+case ${CAM:-A1} in A1|B4|C5) echo "== focus"; l16-asic-probe focus ;; esac
 echo "== drain"; l16-asic-probe drain 6 | head -10
 wait $CAP; echo "capture exit $?"
 echo "== stop"; l16-asic-probe stop ${CAM:-A1}
