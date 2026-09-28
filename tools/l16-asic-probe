@@ -170,6 +170,9 @@ start)
 	raw 0xa0 0x01 0x67 0x00 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 	raw 0xa0 0x03 0x60 0x00 0x02 0x00 0x00 0x00 0x3c 0x00
 	echo "auto exposure on (0x0060)"
+	# the ASIC skips AE when the zoom factor (0x005C, f32) doesn't match the preview
+	# module ("Mismatch between zoom factor"); stock's B modules start at 2.5 = 70/28
+	case $cam in B*) raw 0x60 0x3b 0x5c 0x00 0x04 0x00 0x20 0x40; echo "zoom 2.5 (0x005C)" ;; esac
 	;;
 focus)
 	# stock's tap-free AF: lock AE, AF ROI 200x200 at the centre (1958,1482), weight 1000,
