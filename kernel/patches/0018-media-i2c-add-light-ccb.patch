@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..bd810a56c
+index 000000000..d1c60fa55
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,776 @@
+@@ -0,0 +1,903 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -69,6 +69,7 @@ index 000000000..bd810a56c
 +#include <linux/time.h>
 +#include <linux/timekeeping.h>
 +#include <linux/unaligned.h>
++#include <linux/workqueue.h>
 +#include <media/v4l2-ctrls.h>
 +#include <media/v4l2-fwnode.h>
 +#include <media/v4l2-subdev.h>
@@ -81,11 +82,26 @@ index 000000000..bd810a56c
 +#define CCB_WIDTH	2080		/* preview, UCID 3 */
 +#define CCB_HEIGHT	1560
 +#define CCB_CODE	MEDIA_BUS_FMT_SGRBG10_1X10
++#define CCB_NATIVE_W	4160		/* the AR1335 arrays; preview bins 2:1 */
++#define CCB_NATIVE_H	3120
++
++/*
++ * Line timing for libcamera and Megapixels: the ASIC's preview line time is 10.444 us (its AE
++ * log); a line here is two of those (the preview bins 2:1), 20.888 us, which at the pixel
++ * rate we report is a 12533-pixel line, and a 30 fps frame is 1596 of them. The ASICs time
++ * their sensors themselves, so these are fixed.
++ */
++#define CCB_LINE_NS	20888
++#define CCB_LINE_LEN	12533
++#define CCB_FRAME_LINES	1596
++#define CCB_HBLANK	(CCB_LINE_LEN - CCB_WIDTH)
++#define CCB_VBLANK	(CCB_FRAME_LINES - CCB_HEIGHT)
 +
 +#define CCB_MSG_MAX	128
 +#define CCB_TYPE_REPLY	1
 +#define CCB_TYPE_EMPTY	2
 +#define CCB_TYPE_EVENT	3
++#define CCB_TYPE_AE	7
 +
 +/* TID kinds as stock uses them (kind << 13) */
 +#define CCB_KIND_AF	1
@@ -134,9 +150,10 @@ index 000000000..bd810a56c
 +	int stream_count;		/* s_stream(1) calls not yet undone */
 +	bool previewing;
 +	u8 seq;
++	struct delayed_work drain;	/* reads the queue while previewing */
 +
 +	struct v4l2_ctrl *exp_auto;
-+	struct v4l2_ctrl *exposure;	/* 100 us units */
++	struct v4l2_ctrl *exposure;	/* lines of CCB_LINE_NS */
 +	struct v4l2_ctrl *gain;		/* analog gain x 100 */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
@@ -310,6 +327,7 @@ index 000000000..bd810a56c
 +{
 +	struct ccb *c = to_ccb(i2c_get_clientdata(to_i2c_client(dev)));
 +
++	cancel_delayed_work_sync(&c->drain);
 +	mutex_lock(&c->lock);
 +	ccb_power_off(c);
 +	mutex_unlock(&c->lock);
@@ -335,9 +353,22 @@ index 000000000..bd810a56c
 + * for preview and for capture (liblight_ccb ccb_config_ae_manual_mode). The ASICs' gain
 + * unit is twice the sensors' analog gain, so analog gain g/100 is sent as g/50.
 + */
++/* round(f * k) for the IEEE-754 single @bits of a non-negative f (no floating point here) */
++static u32 ccb_f32_mul(u32 bits, u32 k)
++{
++	int e = (int)((bits >> 23) & 0xff) - 127 - 23;
++	u64 m = (u64)((bits & 0x7fffff) | 0x800000) * k;
++
++	if (!(bits & 0x7f800000) || bits & 0x80000000)
++		return 0;
++	if (e >= 0)
++		return e > 8 ? U32_MAX : min_t(u64, m << e, U32_MAX);
++	return e < -63 ? 0 : (m + (1ULL << (-e - 1))) >> -e;
++}
++
 +static int ccb_ae_manual(struct ccb *c)
 +{
-+	u64 ns = (u64)c->exposure->val * 100000;
++	u64 ns = (u64)c->exposure->val * CCB_LINE_NS;
 +	u32 gain = ccb_f32(c->gain->val, 50);
 +	u8 b[30] = { 0, 0 };
 +
@@ -362,6 +393,49 @@ index 000000000..bd810a56c
 +	if (!c->previewing)
 +		return 0;
 +	return c->exp_auto->val == V4L2_EXPOSURE_MANUAL ? ccb_ae_manual(c) : ccb_ae_auto(c);
++}
++
++/*
++ * While previewing, the ASIC pushes its AE state (type 7) every frame and nothing else reads
++ * the queue; left alone it backs up until ASIC1 stops answering. Read it every 50 ms, and in
++ * auto mode report the metered exposure and gain through the controls, so that switching to
++ * manual (Megapixels does before a capture) holds them.
++ * AE push: u64 exposure ns, f32 (max gain), f32 gain in ASIC units (2x analog), ...
++ */
++static void ccb_drain_work(struct work_struct *work)
++{
++	struct ccb *c = container_of(to_delayed_work(work), struct ccb, drain);
++	u8 m[CCB_MSG_MAX];
++	u64 ns = 0;
++	u32 gain = 0;
++	bool ae = false;
++	int i, t;
++
++	mutex_lock(&c->lock);
++	if (!c->previewing) {
++		mutex_unlock(&c->lock);
++		return;
++	}
++	for (i = 0; i < 64; i++) {
++		t = ccb_read(c, m, sizeof(m));
++		if (t < 0 || t == CCB_TYPE_EMPTY)
++			break;
++		if (t == CCB_TYPE_AE && get_unaligned_le16(m + 2) >= 16) {
++			ns = get_unaligned_le64(m + 4);
++			gain = get_unaligned_le32(m + 16);
++			ae = true;
++		}
++	}
++	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
++	mutex_unlock(&c->lock);
++
++	if (ae && c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL) {
++		/* in auto mode s_ctrl only stores these */
++		v4l2_ctrl_s_ctrl(c->exposure, clamp_t(u64, div_u64(ns + CCB_LINE_NS / 2, CCB_LINE_NS),
++						      c->exposure->minimum, c->exposure->maximum));
++		v4l2_ctrl_s_ctrl(c->gain, clamp_t(u32, ccb_f32_mul(gain, 50),
++						  c->gain->minimum, c->gain->maximum));
++	}
 +}
 +
 +/* stock's camera start (LightOS I2C traces), preview on the selected module */
@@ -432,6 +506,7 @@ index 000000000..bd810a56c
 +		put_unaligned_le32(ccb_module_zoom[mod], z);
 +		ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x005c, z, sizeof(z));
 +	}
++	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	return 0;
 +}
 +
@@ -449,7 +524,12 @@ index 000000000..bd810a56c
 +	ret = ccb_command(c, CCB_KIND_CMD, 0x8002, off, sizeof(off));
 +	if (ret >= 0)
 +		ret = ccb_command(c, CCB_KIND_CMD, 0x8000, close, sizeof(close));
-+	return ret < 0 ? ret : 0;
++	if (ret < 0) {
++		/* the ASICs are in an unknown state: power them off so the next start boots them */
++		ccb_power_off(c);
++		return ret;
++	}
++	return 0;
 +}
 +
 +/* stock's centre autofocus: lock AE, AF ROI 200x200 at (1958, 1482), unlock */
@@ -479,9 +559,13 @@ index 000000000..bd810a56c
 +
 +	/* only send to the ASICs while they are previewing; otherwise remember the value */
 +	switch (ctrl->id) {
-+	case V4L2_CID_EXPOSURE_AUTO:
-+	case V4L2_CID_EXPOSURE_ABSOLUTE:
++	case V4L2_CID_EXPOSURE:
 +	case V4L2_CID_ANALOGUE_GAIN:
++		/* in auto mode the ASICs meter themselves; the value is kept for manual mode */
++		if (c->exp_auto->val != V4L2_EXPOSURE_MANUAL)
++			break;
++		fallthrough;
++	case V4L2_CID_EXPOSURE_AUTO:
 +		mutex_lock(&c->lock);
 +		ret = ccb_apply_ae(c);
 +		mutex_unlock(&c->lock);
@@ -631,10 +715,12 @@ index 000000000..bd810a56c
 +	if (fse->index || fse->code != CCB_CODE)
 +		return -EINVAL;
 +
-+	fse->min_width = 64;
-+	fse->max_width = 8192;
-+	fse->min_height = 64;
-+	fse->max_height = 16384;
++	/*
++	 * Only the preview size is listed (what libcamera picks from); set_fmt still takes
++	 * any size, for l16-capture's 1408x9219 capture records.
++	 */
++	fse->min_width = fse->max_width = CCB_WIDTH;
++	fse->min_height = fse->max_height = CCB_HEIGHT;
 +	return 0;
 +}
 +
@@ -647,12 +733,38 @@ index 000000000..bd810a56c
 +{
 +	u32 width = clamp_t(u32, fmt->format.width, 64, 8192);
 +	u32 height = clamp_t(u32, fmt->format.height, 64, 16384);
++	u32 code = fmt->format.code;
 +
 +	ccb_fmt(&fmt->format);
 +	fmt->format.width = width;
 +	fmt->format.height = height;
++	/*
++	 * The data is GRBG (all that enum_mbus_code offers), but another Bayer label is kept
++	 * when asked for: Megapixels' debayer reads the pattern one pixel off diagonally on
++	 * this GPU, so its config labels the pipeline GBRG.
++	 */
++	if (code == MEDIA_BUS_FMT_SBGGR10_1X10 || code == MEDIA_BUS_FMT_SGBRG10_1X10 ||
++	    code == MEDIA_BUS_FMT_SRGGB10_1X10)
++		fmt->format.code = code;
 +	*v4l2_subdev_state_get_format(state, fmt->pad) = fmt->format;
 +	return 0;
++}
++
++static int ccb_get_selection(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
++			     struct v4l2_subdev_selection *sel)
++{
++	switch (sel->target) {
++	case V4L2_SEL_TGT_NATIVE_SIZE:
++	case V4L2_SEL_TGT_CROP_BOUNDS:
++	case V4L2_SEL_TGT_CROP_DEFAULT:
++	case V4L2_SEL_TGT_CROP:
++		sel->r.left = 0;
++		sel->r.top = 0;
++		sel->r.width = CCB_NATIVE_W;
++		sel->r.height = CCB_NATIVE_H;
++		return 0;
++	}
++	return -EINVAL;
 +}
 +
 +static const struct v4l2_subdev_core_ops ccb_core_ops = {
@@ -668,6 +780,7 @@ index 000000000..bd810a56c
 +	.enum_frame_size = ccb_enum_frame_size,
 +	.get_fmt = v4l2_subdev_get_fmt,
 +	.set_fmt = ccb_set_fmt,
++	.get_selection = ccb_get_selection,
 +};
 +
 +static const struct v4l2_subdev_ops ccb_ops = {
@@ -687,9 +800,16 @@ index 000000000..bd810a56c
 +static int ccb_init_controls(struct ccb *c)
 +{
 +	struct v4l2_ctrl_handler *h = &c->ctrls;
-+	struct v4l2_ctrl *link_freq;
++	struct v4l2_fwnode_device_properties props;
++	struct v4l2_ctrl *link_freq, *hblank, *vblank;
++	int ret;
 +
-+	v4l2_ctrl_handler_init(h, 9);
++	/* orientation and rotation from the DT, for libcamera */
++	ret = v4l2_fwnode_device_parse(&c->client->dev, &props);
++	if (ret)
++		return ret;
++
++	v4l2_ctrl_handler_init(h, 13);
 +	link_freq = v4l2_ctrl_new_int_menu(h, NULL, V4L2_CID_LINK_FREQ, 0, 0, ccb_link_freqs);
 +	if (link_freq)
 +		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -699,19 +819,24 @@ index 000000000..bd810a56c
 +	c->exp_auto = v4l2_ctrl_new_std_menu(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE_AUTO,
 +					     V4L2_EXPOSURE_MANUAL, ~(BIT(V4L2_EXPOSURE_AUTO) |
 +					     BIT(V4L2_EXPOSURE_MANUAL)), V4L2_EXPOSURE_AUTO);
-+	/* 100 us units: 1/10000 s to 1 s */
-+	c->exposure = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE_ABSOLUTE,
-+					1, 10000, 1, 100);
++	/* sensor lines: up to the frame, 1/60 s by default */
++	c->exposure = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE,
++					1, CCB_FRAME_LINES - 4, 1, CCB_FRAME_LINES / 2);
 +	/* analog gain x 100: ISO 100 to 800 */
 +	c->gain = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_ANALOGUE_GAIN, 100, 800, 1, 100);
 +	v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_AUTO_FOCUS_START, 0, 1, 1, 0);
++	hblank = v4l2_ctrl_new_std(h, NULL, V4L2_CID_HBLANK, CCB_HBLANK, CCB_HBLANK, 1, CCB_HBLANK);
++	if (hblank)
++		hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
++	vblank = v4l2_ctrl_new_std(h, NULL, V4L2_CID_VBLANK, CCB_VBLANK, CCB_VBLANK, 1, CCB_VBLANK);
++	if (vblank)
++		vblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
++	v4l2_ctrl_new_fwnode_properties(h, &ccb_ctrl_ops, &props);
 +	c->module = v4l2_ctrl_new_custom(h, &ccb_ctrl_module, NULL);
 +	c->raw_transfer = v4l2_ctrl_new_custom(h, &ccb_ctrl_raw_transfer, NULL);
 +	if (h->error)
 +		return h->error;
 +
-+	/* gain is an image-source control, outside the exposure auto cluster; it is used in manual mode */
-+	v4l2_ctrl_auto_cluster(2, &c->exp_auto, V4L2_EXPOSURE_MANUAL, false);
 +	c->sd.ctrl_handler = h;
 +	return 0;
 +}
@@ -728,6 +853,7 @@ index 000000000..bd810a56c
 +		return -ENOMEM;
 +	c->client = client;
 +	mutex_init(&c->lock);
++	INIT_DELAYED_WORK(&c->drain, ccb_drain_work);
 +
 +	/* boot straps low = boot from the ASICs' own flash; never driven high */
 +	c->straps = devm_gpiod_get_array(dev, "strap", GPIOD_OUT_LOW);
@@ -788,6 +914,7 @@ index 000000000..bd810a56c
 +	v4l2_ctrl_handler_free(&c->ctrls);
 +	media_entity_cleanup(&sd->entity);
 +	pm_runtime_disable(&client->dev);
++	cancel_delayed_work_sync(&c->drain);
 +	ccb_power_off(c);
 +}
 +

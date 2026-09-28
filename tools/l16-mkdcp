@@ -1,0 +1,36 @@
+# Megapixels calibration (DCP) for the L16: neutral sRGB matrices and a tone curve
+# (Megapixels takes its preview gamma from the curve's steepest y/x)
+import struct, sys
+
+def srat(v):
+	return struct.pack("<ii", int(round(v * 1000000)), 1000000)
+
+xyz_to_cam = [3.2404542, -1.5371385, -0.4985314, -0.9692660, 1.8760108, 0.0415560,
+              0.0556434, -0.2040259, 1.0572252]	# XYZ (D65) -> linear sRGB
+fwd = [0.4360747, 0.3850649, 0.1430804, 0.2225045, 0.7168786, 0.0606169,
+       0.0139322, 0.0971045, 0.7141733]		# linear sRGB -> XYZ (D50)
+curve = []
+for i in range(33):
+	x = i / 32
+	curve += [x, 1 - (1 - x) ** 2.2]
+
+model = b"Light L16\0"
+entries = [	# tag, type, count, data
+	(50708, 2, len(model), model),
+	(50721, 10, 9, b"".join(srat(v) for v in xyz_to_cam)),
+	(50778, 3, 1, struct.pack("<HH", 21, 0)),	# D65, inline
+	(50940, 11, len(curve), struct.pack("<%df" % len(curve), *curve)),
+	(50964, 10, 9, b"".join(srat(v) for v in fwd)),
+]
+ifd_size = 2 + 12 * len(entries) + 4
+data_off = 8 + ifd_size
+ifd = struct.pack("<H", len(entries))
+blob = b""
+for tag, typ, count, data in entries:
+	if len(data) <= 4:
+		ifd += struct.pack("<HHI", tag, typ, count) + data.ljust(4, b"\0")
+	else:
+		ifd += struct.pack("<HHII", tag, typ, count, data_off + len(blob))
+		blob += data + (b"\0" if len(data) % 2 else b"")
+ifd += struct.pack("<I", 0)
+open(sys.argv[1], "wb").write(b"IIRC" + struct.pack("<I", 8) + ifd + blob)

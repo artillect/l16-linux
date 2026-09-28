@@ -13,10 +13,10 @@ index 821146b2a..5d43ea50e 100644
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 new file mode 100644
-index 000000000..6bf23fbf8
+index 000000000..5248fdcb4
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
-@@ -0,0 +1,1234 @@
+@@ -0,0 +1,1235 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera (APQ8096 v3.1 + PM8994 + PMI8996), board "LFC P2 PVT".
@@ -731,6 +731,7 @@ index 000000000..6bf23fbf8
 +		 * ASICs' own flash (high = programming modes; the driver never raises them).
 +		 * Enables: ASIC power (stock pwr_en_gpio), then the two resets, raised in order.
 +		 */
++		orientation = <1>;	/* back */
 +		strap-gpios = <&tlmm 23 GPIO_ACTIVE_HIGH>, <&tlmm 79 GPIO_ACTIVE_HIGH>;
 +		enable-gpios = <&tlmm 130 GPIO_ACTIVE_HIGH>, <&tlmm 13 GPIO_ACTIVE_HIGH>,
 +			       <&tlmm 128 GPIO_ACTIVE_HIGH>;
