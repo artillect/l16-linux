@@ -3,7 +3,7 @@ Subject: [PATCH] media: qcom: camss: L16 captures (virtual channel parameter, ta
 
 ---
 diff --git a/drivers/media/platform/qcom/camss/camss-csid-4-7.c b/drivers/media/platform/qcom/camss/camss-csid-4-7.c
-index 66054d487..72a2b8e26 100644
+index 66054d487..0aa14066c 100644
 --- a/drivers/media/platform/qcom/camss/camss-csid-4-7.c
 +++ b/drivers/media/platform/qcom/camss/camss-csid-4-7.c
 @@ -53,7 +53,7 @@ static void csid_configure_stream(struct csid_device *csid, u8 enable)
@@ -15,6 +15,15 @@ index 66054d487..72a2b8e26 100644
  		u8 cid = vc * 4; /* id of Virtual Channel and Data Type set */
  		u8 dt_shift;
  
+@@ -111,7 +111,7 @@ static void csid_configure_stream(struct csid_device *csid, u8 enable)
+ 
+ 		val = readl_relaxed(csid->base + CAMSS_CSID_CID_LUT_VC_n(vc));
+ 		val &= ~(0xff << dt_shift);
+-		val |= format->data_type << dt_shift;
++		val |= (camss_dt ? camss_dt : format->data_type) << dt_shift;
+ 		writel_relaxed(val, csid->base + CAMSS_CSID_CID_LUT_VC_n(vc));
+ 
+ 		val = CAMSS_CSID_CID_n_CFG_ISPIF_EN;
 diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
 index 5284b5857..2eb860d3d 100644
 --- a/drivers/media/platform/qcom/camss/camss-csid.c
@@ -37,6 +46,20 @@ index 5284b5857..2eb860d3d 100644
  
  			fmt->field = V4L2_FIELD_NONE;
  		}
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+index 619abbf60..dc112e4e0 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+@@ -1030,7 +1030,8 @@ static void csiphy_lanes_enable(struct csiphy_device *csiphy,
+ 	u8 val;
+ 	int i;
+ 
+-	settle_cnt = csiphy_settle_cnt_calc(link_freq, csiphy->timer_clk_rate);
++	settle_cnt = camss_settle ? camss_settle :
++		     csiphy_settle_cnt_calc(link_freq, csiphy->timer_clk_rate);
+ 
+ 	val = CSIPHY_3PH_CMN_CSI_COMMON_CTRL5_CLK_ENABLE;
+ 	for (i = 0; i < c->num_data; i++)
 diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
 index a734fb7dd..834fef81f 100644
 --- a/drivers/media/platform/qcom/camss/camss-csiphy.c
@@ -99,10 +122,10 @@ index 831486e14..8adfdf6ad 100644
  
  /* -----------------------------------------------------------------------------
 diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
-index 1c9bb62b9..2b844595b 100644
+index 1c9bb62b9..8fafaf7b0 100644
 --- a/drivers/media/platform/qcom/camss/camss.c
 +++ b/drivers/media/platform/qcom/camss/camss.c
-@@ -4944,6 +4944,10 @@ static const struct of_device_id camss_dt_match[] = {
+@@ -4944,6 +4944,18 @@ static const struct of_device_id camss_dt_match[] = {
  
  MODULE_DEVICE_TABLE(of, camss_dt_match);
  
@@ -110,20 +133,32 @@ index 1c9bb62b9..2b844595b 100644
 +module_param_named(vc, camss_vc, int, 0644);
 +MODULE_PARM_DESC(vc, "CSI-2 virtual channel to receive (L16: 0 preview, 1 capture)");
 +
++int camss_dt;
++module_param_named(dt, camss_dt, int, 0644);
++MODULE_PARM_DESC(dt, "CSI-2 data type to receive instead of the format's (L16 captures: 0x30)");
++
++int camss_settle;
++module_param_named(settle, camss_settle, int, 0644);
++MODULE_PARM_DESC(settle, "CSIPHY settle count instead of the computed one (L16 stock: 14)");
++
  static int __maybe_unused camss_runtime_suspend(struct device *dev)
  {
  	struct camss *camss = dev_get_drvdata(dev);
 diff --git a/drivers/media/platform/qcom/camss/camss.h b/drivers/media/platform/qcom/camss/camss.h
-index e084fb77c..94c4eeeac 100644
+index e084fb77c..0b8e74734 100644
 --- a/drivers/media/platform/qcom/camss/camss.h
 +++ b/drivers/media/platform/qcom/camss/camss.h
-@@ -13,6 +13,9 @@
+@@ -13,6 +13,13 @@
  #include <linux/device.h>
  #include <linux/types.h>
  #include <media/v4l2-async.h>
 +
 +/* L16: CSI-2 virtual channel that CSID and ISPIF take (0 = preview, 1 = capture) */
 +extern int camss_vc;
++/* L16: CSI-2 data type that CSID takes instead of the format's, if not 0 */
++extern int camss_dt;
++/* L16: CSIPHY settle count instead of the computed one, if not 0 */
++extern int camss_settle;
  #include <media/v4l2-device.h>
  #include <media/v4l2-subdev.h>
  #include <media/media-device.h>
