@@ -46,7 +46,7 @@ You need:
 Build and install:
 
 ```sh
-git clone https://github.com/<user>/l16-linux
+git clone https://github.com/artillect/l16-linux
 pmbootstrap init            # channel v26.06; any device for now
 l16-linux/pmaports/sync.sh  # copies the L16 packages into pmbootstrap's pmaports
 pmbootstrap init            # device light-lfc, UI phosh, init system OpenRC
