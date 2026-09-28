@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=1
+pkgrel=2
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -43,7 +43,7 @@ source="
 	0013-input-pm8941-pwrkey-abort-suspend.patch
 	0014-iio-qcom-smgr-metadata-array.patch
 	0015-iio-qcom-smgr-l16-light.patch
-	0016-asoc-wcd9335-dec-volume.patch
+	0016-asoc-wcd9335-dec-volume-unmute.patch
 	0017-power-reset-reboot-mode-default.patch
 	"
 builddir="$srcdir/linux-$_tag"
@@ -91,6 +91,6 @@ a9583d00dabdf2103ed5f63a08024db5cb4eb06b3eb699bcf4c799cb1a4e5d95c95ff66240afa02d
 cfad5dcc8c8fc84a8ff44228d9a30675a25116500c31df6a74f4f9d1f646ee5d12df6abfe714a5535792b8cf073ca0f1d78c0175097cd7b071e851e1126f80ba  0013-input-pm8941-pwrkey-abort-suspend.patch
 3e419bb52aaf6fc67f5c683005b8dde1d38877ef5978023061175e935fbddc9f034ce1d6737cb33cfd190ceacd14c745a082b2cb6ffe21bc5318714fc401c9c6  0014-iio-qcom-smgr-metadata-array.patch
 d728d95b22ef2d5eceb15eb2af9e33fdae6ad1711ca680b000b8609a1637fd6320aacc3dbad0b3397440e2399e0e18d4e5c2a070b26bcfb9dbd234d32373c7ab  0015-iio-qcom-smgr-l16-light.patch
-d5bf6155d5aaf388c28e35443c12a8eb50128e5182a6389cd95001fa63f2debff06a1e7fac3c2029bc2172204544d56cd973bd6b79e8cf64a2920025c2839cae  0016-asoc-wcd9335-dec-volume.patch
+e3ed7b18db4bae18e05e549fd6ea654ee7fd74118f5a5cf826aabb5a9cdcc33c64d72a17c7b0b1da9ca2be5718cb58a5ebf5b4c03be3b577fa8c638f3ddaf2ce  0016-asoc-wcd9335-dec-volume-unmute.patch
 27a7f41c9b2392e4b98cb11686862d88097ad87bdd1b31fe80ed5e37a8bca7d43e0052aecaaf8d1f51b0eea8e12181183eb8b625450380e2f2551746aac2ea51  0017-power-reset-reboot-mode-default.patch
 "

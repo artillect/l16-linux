@@ -1,0 +1,132 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] ASoC: codecs: wcd9335: decimator volume controls, unmute after settling
+
+---
+diff --git a/sound/soc/codecs/wcd9335.c b/sound/soc/codecs/wcd9335.c
+index 4515c82e5..fabf0406f 100644
+--- a/sound/soc/codecs/wcd9335.c
++++ b/sound/soc/codecs/wcd9335.c
+@@ -61,6 +61,9 @@
+ #define WCD9335_SLIM_IRQ_PORT_CLOSED (1 << 2)
+ 
+ #define WCD9335_NUM_INTERPOLATORS 9
++#define WCD9335_NUM_DECIMATORS 9
++/* keep a decimator muted while its input settles after power-up (start-up pop) */
++#define WCD9335_TX_UNMUTE_DELAY_MS 200
+ #define WCD9335_RX_START	16
+ #define WCD9335_SLIM_CH_START 128
+ #define WCD9335_MAX_MICBIAS 4
+@@ -296,6 +299,12 @@ struct wcd_slim_codec_dai_data {
+ 	struct slim_stream_runtime *sruntime;
+ };
+ 
++struct wcd9335_tx_mute_work {
++	struct wcd9335_codec *wcd;
++	unsigned int decimator;
++	struct delayed_work dwork;
++};
++
+ struct wcd9335_codec {
+ 	struct device *dev;
+ 	struct clk *mclk;
+@@ -346,6 +355,8 @@ struct wcd9335_codec {
+ 	int dmic_0_1_clk_cnt;
+ 	int dmic_2_3_clk_cnt;
+ 	int dmic_4_5_clk_cnt;
++
++	struct wcd9335_tx_mute_work tx_mute_work[WCD9335_NUM_DECIMATORS];
+ };
+ 
+ struct wcd9335_irq {
+@@ -2296,6 +2307,24 @@ static int wcd9335_rx_hph_mode_put(struct snd_kcontrol *kc,
+ }
+ 
+ static const struct snd_kcontrol_new wcd9335_snd_controls[] = {
++	SOC_SINGLE_S8_TLV("DEC0 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 0,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC1 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 1,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC2 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 2,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC3 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 3,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC4 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 4,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC5 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 5,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC6 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 6,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC7 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 7,
++			-84, 40, digital_gain),
++	SOC_SINGLE_S8_TLV("DEC8 Volume", WCD9335_CDC_TX0_TX_VOL_CTL + 16 * 8,
++			-84, 40, digital_gain),
+ 	/* -84dB min - 40dB max */
+ 	SOC_SINGLE_S8_TLV("RX0 Digital Volume", WCD9335_CDC_RX0_RX_VOL_CTL,
+ 			-84, 40, digital_gain),
+@@ -2756,10 +2785,20 @@ static u16 wcd9335_codec_get_amic_pwlvl_reg(struct snd_soc_component *comp,
+ 	return pwr_level_reg;
+ }
+ 
++static void wcd9335_tx_unmute_work(struct work_struct *work)
++{
++	struct wcd9335_tx_mute_work *m = container_of(to_delayed_work(work),
++						      struct wcd9335_tx_mute_work, dwork);
++
++	snd_soc_component_update_bits(m->wcd->component,
++			WCD9335_CDC_TX0_TX_PATH_CTL + 16 * m->decimator, 0x10, 0x00);
++}
++
+ static int wcd9335_codec_enable_dec(struct snd_soc_dapm_widget *w,
+ 	struct snd_kcontrol *kc, int event)
+ {
+ 	struct snd_soc_component *comp = snd_soc_dapm_to_component(w->dapm);
++	struct wcd9335_codec *wcd = dev_get_drvdata(comp->dev);
+ 	unsigned int decimator;
+ 	char *dec_adc_mux_name = NULL;
+ 	char *widget_name;
+@@ -2860,12 +2899,19 @@ static int wcd9335_codec_enable_dec(struct snd_soc_dapm_widget *w,
+ 
+ 		snd_soc_component_update_bits(comp, hpf_gate_reg,
+ 						0x01, 0x01);
+-		snd_soc_component_update_bits(comp, tx_vol_ctl_reg,
+-						0x10, 0x00);
+ 		snd_soc_component_write(comp, tx_gain_ctl_reg,
+ 			      snd_soc_component_read(comp, tx_gain_ctl_reg));
++		/* unmute once the input has settled, as downstream does */
++		if (decimator < WCD9335_NUM_DECIMATORS)
++			schedule_delayed_work(&wcd->tx_mute_work[decimator].dwork,
++				msecs_to_jiffies(WCD9335_TX_UNMUTE_DELAY_MS));
++		else
++			snd_soc_component_update_bits(comp, tx_vol_ctl_reg,
++						      0x10, 0x00);
+ 		break;
+ 	case SND_SOC_DAPM_PRE_PMD:
++		if (decimator < WCD9335_NUM_DECIMATORS)
++			cancel_delayed_work_sync(&wcd->tx_mute_work[decimator].dwork);
+ 		hpf_coff_freq = (snd_soc_component_read(comp, dec_cfg_reg) &
+ 				   TX_HPF_CUT_OFF_FREQ_MASK) >> 5;
+ 		snd_soc_component_update_bits(comp, tx_vol_ctl_reg, 0x10, 0x10);
+@@ -4856,6 +4902,12 @@ static int wcd9335_codec_probe(struct snd_soc_component *component)
+ 	for (i = 0; i < NUM_CODEC_DAIS; i++)
+ 		INIT_LIST_HEAD(&wcd->dai[i].slim_ch_list);
+ 
++	for (i = 0; i < WCD9335_NUM_DECIMATORS; i++) {
++		wcd->tx_mute_work[i].wcd = wcd;
++		wcd->tx_mute_work[i].decimator = i;
++		INIT_DELAYED_WORK(&wcd->tx_mute_work[i].dwork, wcd9335_tx_unmute_work);
++	}
++
+ 	ret = wcd9335_setup_irqs(wcd);
+ 	if (ret)
+ 		goto free_clsh_ctrl;
+@@ -4870,7 +4922,10 @@ static int wcd9335_codec_probe(struct snd_soc_component *component)
+ static void wcd9335_codec_remove(struct snd_soc_component *comp)
+ {
+ 	struct wcd9335_codec *wcd = dev_get_drvdata(comp->dev);
++	int i;
+ 
++	for (i = 0; i < WCD9335_NUM_DECIMATORS; i++)
++		cancel_delayed_work_sync(&wcd->tx_mute_work[i].dwork);
+ 	wcd_clsh_ctrl_free(wcd->clsh_ctrl);
+ 	wcd9335_teardown_irqs(wcd);
+ }

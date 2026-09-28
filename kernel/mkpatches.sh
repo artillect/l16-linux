@@ -65,7 +65,7 @@ patch iio-qcom-smgr-metadata-array "iio: qcom_smgr: decode the report metadata a
 	drivers/iio/common/qcom_smgr/qmi
 patch iio-qcom-smgr-l16-light "iio: qcom_smgr: L16: stream light instead of the dead proximity sensor" \
 	drivers/iio/common/qcom_smgr/qcom_smgr.c
-patch asoc-wcd9335-dec-volume "ASoC: codecs: wcd9335: add decimator volume controls" \
+patch asoc-wcd9335-dec-volume-unmute "ASoC: codecs: wcd9335: decimator volume controls, unmute after settling" \
 	sound/soc/codecs/wcd9335.c
 patch power-reset-reboot-mode-default "power: reset: reboot-mode: settable mode for a reboot without a command" \
 	drivers/power/reset/reboot-mode.c
