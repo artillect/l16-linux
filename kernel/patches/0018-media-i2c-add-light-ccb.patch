@@ -34,23 +34,41 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..a74c85560
+index 000000000..bd810a56c
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,776 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
 + *
 + * The L16's 16 camera modules sit behind three Light ASICs. ASIC1 is controlled over I2C
 + * (7-bit 0x08) and relays commands to the other two; each ASIC sends RAW10 over its own
-+ * 4-lane CSI-2 link. This driver only describes those three links to the media graph so
-+ * that CAMSS can receive them. It does not talk to the ASICs yet: for now userspace resets
-+ * them and sends the commands (tools/l16-asic-probe in l16-linux).
++ * 4-lane CSI-2 link. The ASICs run exposure and focus themselves; the host sends them
++ * commands and reads their message queue.
++ *
++ * This driver powers the ASICs up (as stock LightOS does at boot), starts and stops the
++ * preview stream with the camera, and offers exposure, gain, focus and the preview module
++ * as V4L2 controls. Captures (full-resolution records sent over virtual channel 1) are
++ * driven from userspace through the raw message ioctls below; with the raw-transfer
++ * control set, stream on/off leaves the ASICs alone.
++ *
++ * Messages: the host writes [tid BE][cmd LE][body]. Commands with bit 15 set get a type-1
++ * reply carrying the tid. The queue is read by writing 00 00 and reading 8 bytes
++ * {u16 type, u16 len, 4 bytes}, then, if len > 4, writing 01 00 and reading len - 4.
++ * Type 2 means the queue is empty.
 + */
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
 +#include <linux/i2c.h>
++#include <linux/jiffies.h>
 +#include <linux/mod_devicetable.h>
 +#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/pm_runtime.h>
++#include <linux/time.h>
++#include <linux/timekeeping.h>
++#include <linux/unaligned.h>
 +#include <media/v4l2-ctrls.h>
 +#include <media/v4l2-fwnode.h>
 +#include <media/v4l2-subdev.h>
@@ -64,13 +82,519 @@ index 000000000..a74c85560
 +#define CCB_HEIGHT	1560
 +#define CCB_CODE	MEDIA_BUS_FMT_SGRBG10_1X10
 +
++#define CCB_MSG_MAX	128
++#define CCB_TYPE_REPLY	1
++#define CCB_TYPE_EMPTY	2
++#define CCB_TYPE_EVENT	3
++
++/* TID kinds as stock uses them (kind << 13) */
++#define CCB_KIND_AF	1
++#define CCB_KIND_CMD	3
++#define CCB_KIND_CAPTURE 4
++#define CCB_KIND_CFG	5
++
++/* raw message interface on the subdev node (l16-capture, l16-asic-probe) */
++struct light_ccb_msg {
++	__u16 len;
++	__u8 data[CCB_MSG_MAX];
++};
++#define LIGHT_CCB_IOC_SEND	_IOW('L', 1, struct light_ccb_msg)	/* data = [tid][cmd][body] */
++#define LIGHT_CCB_IOC_RECV	_IOR('L', 2, struct light_ccb_msg)	/* data = [type][len][payload] */
++#define LIGHT_CCB_IOC_RESET	_IO('L', 3)				/* power cycle and boot */
++#define LIGHT_CCB_IOC_OFF	_IO('L', 4)				/* power off now */
++
++/* custom controls */
++#define V4L2_CID_LIGHT_BASE		(V4L2_CID_USER_BASE | 0x1c00)
++#define V4L2_CID_LIGHT_MODULE		(V4L2_CID_LIGHT_BASE + 0)
++#define V4L2_CID_LIGHT_RAW_TRANSFER	(V4L2_CID_LIGHT_BASE + 1)
++
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
++
++/* preview modules: stock previews on A1 (28 mm), B4 (70 mm) or C5 (150 mm) */
++static const char * const ccb_module_names[] = { "A1", "B4", "C5" };
++static const u8 ccb_module_masks[][3] = {
++	{ 0x02, 0x00, 0x00 },	/* A1: bit 1 (LRI camera 0) */
++	{ 0x00, 0x02, 0x00 },	/* B4: bit 9 */
++	{ 0x00, 0x80, 0x00 },	/* C5: bit 15 */
++};
++/* zoom factor (f32) the ASIC needs to run AE on the module: 1.0, 2.5, 150/28 */
++static const u32 ccb_module_zoom[] = { 0x3f800000, 0x40200004, 0x40ab6db7 };
 +
 +struct ccb {
 +	struct v4l2_subdev sd;
 +	struct media_pad pads[CCB_NUM_PADS];
 +	struct v4l2_ctrl_handler ctrls;
++	struct i2c_client *client;
++
++	struct gpio_descs *straps;	/* boot mode: only ever driven low */
++	struct gpio_descs *enable;	/* power, then the resets, raised in order */
++
++	struct mutex lock;		/* serialises messages, power and streaming */
++	bool booted;
++	int stream_count;		/* s_stream(1) calls not yet undone */
++	bool previewing;
++	u8 seq;
++
++	struct v4l2_ctrl *exp_auto;
++	struct v4l2_ctrl *exposure;	/* 100 us units */
++	struct v4l2_ctrl *gain;		/* analog gain x 100 */
++	struct v4l2_ctrl *module;
++	struct v4l2_ctrl *raw_transfer;
 +};
++
++static inline struct ccb *to_ccb(struct v4l2_subdev *sd)
++{
++	return container_of(sd, struct ccb, sd);
++}
++
++static u16 ccb_tid(struct ccb *c, int kind)
++{
++	return kind << 13 | c->seq++;
++}
++
++/* --- messages ------------------------------------------------------------------------ */
++
++static int ccb_write(struct ccb *c, const u8 *buf, int len)
++{
++	int ret = i2c_master_send(c->client, buf, len);
++
++	return ret == len ? 0 : ret < 0 ? ret : -EIO;
++}
++
++static int ccb_send(struct ccb *c, u16 tid, u16 cmd, const void *body, int n)
++{
++	u8 buf[CCB_MSG_MAX];
++
++	if (n + 4 > sizeof(buf))
++		return -EINVAL;
++	buf[0] = tid >> 8;
++	buf[1] = tid;
++	put_unaligned_le16(cmd, buf + 2);
++	if (n)
++		memcpy(buf + 4, body, n);
++	return ccb_write(c, buf, n + 4);
++}
++
++/* one message from ASIC1's queue: m[0..1] type, m[2..3] len, then the payload */
++static int ccb_read(struct ccb *c, u8 *m, int size)
++{
++	u8 sel[2] = { 0, 0 };
++	struct i2c_msg xfer[2] = {
++		{ .addr = c->client->addr, .len = 2, .buf = sel },
++		{ .addr = c->client->addr, .flags = I2C_M_RD, .len = 8, .buf = m },
++	};
++	int type, len, ret;
++
++	ret = i2c_transfer(c->client->adapter, xfer, 2);
++	if (ret != 2)
++		return ret < 0 ? ret : -EIO;
++
++	type = get_unaligned_le16(m);
++	len = get_unaligned_le16(m + 2);
++	if (type != CCB_TYPE_EMPTY && len > 4) {
++		if (len + 4 > size)
++			return -EOVERFLOW;
++		sel[0] = 1;
++		xfer[1].len = len - 4;
++		xfer[1].buf = m + 8;
++		ret = i2c_transfer(c->client->adapter, xfer, 2);
++		if (ret != 2)
++			return ret < 0 ? ret : -EIO;
++	}
++	return type;
++}
++
++/*
++ * Wait for a message of @type (for replies: with @tid; 0xffff = any), reading past the
++ * others (AE pushes arrive every frame). @ms counts only time spent on an empty queue.
++ */
++static int ccb_wait(struct ccb *c, int type, u16 tid, int ms, u8 *out)
++{
++	u8 m[CCB_MSG_MAX];
++	unsigned long end = jiffies + msecs_to_jiffies(ms);
++	int t;
++
++	while (time_before(jiffies, end)) {
++		/* read errors: the ASIC is not answering yet (just powered up); keep trying */
++		t = ccb_read(c, m, sizeof(m));
++		if (t >= 0 && t == type && (tid == 0xffff || get_unaligned_be16(m + 4) == tid)) {
++			if (out)
++				memcpy(out, m, sizeof(m));
++			return 0;
++		}
++		if (t < 0 || t == CCB_TYPE_EMPTY)
++			usleep_range(5000, 10000);
++		else
++			end += msecs_to_jiffies(1);	/* busy queue: don't count it */
++	}
++	return -ETIMEDOUT;
++}
++
++/* send a bit-15 command and wait for its reply; returns the reply status */
++static int ccb_command(struct ccb *c, int kind, u16 cmd, const void *body, int n)
++{
++	u16 tid = ccb_tid(c, kind);
++	u8 m[CCB_MSG_MAX];
++	int ret;
++
++	ret = ccb_send(c, tid, cmd, body, n);
++	if (!ret)
++		ret = ccb_wait(c, CCB_TYPE_REPLY, tid, 2000, m);
++	if (ret) {
++		dev_err(&c->client->dev, "command 0x%04x: %d\n", cmd, ret);
++		return ret;
++	}
++	return get_unaligned_le16(m + 6);
++}
++
++/* --- power ----------------------------------------------------------------------------- */
++
++static void ccb_power_off(struct ccb *c)
++{
++	int i;
++
++	for (i = c->enable->ndescs - 1; i >= 0; i--)
++		gpiod_set_value_cansleep(c->enable->desc[i], 0);
++	c->booted = false;
++	c->previewing = false;
++}
++
++/* stock's sequence (fw_update.sh, prog_app_p2 -q): enables raised a second apart */
++static int ccb_boot(struct ccb *c)
++{
++	unsigned int i;
++	int ret;
++
++	ccb_power_off(c);
++	msleep(100);
++	for (i = 0; i < c->enable->ndescs; i++) {
++		if (i)
++			msleep(1000);
++		gpiod_set_value_cansleep(c->enable->desc[i], 1);
++	}
++	ret = ccb_wait(c, CCB_TYPE_EVENT, 0xffff, 5000, NULL);
++	if (ret) {
++		dev_err(&c->client->dev, "no boot event from the ASICs: %d\n", ret);
++		ccb_power_off(c);
++		return ret;
++	}
++	c->booted = true;
++	dev_info(&c->client->dev, "ASICs booted\n");
++	return 0;
++}
++
++/*
++ * Power up and boot. A failed boot is not a failed resume (that would leave runtime PM
++ * refusing every later resume); users check c->booted through ccb_ready().
++ */
++static int ccb_runtime_resume(struct device *dev)
++{
++	struct ccb *c = to_ccb(i2c_get_clientdata(to_i2c_client(dev)));
++
++	mutex_lock(&c->lock);
++	if (!c->booted)
++		ccb_boot(c);
++	mutex_unlock(&c->lock);
++	return 0;
++}
++
++/* with c->lock held and runtime PM active: the ASICs booted, or one more try */
++static int ccb_ready(struct ccb *c)
++{
++	if (c->booted)
++		return 0;
++	return ccb_boot(c) ? -EIO : 0;
++}
++
++static int ccb_runtime_suspend(struct device *dev)
++{
++	struct ccb *c = to_ccb(i2c_get_clientdata(to_i2c_client(dev)));
++
++	mutex_lock(&c->lock);
++	ccb_power_off(c);
++	mutex_unlock(&c->lock);
++	return 0;
++}
++
++/* --- preview ---------------------------------------------------------------------------- */
++
++/* IEEE-754 single-precision bits of n / d, for n >= d > 0 (no floating point here) */
++static u32 ccb_f32(u32 n, u32 d)
++{
++	int e = 0;
++	u64 m;
++
++	while ((u64)n >= (u64)d << (e + 1))
++		e++;
++	m = div_u64((u64)n << 23, d) >> e;
++	return (127 + e) << 23 | (m & 0x7fffff);
++}
++
++/*
++ * AE config (0x0060) mode 0 = manual: camera 0, then {f32 gain, u64 exposure ns, u16 fps}
++ * for preview and for capture (liblight_ccb ccb_config_ae_manual_mode). The ASICs' gain
++ * unit is twice the sensors' analog gain, so analog gain g/100 is sent as g/50.
++ */
++static int ccb_ae_manual(struct ccb *c)
++{
++	u64 ns = (u64)c->exposure->val * 100000;
++	u32 gain = ccb_f32(c->gain->val, 50);
++	u8 b[30] = { 0, 0 };
++
++	put_unaligned_le32(gain, b + 2);
++	put_unaligned_le64(ns, b + 6);
++	put_unaligned_le16(30, b + 14);
++	put_unaligned_le32(gain, b + 16);
++	put_unaligned_le64(ns, b + 20);
++	put_unaligned_le16(0, b + 28);
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, sizeof(b));
++}
++
++static int ccb_ae_auto(struct ccb *c)
++{
++	static const u8 b[] = { 0x02, 0x00, 0x00, 0x00, 0x3c, 0x00 };
++
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, sizeof(b));
++}
++
++static int ccb_apply_ae(struct ccb *c)
++{
++	if (!c->previewing)
++		return 0;
++	return c->exp_auto->val == V4L2_EXPOSURE_MANUAL ? ccb_ae_manual(c) : ccb_ae_auto(c);
++}
++
++/* stock's camera start (LightOS I2C traces), preview on the selected module */
++static int ccb_preview_start(struct ccb *c)
++{
++	static const u8 open[] = { 0x01, 0x00, 0x00, 0x02 };
++	/* crop 4160x3120: capture (UCID 5) 1:1, preview (UCID 3) 1:2 = 2080x1560 */
++	static const u8 crop5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
++				    0x40, 0x10, 0x30, 0x0c, 0x01, 0x01 };
++	static const u8 crop3[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
++				    0x40, 0x10, 0x30, 0x0c, 0x01, 0x02 };
++	/* AE: gain 1.0 for capture; preview gain 1.0, 2.5 ms, as stock starts */
++	static const u8 ae5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x05, 0x00, 0x00, 0x80, 0x3f,
++				  0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x3c };
++	static const u8 ae3[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x07, 0x00, 0x00, 0x80, 0x3f,
++				  0xa0, 0x25, 0x26, 0, 0, 0, 0, 0, 0x00, 0x3c };
++	static const u8 ucid3[] = { 0x03, 0x00 };
++	static const u8 evcomp[] = { 0x00, 0x01 };
++	static const u8 zero67[24] = { 0 };
++	static const u8 stack[] = { 0x01, 0x01 };
++	static const u8 ae3b[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xa0, 0x90, 0x40,
++				   0x8c, 0xcc, 0x02, 0x01, 0, 0, 0, 0, 0, 0 };
++	int mod = c->module->val;
++	u8 on[6], time[16];
++	struct timespec64 now;
++	int ret;
++
++	ktime_get_real_ts64(&now);
++	put_unaligned_le32(now.tv_sec, time);
++	put_unaligned_le32(now.tv_nsec / 1000, time + 4);
++	put_unaligned_le32(0, time + 8);
++	put_unaligned_le32(-sys_tz.tz_minuteswest * 60, time + 12);
++	ret = ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0201, time, sizeof(time));
++	if (ret)
++		return ret;
++	ret = ccb_command(c, CCB_KIND_CMD, 0x8000, open, sizeof(open));
++	if (ret < 0)
++		return ret;
++	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x002e, crop5, sizeof(crop5));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae5, sizeof(ae5));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x002e, crop3, sizeof(crop3));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae3, sizeof(ae3));
++	ret = ccb_command(c, CCB_KIND_CMD, 0x9000, ucid3, sizeof(ucid3));
++	if (ret < 0)
++		return ret;
++
++	memcpy(on, ccb_module_masks[mod], 3);
++	on[3] = 0x11;
++	on[4] = 0x00;
++	on[5] = 0x00;
++	ret = ccb_command(c, CCB_KIND_CMD, 0x8002, on, sizeof(on));
++	if (ret < 0)
++		return ret;
++
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0062, evcomp, sizeof(evcomp));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, zero67, sizeof(zero67));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae3b, sizeof(ae3b));
++	c->previewing = true;
++	ret = ccb_apply_ae(c);
++	if (ret)
++		return ret;
++
++	/* the ASIC skips AE unless its zoom factor matches the preview module */
++	if (mod) {
++		u8 z[4];
++
++		put_unaligned_le32(ccb_module_zoom[mod], z);
++		ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x005c, z, sizeof(z));
++	}
++	return 0;
++}
++
++static int ccb_preview_stop(struct ccb *c)
++{
++	static const u8 close[] = { 0x01, 0x00, 0x00, 0x00 };
++	u8 off[6];
++	int ret;
++
++	memcpy(off, ccb_module_masks[c->module->val], 3);
++	off[3] = 0x10;
++	off[4] = 0x00;
++	off[5] = 0x00;
++	c->previewing = false;
++	ret = ccb_command(c, CCB_KIND_CMD, 0x8002, off, sizeof(off));
++	if (ret >= 0)
++		ret = ccb_command(c, CCB_KIND_CMD, 0x8000, close, sizeof(close));
++	return ret < 0 ? ret : 0;
++}
++
++/* stock's centre autofocus: lock AE, AF ROI 200x200 at (1958, 1482), unlock */
++static int ccb_autofocus(struct ccb *c)
++{
++	static const u8 lock[] = { 0x01 }, unlock[] = { 0x00 };
++	static const u8 roi[] = { 0x01, 0x01, 0xa6, 0x07, 0xca, 0x05, 0xc8, 0x00, 0xc8, 0x00,
++				  0xe8, 0x03 };
++	int ret;
++
++	if (!c->previewing)
++		return -EBUSY;
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, lock, sizeof(lock));
++	ret = ccb_command(c, CCB_KIND_AF, 0x8058, roi, sizeof(roi));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, unlock, sizeof(unlock));
++	if (ret >= 0)
++		dev_dbg(&c->client->dev, "autofocus status %d\n", ret);
++	return ret < 0 ? ret : 0;
++}
++
++/* --- V4L2 ------------------------------------------------------------------------------- */
++
++static int ccb_s_ctrl(struct v4l2_ctrl *ctrl)
++{
++	struct ccb *c = container_of(ctrl->handler, struct ccb, ctrls);
++	int ret = 0;
++
++	/* only send to the ASICs while they are previewing; otherwise remember the value */
++	switch (ctrl->id) {
++	case V4L2_CID_EXPOSURE_AUTO:
++	case V4L2_CID_EXPOSURE_ABSOLUTE:
++	case V4L2_CID_ANALOGUE_GAIN:
++		mutex_lock(&c->lock);
++		ret = ccb_apply_ae(c);
++		mutex_unlock(&c->lock);
++		break;
++	case V4L2_CID_AUTO_FOCUS_START:
++		mutex_lock(&c->lock);
++		ret = ccb_autofocus(c);
++		mutex_unlock(&c->lock);
++		break;
++	case V4L2_CID_LIGHT_MODULE:
++		if (c->previewing)
++			ret = -EBUSY;
++		break;
++	}
++	return ret;
++}
++
++static const struct v4l2_ctrl_ops ccb_ctrl_ops = {
++	.s_ctrl = ccb_s_ctrl,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_module = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_MODULE,
++	.name = "Preview Module",
++	.type = V4L2_CTRL_TYPE_MENU,
++	.max = ARRAY_SIZE(ccb_module_names) - 1,
++	.qmenu = ccb_module_names,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_raw_transfer = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_RAW_TRANSFER,
++	.name = "Raw Transfer",
++	.type = V4L2_CTRL_TYPE_BOOLEAN,
++	.max = 1,
++	.step = 1,
++};
++
++static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
++{
++	struct ccb *c = to_ccb(sd);
++	struct device *dev = &c->client->dev;
++	int ret = 0;
++
++	/* capture transfers: userspace drives the ASICs through the message ioctls */
++	if (c->raw_transfer->val)
++		return 0;
++
++	if (enable) {
++		ret = pm_runtime_resume_and_get(dev);
++		if (ret)
++			return ret;
++		mutex_lock(&c->lock);
++		ret = ccb_ready(c);
++		if (!ret && !c->stream_count)
++			ret = ccb_preview_start(c);
++		if (!ret)
++			c->stream_count++;
++		mutex_unlock(&c->lock);
++		if (ret)
++			pm_runtime_put_autosuspend(dev);
++		return ret;
++	}
++
++	mutex_lock(&c->lock);
++	if (c->stream_count && !--c->stream_count)
++		ret = ccb_preview_stop(c);
++	mutex_unlock(&c->lock);
++	pm_runtime_put_autosuspend(dev);
++	return ret;
++}
++
++static long ccb_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
++{
++	struct ccb *c = to_ccb(sd);
++	struct device *dev = &c->client->dev;
++	struct light_ccb_msg *msg = arg;
++	int ret;
++
++	switch (cmd) {
++	case LIGHT_CCB_IOC_SEND:
++	case LIGHT_CCB_IOC_RECV:
++	case LIGHT_CCB_IOC_RESET:
++		ret = pm_runtime_resume_and_get(dev);
++		if (ret)
++			return ret;
++		mutex_lock(&c->lock);
++		ret = cmd == LIGHT_CCB_IOC_RESET ? 0 : ccb_ready(c);
++		if (ret)
++			;
++		else if (cmd == LIGHT_CCB_IOC_SEND)
++			ret = msg->len >= 4 && msg->len <= CCB_MSG_MAX ?
++			      ccb_write(c, msg->data, msg->len) : -EINVAL;
++		else if (cmd == LIGHT_CCB_IOC_RECV)
++			ret = ccb_read(c, msg->data, sizeof(msg->data));
++		else
++			ret = ccb_boot(c);
++		if (cmd == LIGHT_CCB_IOC_RECV && ret >= 0) {
++			msg->len = get_unaligned_le16(msg->data + 2) + 4;
++			ret = 0;
++		}
++		mutex_unlock(&c->lock);
++		pm_runtime_put_autosuspend(dev);
++		return ret;
++	case LIGHT_CCB_IOC_OFF:
++		mutex_lock(&c->lock);
++		ccb_power_off(c);
++		mutex_unlock(&c->lock);
++		return 0;
++	}
++	return -ENOIOCTLCMD;
++}
 +
 +static void ccb_fmt(struct v4l2_mbus_framefmt *fmt)
 +{
@@ -115,8 +639,8 @@ index 000000000..a74c85560
 +}
 +
 +/*
-+ * The ASIC chooses the frame size itself (commands from userspace for now), so accept the
-+ * size userspace asks for; only the bus format is fixed.
++ * The ASIC chooses the frame size itself (2080x1560 preview, 1408x9219 capture records),
++ * so accept the size userspace asks for; only the bus format is fixed.
 + */
 +static int ccb_set_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
 +		       struct v4l2_subdev_format *fmt)
@@ -131,11 +655,9 @@ index 000000000..a74c85560
 +	return 0;
 +}
 +
-+/* userspace starts and stops the ASICs' streams */
-+static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
-+{
-+	return 0;
-+}
++static const struct v4l2_subdev_core_ops ccb_core_ops = {
++	.ioctl = ccb_ioctl,
++};
 +
 +static const struct v4l2_subdev_video_ops ccb_video_ops = {
 +	.s_stream = ccb_s_stream,
@@ -149,6 +671,7 @@ index 000000000..a74c85560
 +};
 +
 +static const struct v4l2_subdev_ops ccb_ops = {
++	.core = &ccb_core_ops,
 +	.video = &ccb_video_ops,
 +	.pad = &ccb_pad_ops,
 +};
@@ -161,71 +684,116 @@ index 000000000..a74c85560
 +	.get_fwnode_pad = v4l2_subdev_get_fwnode_pad_1_to_1,
 +};
 +
++static int ccb_init_controls(struct ccb *c)
++{
++	struct v4l2_ctrl_handler *h = &c->ctrls;
++	struct v4l2_ctrl *link_freq;
++
++	v4l2_ctrl_handler_init(h, 9);
++	link_freq = v4l2_ctrl_new_int_menu(h, NULL, V4L2_CID_LINK_FREQ, 0, 0, ccb_link_freqs);
++	if (link_freq)
++		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
++	v4l2_ctrl_new_std(h, NULL, V4L2_CID_PIXEL_RATE, CCB_PIXEL_RATE, CCB_PIXEL_RATE, 1,
++			  CCB_PIXEL_RATE);
++
++	c->exp_auto = v4l2_ctrl_new_std_menu(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE_AUTO,
++					     V4L2_EXPOSURE_MANUAL, ~(BIT(V4L2_EXPOSURE_AUTO) |
++					     BIT(V4L2_EXPOSURE_MANUAL)), V4L2_EXPOSURE_AUTO);
++	/* 100 us units: 1/10000 s to 1 s */
++	c->exposure = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE_ABSOLUTE,
++					1, 10000, 1, 100);
++	/* analog gain x 100: ISO 100 to 800 */
++	c->gain = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_ANALOGUE_GAIN, 100, 800, 1, 100);
++	v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_AUTO_FOCUS_START, 0, 1, 1, 0);
++	c->module = v4l2_ctrl_new_custom(h, &ccb_ctrl_module, NULL);
++	c->raw_transfer = v4l2_ctrl_new_custom(h, &ccb_ctrl_raw_transfer, NULL);
++	if (h->error)
++		return h->error;
++
++	/* gain is an image-source control, outside the exposure auto cluster; it is used in manual mode */
++	v4l2_ctrl_auto_cluster(2, &c->exp_auto, V4L2_EXPOSURE_MANUAL, false);
++	c->sd.ctrl_handler = h;
++	return 0;
++}
++
 +static int ccb_probe(struct i2c_client *client)
 +{
 +	struct device *dev = &client->dev;
-+	struct v4l2_ctrl *link_freq;
-+	struct ccb *ccb;
++	struct ccb *c;
 +	unsigned int i;
 +	int ret;
 +
-+	ccb = devm_kzalloc(dev, sizeof(*ccb), GFP_KERNEL);
-+	if (!ccb)
++	c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
++	if (!c)
 +		return -ENOMEM;
++	c->client = client;
++	mutex_init(&c->lock);
 +
-+	v4l2_i2c_subdev_init(&ccb->sd, client, &ccb_ops);
-+	ccb->sd.internal_ops = &ccb_internal_ops;
-+	ccb->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-+	ccb->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
-+	ccb->sd.entity.ops = &ccb_entity_ops;
++	/* boot straps low = boot from the ASICs' own flash; never driven high */
++	c->straps = devm_gpiod_get_array(dev, "strap", GPIOD_OUT_LOW);
++	if (IS_ERR(c->straps))
++		return dev_err_probe(dev, PTR_ERR(c->straps), "boot straps\n");
++	c->enable = devm_gpiod_get_array(dev, "enable", GPIOD_OUT_LOW);
++	if (IS_ERR(c->enable))
++		return dev_err_probe(dev, PTR_ERR(c->enable), "enable gpios\n");
++
++	v4l2_i2c_subdev_init(&c->sd, client, &ccb_ops);
++	c->sd.internal_ops = &ccb_internal_ops;
++	c->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
++	c->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
++	c->sd.entity.ops = &ccb_entity_ops;
 +
 +	for (i = 0; i < CCB_NUM_PADS; i++)
-+		ccb->pads[i].flags = MEDIA_PAD_FL_SOURCE;
-+	ret = media_entity_pads_init(&ccb->sd.entity, CCB_NUM_PADS, ccb->pads);
++		c->pads[i].flags = MEDIA_PAD_FL_SOURCE;
++	ret = media_entity_pads_init(&c->sd.entity, CCB_NUM_PADS, c->pads);
 +	if (ret)
 +		return ret;
 +
-+	v4l2_ctrl_handler_init(&ccb->ctrls, 2);
-+	link_freq = v4l2_ctrl_new_int_menu(&ccb->ctrls, NULL, V4L2_CID_LINK_FREQ, 0, 0,
-+					   ccb_link_freqs);
-+	if (link_freq)
-+		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
-+	v4l2_ctrl_new_std(&ccb->ctrls, NULL, V4L2_CID_PIXEL_RATE, CCB_PIXEL_RATE,
-+			  CCB_PIXEL_RATE, 1, CCB_PIXEL_RATE);
-+	if (ccb->ctrls.error) {
-+		ret = ccb->ctrls.error;
-+		goto err_ctrls;
-+	}
-+	ccb->sd.ctrl_handler = &ccb->ctrls;
-+
-+	ret = v4l2_subdev_init_finalize(&ccb->sd);
++	ret = ccb_init_controls(c);
 +	if (ret)
 +		goto err_ctrls;
 +
-+	ret = v4l2_async_register_subdev(&ccb->sd);
++	ret = v4l2_subdev_init_finalize(&c->sd);
 +	if (ret)
-+		goto err_subdev;
++		goto err_ctrls;
++
++	/* the ASICs are off; boot them on first use, power off after a minute idle */
++	pm_runtime_set_suspended(dev);
++	pm_runtime_set_autosuspend_delay(dev, 60000);
++	pm_runtime_use_autosuspend(dev);
++	pm_runtime_enable(dev);
++
++	ret = v4l2_async_register_subdev(&c->sd);
++	if (ret)
++		goto err_pm;
 +
 +	return 0;
 +
-+err_subdev:
-+	v4l2_subdev_cleanup(&ccb->sd);
++err_pm:
++	pm_runtime_disable(dev);
++	v4l2_subdev_cleanup(&c->sd);
 +err_ctrls:
-+	v4l2_ctrl_handler_free(&ccb->ctrls);
-+	media_entity_cleanup(&ccb->sd.entity);
++	v4l2_ctrl_handler_free(&c->ctrls);
++	media_entity_cleanup(&c->sd.entity);
 +	return ret;
 +}
 +
 +static void ccb_remove(struct i2c_client *client)
 +{
 +	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-+	struct ccb *ccb = container_of(sd, struct ccb, sd);
++	struct ccb *c = to_ccb(sd);
 +
 +	v4l2_async_unregister_subdev(sd);
 +	v4l2_subdev_cleanup(sd);
-+	v4l2_ctrl_handler_free(&ccb->ctrls);
++	v4l2_ctrl_handler_free(&c->ctrls);
 +	media_entity_cleanup(&sd->entity);
++	pm_runtime_disable(&client->dev);
++	ccb_power_off(c);
 +}
++
++static const struct dev_pm_ops ccb_pm_ops = {
++	RUNTIME_PM_OPS(ccb_runtime_suspend, ccb_runtime_resume, NULL)
++};
 +
 +static const struct of_device_id ccb_of_match[] = {
 +	{ .compatible = "light,l16-ccb" },
@@ -237,6 +805,7 @@ index 000000000..a74c85560
 +	.driver = {
 +		.name = "light-ccb",
 +		.of_match_table = ccb_of_match,
++		.pm = pm_ptr(&ccb_pm_ops),
 +	},
 +	.probe = ccb_probe,
 +	.remove = ccb_remove,

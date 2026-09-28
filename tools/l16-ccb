@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+# l16-ccb: raw messages to the L16's camera ASICs through the light-ccb driver
+#   l16-ccb send BYTE...   write one message, [tid BE][cmd LE][body], bytes as 0x.. or decimal
+#   l16-ccb recv           read one message from ASIC1's queue: "type len b0 b1 b2 b3 rest..."
+#                          (type 2 = empty), the same format l16-asic-probe always printed
+#   l16-ccb reset          power the ASICs up (or cycle them) and wait for their boot event
+#   l16-ccb off            power them off now
+# The driver powers the ASICs on demand and off after a minute without messages.
+import fcntl
+import glob
+import os
+import struct
+import sys
+
+MSG = 128
+SEND = 0x40000000 | (MSG + 2) << 16 | ord("L") << 8 | 1	# _IOW('L', 1, struct light_ccb_msg)
+RECV = 0x80000000 | (MSG + 2) << 16 | ord("L") << 8 | 2	# _IOR('L', 2, ...)
+RESET = ord("L") << 8 | 3				# _IO('L', 3)
+OFF = ord("L") << 8 | 4					# _IO('L', 4)
+
+
+def node():
+	for name in glob.glob("/sys/class/video4linux/v4l-subdev*/name"):
+		if open(name).read().startswith("light-ccb"):
+			return "/dev/" + name.split("/")[-2]
+	sys.exit("l16-ccb: no light-ccb subdev (is the driver loaded?)")
+
+
+def main():
+	if len(sys.argv) < 2:
+		sys.exit("usage: l16-ccb send BYTE... | recv | reset | off")
+	fd = os.open(node(), os.O_RDWR)
+	cmd = sys.argv[1]
+	if cmd == "send":
+		data = bytes(int(b, 0) for b in sys.argv[2:])
+		buf = bytearray(struct.pack("<H", len(data)) + data.ljust(MSG, b"\0"))
+		fcntl.ioctl(fd, SEND, buf)
+	elif cmd == "recv":
+		buf = bytearray(MSG + 2)
+		fcntl.ioctl(fd, RECV, buf)
+		d = buf[2:]
+		mtype, mlen = struct.unpack_from("<HH", d)
+		payload = d[4:4 + 4] if mtype == 2 else d[4:4 + max(mlen, 4)]
+		print(mtype, mlen, " ".join("0x%02x" % b for b in payload))
+	elif cmd == "reset":
+		fcntl.ioctl(fd, RESET)
+	elif cmd == "off":
+		fcntl.ioctl(fd, OFF)
+	else:
+		sys.exit("l16-ccb: unknown command " + cmd)
+
+
+main()

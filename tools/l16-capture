@@ -35,8 +35,15 @@ for n in 0 1 2; do
 	v4l2-ctl -d /dev/video$n --set-fmt-video=width=1408,height=9219,pixelformat=pgAA
 done
 
+# the light-ccb driver (kernel r24+) starts a preview on stream on unless told the streams
+# are raw transfers that userspace drives
+sd=$(grep -l light-ccb /sys/class/video4linux/v4l-subdev*/name 2>/dev/null | head -n 1)
+sd=${sd:+/dev/$(basename "$(dirname "$sd")")}
+[ -z "$sd" ] || v4l2-ctl -d "$sd" -c raw_transfer=1
+
 cleanup() {
 	echo 0 > $P/vc; echo 0 > $P/dt
+	[ -z "$sd" ] || v4l2-ctl -d "$sd" -c raw_transfer=0
 	l16-asic-probe off >/dev/null 2>&1 || true
 }
 trap cleanup EXIT

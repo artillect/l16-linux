@@ -64,8 +64,16 @@ setpins() {	# setpins VALUE PIN...
 	done
 }
 
+# With the light-ccb driver managing the ASICs (kernel r24 and later), messages and power
+# go through it (l16-ccb); before that, straight to the I2C bus and the GPIOs.
+driver() { [ -z "${L16_DIRECT:-}" ] && grep -qs light-ccb /sys/class/video4linux/v4l-subdev*/name; }
+
 # one message from ASIC1's queue: "type len bytes..." (type 2 = empty)
 readq() {
+	if driver; then
+		l16-ccb recv 2>/dev/null || echo "none - no answer"
+		return
+	fi
 	b=$(bus)
 	h=$(i2ctransfer -f -y "$b" w2@$ADDR 0x00 0x00 r8 2>/dev/null) || { echo "none - no answer at $ADDR"; return; }
 	set -- $h
@@ -91,11 +99,14 @@ waitq() {
 }
 
 send() {	# send TID CMD: a message with no body
-	b=$(bus)
-	i2ctransfer -f -y "$b" w4@$ADDR $(( $1 >> 8 )) $(( $1 & 255 )) $(( $2 & 255 )) $(( $2 >> 8 ))
+	raw $(( $1 >> 8 )) $(( $1 & 255 )) $(( $2 & 255 )) $(( $2 >> 8 ))
 }
 
 raw() {		# raw BYTE...: one message, bytes as traced from stock
+	if driver; then
+		l16-ccb send "$@"
+		return
+	fi
 	b=$(bus)
 	i2ctransfer -f -y "$b" w$#@$ADDR "$@"
 }
@@ -132,11 +143,21 @@ acked() {	# acked WHAT: wait for a command's type-1 reply
 
 case "${1:-}" in
 look)
-	echo "bus i2c-$(bus), pins on $(chip):"
-	pins
+	if driver; then
+		echo "light-ccb driver: $(cat /sys/bus/i2c/drivers/light-ccb/*/power/runtime_status 2>/dev/null) (suspended = ASICs off)"
+	else
+		echo "bus i2c-$(bus), pins on $(chip):"
+		pins
+	fi
 	echo "ASIC1 queue: $(readq)   (type 2 = empty, 3 = event; an I/O error = no answer)"
 	;;
 reset)
+	if driver; then
+		# the driver raises the enables and waits for the boot event itself
+		l16-ccb reset || die "the ASICs did not boot"
+		echo "reset done (light-ccb)"
+		exit 0
+	fi
 	setpins 0 $STRAPS
 	setpins 0 $RESET
 	for p in $RESET; do
@@ -158,6 +179,10 @@ version)
 	[ $# -ge 10 ] && echo "firmware version: 0x$(printf '%02x%02x%02x%02x' "$((${10}))" "$((${9}))" "$((${8}))" "$((${7}))")"
 	;;
 off)
+	if driver; then
+		l16-ccb off
+		exit 0
+	fi
 	setpins 0 $RESET $STRAPS
 	pins
 	;;
