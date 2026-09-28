@@ -1,0 +1,237 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] media: i2c: add the Light L16 camera ASICs as a CSI-2 source
+
+---
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 861e8c41b..2219ac1eb 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -301,6 +301,13 @@ config VIDEO_IMX415
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called imx415.
+ 
++config VIDEO_LIGHT_CCB
++	tristate "Light L16 camera ASICs"
++	help
++	  The three camera ASICs of the Light L16 as a CSI-2 source, so that
++	  CAMSS can receive their streams. The ASICs themselves are driven
++	  from userspace for now.
++
+ config VIDEO_MAX9271_LIB
+ 	tristate
+ 
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 7e76b7cc4..2e0517f75 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -75,6 +75,7 @@ obj-$(CONFIG_VIDEO_MAX96714) += max96714.o
+ obj-$(CONFIG_VIDEO_MAX96717) += max96717.o
+ obj-$(CONFIG_VIDEO_ML86V7667) += ml86v7667.o
+ obj-$(CONFIG_VIDEO_MSP3400) += msp3400.o
++obj-$(CONFIG_VIDEO_LIGHT_CCB) += light-ccb.o
+ obj-$(CONFIG_VIDEO_MT9M001) += mt9m001.o
+ obj-$(CONFIG_VIDEO_MT9M111) += mt9m111.o
+ obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
+diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
+new file mode 100644
+index 000000000..8d37c3c34
+--- /dev/null
++++ b/drivers/media/i2c/light-ccb.c
+@@ -0,0 +1,197 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
++ *
++ * The L16's 16 camera modules sit behind three Light ASICs. ASIC1 is controlled over I2C
++ * (7-bit 0x08) and relays commands to the other two; each ASIC sends RAW10 over its own
++ * 4-lane CSI-2 link. This driver only describes those three links to the media graph so
++ * that CAMSS can receive them. It does not talk to the ASICs yet: for now userspace resets
++ * them and sends the commands (tools/l16-asic-probe in l16-linux).
++ */
++#include <linux/i2c.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <media/v4l2-ctrls.h>
++#include <media/v4l2-fwnode.h>
++#include <media/v4l2-subdev.h>
++
++#define CCB_NUM_PADS	3		/* one CSI-2 link per ASIC */
++#define CCB_LANES	4
++#define CCB_BPP		10
++#define CCB_LINK_FREQ	400000000LL	/* stock captures need >= 386 MHz */
++#define CCB_PIXEL_RATE	(CCB_LINK_FREQ * 2 * CCB_LANES / CCB_BPP)
++#define CCB_WIDTH	2080		/* preview, UCID 3 */
++#define CCB_HEIGHT	1560
++#define CCB_CODE	MEDIA_BUS_FMT_SGRBG10_1X10
++
++static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
++
++struct ccb {
++	struct v4l2_subdev sd;
++	struct media_pad pads[CCB_NUM_PADS];
++	struct v4l2_ctrl_handler ctrls;
++};
++
++static void ccb_fmt(struct v4l2_mbus_framefmt *fmt)
++{
++	fmt->width = CCB_WIDTH;
++	fmt->height = CCB_HEIGHT;
++	fmt->code = CCB_CODE;
++	fmt->field = V4L2_FIELD_NONE;
++	fmt->colorspace = V4L2_COLORSPACE_RAW;
++}
++
++static int ccb_init_state(struct v4l2_subdev *sd, struct v4l2_subdev_state *state)
++{
++	unsigned int i;
++
++	for (i = 0; i < CCB_NUM_PADS; i++)
++		ccb_fmt(v4l2_subdev_state_get_format(state, i));
++
++	return 0;
++}
++
++static int ccb_enum_mbus_code(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
++			      struct v4l2_subdev_mbus_code_enum *code)
++{
++	if (code->index)
++		return -EINVAL;
++
++	code->code = CCB_CODE;
++	return 0;
++}
++
++static int ccb_enum_frame_size(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
++			       struct v4l2_subdev_frame_size_enum *fse)
++{
++	if (fse->index || fse->code != CCB_CODE)
++		return -EINVAL;
++
++	fse->min_width = fse->max_width = CCB_WIDTH;
++	fse->min_height = fse->max_height = CCB_HEIGHT;
++	return 0;
++}
++
++/* the format is fixed for now */
++static int ccb_set_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_state *state,
++		       struct v4l2_subdev_format *fmt)
++{
++	ccb_fmt(&fmt->format);
++	*v4l2_subdev_state_get_format(state, fmt->pad) = fmt->format;
++	return 0;
++}
++
++/* userspace starts and stops the ASICs' streams */
++static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
++{
++	return 0;
++}
++
++static const struct v4l2_subdev_video_ops ccb_video_ops = {
++	.s_stream = ccb_s_stream,
++};
++
++static const struct v4l2_subdev_pad_ops ccb_pad_ops = {
++	.enum_mbus_code = ccb_enum_mbus_code,
++	.enum_frame_size = ccb_enum_frame_size,
++	.get_fmt = v4l2_subdev_get_fmt,
++	.set_fmt = ccb_set_fmt,
++};
++
++static const struct v4l2_subdev_ops ccb_ops = {
++	.video = &ccb_video_ops,
++	.pad = &ccb_pad_ops,
++};
++
++static const struct v4l2_subdev_internal_ops ccb_internal_ops = {
++	.init_state = ccb_init_state,
++};
++
++static const struct media_entity_operations ccb_entity_ops = {
++	.get_fwnode_pad = v4l2_subdev_get_fwnode_pad_1_to_1,
++};
++
++static int ccb_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct v4l2_ctrl *link_freq;
++	struct ccb *ccb;
++	unsigned int i;
++	int ret;
++
++	ccb = devm_kzalloc(dev, sizeof(*ccb), GFP_KERNEL);
++	if (!ccb)
++		return -ENOMEM;
++
++	v4l2_i2c_subdev_init(&ccb->sd, client, &ccb_ops);
++	ccb->sd.internal_ops = &ccb_internal_ops;
++	ccb->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
++	ccb->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
++	ccb->sd.entity.ops = &ccb_entity_ops;
++
++	for (i = 0; i < CCB_NUM_PADS; i++)
++		ccb->pads[i].flags = MEDIA_PAD_FL_SOURCE;
++	ret = media_entity_pads_init(&ccb->sd.entity, CCB_NUM_PADS, ccb->pads);
++	if (ret)
++		return ret;
++
++	v4l2_ctrl_handler_init(&ccb->ctrls, 2);
++	link_freq = v4l2_ctrl_new_int_menu(&ccb->ctrls, NULL, V4L2_CID_LINK_FREQ, 0, 0,
++					   ccb_link_freqs);
++	if (link_freq)
++		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
++	v4l2_ctrl_new_std(&ccb->ctrls, NULL, V4L2_CID_PIXEL_RATE, CCB_PIXEL_RATE,
++			  CCB_PIXEL_RATE, 1, CCB_PIXEL_RATE);
++	if (ccb->ctrls.error) {
++		ret = ccb->ctrls.error;
++		goto err_ctrls;
++	}
++	ccb->sd.ctrl_handler = &ccb->ctrls;
++
++	ret = v4l2_subdev_init_finalize(&ccb->sd);
++	if (ret)
++		goto err_ctrls;
++
++	ret = v4l2_async_register_subdev(&ccb->sd);
++	if (ret)
++		goto err_subdev;
++
++	return 0;
++
++err_subdev:
++	v4l2_subdev_cleanup(&ccb->sd);
++err_ctrls:
++	v4l2_ctrl_handler_free(&ccb->ctrls);
++	media_entity_cleanup(&ccb->sd.entity);
++	return ret;
++}
++
++static void ccb_remove(struct i2c_client *client)
++{
++	struct v4l2_subdev *sd = i2c_get_clientdata(client);
++	struct ccb *ccb = container_of(sd, struct ccb, sd);
++
++	v4l2_async_unregister_subdev(sd);
++	v4l2_subdev_cleanup(sd);
++	v4l2_ctrl_handler_free(&ccb->ctrls);
++	media_entity_cleanup(&sd->entity);
++}
++
++static const struct of_device_id ccb_of_match[] = {
++	{ .compatible = "light,l16-ccb" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, ccb_of_match);
++
++static struct i2c_driver ccb_driver = {
++	.driver = {
++		.name = "light-ccb",
++		.of_match_table = ccb_of_match,
++	},
++	.probe = ccb_probe,
++	.remove = ccb_remove,
++};
++module_i2c_driver(ccb_driver);
++
++MODULE_DESCRIPTION("Light L16 camera ASICs as a CSI-2 source");
++MODULE_LICENSE("GPL");

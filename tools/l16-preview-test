@@ -1,0 +1,25 @@
+#!/bin/sh
+# l16-preview-test PHY: first-stream test. Resets ASIC1, links CAMSS csiphyPHY -> csid0 ->
+# ispif0 -> vfe0 RDI0 at RAW10 2080x1560, arms a 10-frame capture to /tmp/f.raw and runs
+# l16-asic-probe start/stop around it. ASIC1's preview output is on csiphy0.
+P=${1:?phy number}
+M="media-ctl -d /dev/media0"
+F="fmt:SGRBG10_1X10/2080x1560"
+S=$($M -p | sed -n 's/^- entity [0-9]*: \(light-ccb [^ ]*\) .*/\1/p')
+echo "== pipeline: $S -> csiphy$P"
+$M -r
+$M -l "\"msm_csiphy$P\":1->\"msm_csid0\":0[1],\"msm_csid0\":1->\"msm_ispif0\":0[1],\"msm_ispif0\":1->\"msm_vfe0_rdi0\":0[1]"
+$M -V "\"$S\":0[$F],\"msm_csiphy$P\":0[$F],\"msm_csid0\":0[$F],\"msm_csid0\":1[$F],\"msm_ispif0\":0[$F],\"msm_vfe0_rdi0\":0[$F]"
+v4l2-ctl -d /dev/video0 --set-fmt-video=width=2080,height=1560,pixelformat=pgAA
+echo "l16-s3 start" > /dev/kmsg
+rm -f /tmp/f.raw
+echo "== reset"; l16-asic-probe reset
+timeout 20 v4l2-ctl -d /dev/video0 --stream-mmap=4 --stream-count=10 --stream-to=/tmp/f.raw > /tmp/cap.log 2>&1 &
+CAP=$!
+sleep 1
+echo "== start"; l16-asic-probe start
+echo "== drain"; l16-asic-probe drain 6 | head -10
+wait $CAP; echo "capture exit $?"
+echo "== stop"; l16-asic-probe stop
+echo "== capture"; tr '\r' '\n' < /tmp/cap.log | tail -5; ls -l /tmp/f.raw 2>&1
+echo "== kernel"; dmesg | sed -n '/l16-s3 start/,$p' | grep -v -E "l16-s3|spmi|irq|IRQ|handle_irq|action" | tail -15

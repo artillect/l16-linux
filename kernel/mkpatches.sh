@@ -14,7 +14,8 @@ git add -N arch/arm64/boot/dts/qcom/apq8096-light-l16.dts \
 	drivers/gpu/drm/panel/panel-innolux-nt35695-l16.c \
 	drivers/input/misc/dw7800-haptics.c drivers/input/misc/l16-touchstrip.c \
 	drivers/soc/qcom/l16_canary.c include/linux/l16_canary.h \
-	drivers/usb/misc/anx7688 drivers/video/backlight/lm3630_bl.c
+	drivers/usb/misc/anx7688 drivers/video/backlight/lm3630_bl.c \
+	drivers/media/i2c/light-ccb.c
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -70,6 +71,8 @@ patch asoc-wcd9335-dec-volume-unmute "ASoC: codecs: wcd9335: decimator volume co
 	sound/soc/codecs/wcd9335.c
 patch power-reset-reboot-mode-default "power: reset: reboot-mode: settable mode for a reboot without a command" \
 	drivers/power/reset/reboot-mode.c
+patch media-i2c-add-light-ccb "media: i2c: add the Light L16 camera ASICs as a CSI-2 source" \
+	drivers/media/i2c/Kconfig drivers/media/i2c/Makefile drivers/media/i2c/light-ccb.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)

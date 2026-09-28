@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=5
+pkgrel=6
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -45,6 +45,7 @@ source="
 	0015-iio-qcom-smgr-l16-light.patch
 	0016-asoc-wcd9335-dec-volume-unmute.patch
 	0017-power-reset-reboot-mode-default.patch
+	0018-media-i2c-add-light-ccb.patch
 	"
 builddir="$srcdir/linux-$_tag"
 
@@ -75,8 +76,8 @@ package() {
 }
 sha512sums="
 dd30dd113ad9f0b4ab3771ea655de2becce7ddaf5066d2f860b7bb1eb78573137313191d9da740b152348f9f89894ace2bb94fb195e340f7b6dabedeebbc929f  linux-v6.19.5-msm8996.tar.gz
-3dbc24576b111cd1dc550415f429cacaca3bdcc507e4c8621fc191d69a11fda4f8a3b258d98a93a789c63321a51d761a5b93ec5ab02169d66926d156915f2d1c  config-light-lfc.aarch64
-4ec4f4b9e2ffc954ad4ed6ee20b28481aabeafade054561b39c335a36fedcf357cfe542631eeaa4d41e3ea8067343d014ba5a4b0fa4cd59f0a42254f7e596c76  0001-arm64-dts-qcom-add-light-l16.patch
+9357733cd159f44800da6bb3f9d79e6f01570d6f6ed6ea5f96b6eba0ba992417c26cc7e208bc465c6cf5eaab651f2e13212ff23fafb7bf434378468e95beb3e1  config-light-lfc.aarch64
+18f43d9a2bcbbd47bc8bece3fda320ebfa8da3fd53832d94b3542835b0427098840e53ccae62146b6475c4feb1f9b272615fa2f4294c817b2968f021859c0fed  0001-arm64-dts-qcom-add-light-l16.patch
 728f52d2e5159989f4216a54be4bfde81495080eb14c72b7993e37906ac4a4317166a4a798a2f374ba5dbf0644c89fc5765c78eb6251c4ea042502580df65638  0002-drm-panel-add-innolux-nt35695-l16.patch
 bc0767edd3df6550d6d8be31712940a133691477c74d552cfe7a48bcdcf70991dd1d7b9248f6a9a816cc84df74f9d78e5fcd6c5f243cf799cee8b9fb37c782c5  0003-backlight-add-lm3630-l16.patch
 66a666bdae3fbefbb05649e99a5aac9b24682ff1c7e3fab8984983925302a6fad5613f4aef30e0381db25ed7fa3677c7cf0a98bff981ca854c7cb596249bb394  0004-input-add-l16-touchstrip-and-dw7800.patch
@@ -93,4 +94,5 @@ cfad5dcc8c8fc84a8ff44228d9a30675a25116500c31df6a74f4f9d1f646ee5d12df6abfe714a553
 d728d95b22ef2d5eceb15eb2af9e33fdae6ad1711ca680b000b8609a1637fd6320aacc3dbad0b3397440e2399e0e18d4e5c2a070b26bcfb9dbd234d32373c7ab  0015-iio-qcom-smgr-l16-light.patch
 e3ed7b18db4bae18e05e549fd6ea654ee7fd74118f5a5cf826aabb5a9cdcc33c64d72a17c7b0b1da9ca2be5718cb58a5ebf5b4c03be3b577fa8c638f3ddaf2ce  0016-asoc-wcd9335-dec-volume-unmute.patch
 27a7f41c9b2392e4b98cb11686862d88097ad87bdd1b31fe80ed5e37a8bca7d43e0052aecaaf8d1f51b0eea8e12181183eb8b625450380e2f2551746aac2ea51  0017-power-reset-reboot-mode-default.patch
+878f15966666745cd25fda44f4c28d10bebf8ec46364fde8f3baa2cfd0fc134b1e7666f82082f0c49d2d06a0dd354b0c90ff1b5cafe2b3fc001860ae2a14f7e9  0018-media-i2c-add-light-ccb.patch
 "

@@ -13,10 +13,10 @@ index 821146b2a..5d43ea50e 100644
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 new file mode 100644
-index 000000000..35c5c31e1
+index 000000000..7cc539f14
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
-@@ -0,0 +1,1073 @@
+@@ -0,0 +1,1180 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera (APQ8096 v3.1 + PM8994 + PMI8996), board "LFC P2 PVT".
@@ -714,6 +714,53 @@ index 000000000..35c5c31e1
 +&blsp2_i2c5 {
 +	clock-frequency = <1000000>;
 +	status = "okay";
++
++	/*
++	 * Each ASIC sends RAW10 over its own 4-lane CSI-2 link (stock: CSIPHY/CSID 0, 1, 2).
++	 * CAMSS wants a separate device per link, and which ASIC is on which PHY is not known
++	 * yet: one link is described at a time while finding out.
++	 */
++	camera@8 {
++		compatible = "light,l16-ccb";
++		reg = <0x08>;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				ccb_out0: endpoint {
++					data-lanes = <1 2 3 4>;
++					link-frequencies = /bits/ 64 <400000000>;
++					remote-endpoint = <&camss_csiphy0_in>;
++				};
++			};
++
++
++		};
++	};
++};
++
++/*
++ * 4 data lanes in order (stock lane_assign 0x4320: physical lanes 0, 2, 3, 4 around the clock
++ * lane 1, which is mainline's data-lanes 0..3 with the clock lane implied).
++ */
++&camss {
++	vdda-supply = <&vreg_l2a_1p25>;
++	status = "okay";
++
++	ports {
++		port@0 {
++			reg = <0>;
++			camss_csiphy0_in: endpoint {
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&ccb_out0>;
++			};
++		};
++
++
++	};
 +};
 +
 +&blsp2_i2c6 {
@@ -1088,5 +1135,65 @@ index 000000000..35c5c31e1
 +		local-bd-address = [ 9a 5a 00 4c 45 38 ];
 +		pinctrl-names = "default";
 +		pinctrl-0 = <&l16_bt_en_default>;
++	};
++};
++
++/*
++ * The camera ASICs' debug UARTs (stock ttyHSL1..3, read by tlogd at 460800 baud). Which
++ * ASIC is on which port is not known yet. Only TX/RX are muxed; the other two pins of each
++ * QUP are its I2C bus (stock: blsp_i2c5/6/12).
++ */
++&soc {
++	l16_asic_uart_a: serial@7573000 {
++		compatible = "qcom,msm-uartdm-v1.4", "qcom,msm-uartdm";
++		reg = <0x07573000 0x1000>;
++		interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&gcc GCC_BLSP1_UART5_APPS_CLK>, <&gcc GCC_BLSP1_AHB_CLK>;
++		clock-names = "core", "iface";
++		pinctrl-names = "default";
++		pinctrl-0 = <&l16_asic_uart_a_default>;
++	};
++
++	l16_asic_uart_b: serial@7574000 {
++		compatible = "qcom,msm-uartdm-v1.4", "qcom,msm-uartdm";
++		reg = <0x07574000 0x1000>;
++		interrupts = <GIC_SPI 112 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&gcc GCC_BLSP1_UART6_APPS_CLK>, <&gcc GCC_BLSP1_AHB_CLK>;
++		clock-names = "core", "iface";
++		pinctrl-names = "default";
++		pinctrl-0 = <&l16_asic_uart_b_default>;
++	};
++
++	l16_asic_uart_c: serial@75b4000 {
++		compatible = "qcom,msm-uartdm-v1.4", "qcom,msm-uartdm";
++		reg = <0x075b4000 0x1000>;
++		interrupts = <GIC_SPI 118 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&gcc GCC_BLSP2_UART6_APPS_CLK>, <&gcc GCC_BLSP2_AHB_CLK>;
++		clock-names = "core", "iface";
++		pinctrl-names = "default";
++		pinctrl-0 = <&l16_asic_uart_c_default>;
++	};
++};
++
++&tlmm {
++	l16_asic_uart_a_default: l16-asic-uart-a-state {
++		pins = "gpio81", "gpio82";
++		function = "blsp_uart5";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	l16_asic_uart_b_default: l16-asic-uart-b-state {
++		pins = "gpio25", "gpio26";
++		function = "blsp_uart6";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	l16_asic_uart_c_default: l16-asic-uart-c-state {
++		pins = "gpio85", "gpio86";
++		function = "blsp_uart12";
++		drive-strength = <2>;
++		bias-disable;
 +	};
 +};
