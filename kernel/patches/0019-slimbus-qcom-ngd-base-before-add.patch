@@ -1,0 +1,30 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] slimbus: qcom-ngd-ctrl: set the NGD base before adding its device
+
+---
+diff --git a/drivers/slimbus/qcom-ngd-ctrl.c b/drivers/slimbus/qcom-ngd-ctrl.c
+index a4c0e7447..2f10ad82f 100644
+--- a/drivers/slimbus/qcom-ngd-ctrl.c
++++ b/drivers/slimbus/qcom-ngd-ctrl.c
+@@ -1550,6 +1550,12 @@ static int of_qcom_slim_ngd_register(struct device *parent,
+ 			return ret;
+ 		}
+ 		ngd->pdev->dev.of_node = node;
++		/*
++		 * Set the base before adding the device: its probe starts the QMI
++		 * lookup, and the up worker can power the NGD up before we return.
++		 */
++		ngd->base = ctrl->base + ngd->id * data->offset +
++					(ngd->id - 1) * data->size;
+ 		ctrl->ngd = ngd;
+ 
+ 		ret = platform_device_add(ngd->pdev);
+@@ -1559,8 +1565,6 @@ static int of_qcom_slim_ngd_register(struct device *parent,
+ 			of_node_put(node);
+ 			return ret;
+ 		}
+-		ngd->base = ctrl->base + ngd->id * data->offset +
+-					(ngd->id - 1) * data->size;
+ 
+ 		return 0;
+ 	}
