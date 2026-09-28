@@ -1,0 +1,74 @@
+#!/usr/bin/python3
+# light-lfc-bootsig: append an Android Verified Boot 1.0 boot signature to a boot image,
+# as AOSP's boot_signer does. The L16's FIH LK only boots images followed by a
+# well-formed signature (without one it ends up in 9008); unlocked, it does not care
+# whose key signed it. The key is made on first use.
+#
+# usage: light-lfc-bootsig <boot.img>   (leaves an already signed image alone)
+import os
+import struct
+import subprocess
+import sys
+
+KEY_DIR = '/etc/light-lfc'
+KEY = KEY_DIR + '/bootsig-key.pem'
+CERT = KEY_DIR + '/bootsig-cert.der'
+
+
+def der(tag, body):
+    n = len(body)
+    if n < 0x80:
+        length = bytes([n])
+    else:
+        b = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+        length = bytes([0x80 | len(b)]) + b
+    return bytes([tag]) + length + body
+
+
+def der_int(v):
+    b = v.to_bytes(max(1, (v.bit_length() + 8) // 8), 'big')
+    return der(0x02, b)
+
+
+def der_seq(*items):
+    return der(0x30, b''.join(items))
+
+
+def image_size(image):
+    # boot image header v0: kernel, ramdisk and second stage, each padded to a page
+    kernel, ramdisk, second, page = (struct.unpack_from('<I', image, o)[0]
+                                     for o in (8, 16, 24, 36))
+    pages = lambda n: (n + page - 1) // page * page
+    return page + pages(kernel) + pages(ramdisk) + pages(second)
+
+
+# sha256WithRSAEncryption, 1.2.840.113549.1.1.11
+SHA256_RSA = der(0x06, bytes.fromhex('2a864886f70d01010b'))
+
+image_path = sys.argv[1]
+image = open(image_path, 'rb').read()
+if image[:8] != b'ANDROID!':
+    sys.exit('%s: not an Android boot image' % image_path)
+if len(image) > image_size(image):
+    print('%s: already signed' % image_path)
+    sys.exit(0)
+
+if not os.path.exists(KEY):
+    os.makedirs(KEY_DIR, exist_ok=True)
+    subprocess.run(['openssl', 'req', '-new', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                    '-keyout', KEY, '-outform', 'DER', '-out', CERT, '-days', '36500',
+                    '-subj', '/CN=Light L16 postmarketOS boot'],
+                   check=True, capture_output=True)
+cert = open(CERT, 'rb').read()
+
+auth_attrs = der_seq(der(0x13, b'/boot'), der_int(len(image)))
+signature = subprocess.run(['openssl', 'dgst', '-sha256', '-sign', KEY],
+                           input=image + auth_attrs, capture_output=True,
+                           check=True).stdout
+
+boot_signature = der_seq(der_int(1), cert, der_seq(SHA256_RSA, der(0x05, b'')),
+                         auth_attrs, der(0x04, signature))
+
+with open(image_path, 'ab') as f:
+    f.write(boot_signature)
+print('%s: appended a %d-byte boot signature' % (image_path, len(boot_signature)))

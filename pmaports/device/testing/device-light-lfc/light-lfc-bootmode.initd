@@ -1,16 +1,22 @@
 #!/sbin/openrc-run
 
 name="Light L16 boot mode"
-description="Make plain reboots return to Linux when dual booting with the stock LightOS"
+description="Set up reboots and kernel updates for dual boot or a Linux-only install"
 
 # Dual boot: the root filesystem is on the "linux" partition and the kernel in
 # "recovery", which FIH's LK boots on the "recovery" reboot reason; a plain reboot
 # (no reason) boots stock Android from "boot". Linux-only: the kernel is in "boot",
-# so the default is already right.
+# so plain reboots are already right, and kernel updates must go to "boot".
+
+# our lines in /etc/deviceinfo (boot-deploy reads it after the package's deviceinfo)
+MARK="# light-lfc-bootmode: kernel partition of a Linux-only install"
+LINE='deviceinfo_flash_fastboot_partition_kernel="boot"'
 
 start() {
 	ebegin "Checking the Light L16 install mode"
 	rm -f /run/light-lfc-dual-boot
+	touch /etc/deviceinfo
+	sed -i "/^$MARK\$/d; /^$LINE\$/d" /etc/deviceinfo
 	partname=$(sed -n 's/^PARTNAME=//p' /sys/dev/block/$(mountpoint -d /)/uevent)
 	if [ "$partname" = linux ]; then
 		einfo "Dual boot: plain reboots go to Linux (recovery)"
@@ -21,7 +27,8 @@ start() {
 		# shows the "Reboot to Android" launcher (its TryExec)
 		ln -s /usr/bin/light-lfc-reboot-android /run/light-lfc-dual-boot
 	else
-		einfo "Linux only: plain reboots go to Linux (boot)"
+		einfo "Linux only: plain reboots and kernel updates go to boot"
+		printf '%s\n%s\n' "$MARK" "$LINE" >> /etc/deviceinfo
 	fi
 	eend $?
 }

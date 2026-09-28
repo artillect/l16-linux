@@ -22,14 +22,17 @@ deviceinfo_rootfs_image_sector_size="4096"
 # Bootloader related
 deviceinfo_flash_method="fastboot"
 # Dual boot with the stock LightOS: Linux lives in "recovery" (FIH LK boots it on the
-# "recovery" reboot reason) and a "linux" partition carved from userdata. Never
-# "boot": that is stock Android's kernel.
+# "recovery" reboot reason) and a "linux" partition carved from userdata; "boot" is
+# stock Android's kernel. A Linux-only install puts the kernel in "boot": the
+# light-lfc-bootmode service then overrides this in /etc/deviceinfo.
 deviceinfo_flash_fastboot_partition_kernel="recovery"
 deviceinfo_flash_fastboot_partition_rootfs="linux"
 deviceinfo_flash_sparse="true"
-# FIH LK only boots images followed by an AVB 1.0 boot signature (any key); boot-deploy
-# cannot append one yet, so a kernel update must not overwrite "recovery" by itself.
-deviceinfo_flash_kernel_on_update="false"
+# FIH LK only boots images followed by an AVB 1.0 boot signature (any key):
+# light-lfc-bootsig appends one right after boot-deploy makes boot.img, so kernel
+# updates can write the kernel partition themselves.
+deviceinfo_mkinitfs_postprocess="/usr/share/light-lfc/postprocess.sh"
+deviceinfo_flash_kernel_on_update="true"
 
 # earlycon=l16ram + keep_bootcon: the kernel log goes to stock's pstore console zone
 # for the whole boot. A panic resets the board after 5 s (PANIC_TIMEOUT), and stock
