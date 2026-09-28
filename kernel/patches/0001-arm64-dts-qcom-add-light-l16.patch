@@ -12,11 +12,11 @@ index 821146b2a..5d43ea50e 100644
  dtb-$(CONFIG_ARCH_QCOM)	+= x1p42100-lenovo-thinkbook-16.dtb x1p42100-lenovo-thinkbook-16-el2.dtb
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
-new file mode 100755
-index 000000000..02801aab6
+new file mode 100644
+index 000000000..35c5c31e1
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
-@@ -0,0 +1,1062 @@
+@@ -0,0 +1,1073 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera (APQ8096 v3.1 + PM8994 + PMI8996), board "LFC P2 PVT".
@@ -705,6 +705,17 @@ index 000000000..02801aab6
 + * GPIO 21 are held high by the pin state as in stock; stock's power-gpio 62 is unused
 + * (synaptics,disable-gpios) and is a camera pin. Stock reports 720x1280, portrait.
 + */
++/*
++ * Camera ASIC control bus (stock "i2c-11", i2c_camera@10). ASIC1 answers at 7-bit 0x08 and
++ * relays to ASIC2/3; a PCA9543 mux sits at 0x70. Stock runs it at 1 MHz. No ASIC driver yet:
++ * userspace talks to it through i2c-dev (tools/l16-asic-probe). The ASICs' SPI (their boot
++ * flash) and debug UARTs stay disabled.
++ */
++&blsp2_i2c5 {
++	clock-frequency = <1000000>;
++	status = "okay";
++};
++
 +&blsp2_i2c6 {
 +	clock-frequency = <400000>;
 +	status = "okay";

@@ -1,0 +1,119 @@
+#!/bin/sh
+# l16-asic-probe: first contact with the L16's camera ASICs from Linux, replaying what
+# stock LightOS does at every boot (fw_update.sh + prog_app_p2 -q), nothing more.
+#
+#   l16-asic-probe look      read-only: the ASIC pins and one read of ASIC1's message queue
+#   l16-asic-probe reset     boot straps for normal (flash) boot, then the stock reset sequence
+#   l16-asic-probe ping      GET_ASIC_STATUS (0x0215); expects status 1
+#   l16-asic-probe version   firmware version (0x0204); stock 1.3.5.1 has 0x0076D11B
+#   l16-asic-probe off       all five ASIC pins low, as stock leaves them
+#
+# Safety: boot straps GPIO 23/79 are only ever driven LOW (high = the ASICs' programming
+# modes). Only the two read-only queries above are sent. No SPI, no debug UARTs.
+# Needs root, i2c-tools (i2ctransfer) and libgpiod (gpioset/gpioget).
+set -eu
+
+ADDR=0x08		# ASIC1, 7-bit (stock's "0x10" is the 8-bit form)
+STRAPS="23 79"		# boot mode: both low = boot from the ASICs' own flash
+RESET="130 13 128"	# stock order; raised one per second
+
+die() { echo "l16-asic-probe: $*" >&2; exit 1; }
+
+# the I2C bus at 0x75b9000 (mainline blsp2_i2c5, stock i2c-11)
+bus() {
+	for d in /sys/bus/i2c/devices/i2c-*; do
+		case "$(readlink -f "$d/of_node" 2>/dev/null)" in
+		*i2c@75b9000) echo "${d##*i2c-}"; return ;;
+		esac
+	done
+	die "camera I2C bus (i2c@75b9000) not found; is the kernel new enough?"
+}
+
+# the SoC's pin controller (150 lines)
+chip() {
+	gpiodetect | sed -n 's/^\(gpiochip[0-9]*\) .*(150 lines).*/\1/p' | head -n 1
+}
+
+pins() {
+	c=$(chip)
+	for p in $STRAPS $RESET; do
+		printf 'gpio%-3s %s\n' "$p" "$(gpioget -c "$c" --as-is "$p" 2>&1 || true)"
+	done
+}
+
+setpins() {	# setpins VALUE PIN...
+	v=$1
+	shift
+	c=$(chip)
+	for p in "$@"; do
+		gpioset -c "$c" -t 0 "$p=$v"
+	done
+}
+
+# one message from ASIC1's queue: "type len bytes..." (type 2 = empty)
+readq() {
+	b=$(bus)
+	h=$(i2ctransfer -y "$b" w2@$ADDR 0x00 0x00 r8 2>/dev/null) || { echo "none - no answer at $ADDR"; return; }
+	set -- $h
+	type=$(( $1 | $2 << 8 ))
+	len=$(( $3 | $4 << 8 ))
+	rest=
+	if [ "$type" != 2 ] && [ "$len" -gt 4 ]; then
+		rest=$(i2ctransfer -y "$b" w2@$ADDR 0x01 0x00 r$((len - 4)))
+	fi
+	echo "$type $len $5 $6 $7 $8 $rest"
+}
+
+# wait up to $2 tenths of a second for a message of type $1; print it
+waitq() {
+	i=0
+	while [ $i -lt "$2" ]; do
+		m=$(readq)
+		[ "${m%% *}" = "$1" ] && { echo "$m"; return 0; }
+		sleep 0.1
+		i=$((i + 1))
+	done
+	return 1
+}
+
+send() {	# send TID CMD: a message with no body
+	b=$(bus)
+	i2ctransfer -y "$b" w4@$ADDR $(( $1 >> 8 )) $(( $1 & 255 )) $(( $2 & 255 )) $(( $2 >> 8 ))
+}
+
+case "${1:-}" in
+look)
+	echo "bus i2c-$(bus), pins on $(chip):"
+	pins
+	echo "ASIC1 queue: $(readq)   (type 2 = empty, 3 = event; an I/O error = no answer)"
+	;;
+reset)
+	setpins 0 $STRAPS
+	setpins 0 $RESET
+	for p in $RESET; do
+		setpins 1 "$p"
+		[ "$p" = 128 ] || sleep 1
+	done
+	echo "reset done; waiting for the ASIC's boot event (type 3)"
+	waitq 3 50 || { setpins 0 $RESET; die "no boot event within 5 s; pins set low again"; }
+	;;
+ping)
+	send 0x0001 0x0215
+	waitq 1 20 || die "no reply"
+	;;
+version)
+	send 0x0002 0x0204
+	m=$(waitq 1 20) || die "no reply"
+	echo "$m"
+	set -- $m
+	[ $# -ge 10 ] && echo "firmware version: 0x$(printf '%02x%02x%02x%02x' "$((${10}))" "$((${9}))" "$((${8}))" "$((${7}))")"
+	;;
+off)
+	setpins 0 $RESET $STRAPS
+	pins
+	;;
+*)
+	sed -n '2,15s/^# \{0,1\}//p' "$0"
+	exit 1
+	;;
+esac
