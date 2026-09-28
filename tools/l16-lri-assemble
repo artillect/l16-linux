@@ -11,6 +11,7 @@
 # calibration, sensor data) and view preferences in their last blocks, which renderers like
 # lri-rs need. If DEVICE_BLOCKS exists (those blocks cut from one of this camera's own stock
 # LRIs; it holds the camera's unique ID, so it is kept on the device only), it is appended.
+import re
 import struct
 import sys
 
@@ -47,14 +48,47 @@ def block(path):
 	return parts
 
 
+def awb_gains(frame):
+	"""Gray-world gains (red, blue) from the first image of a block: the reference module,
+	GRBG (A1), sampled every 40 pixels, as a little-endian 10-bit bitstream."""
+	W, H, STRIDE, BLACK = 4160, 3120, 5200, 42
+	def px(row, col):
+		o = 32 + row * STRIDE + col * 10 // 8
+		v = frame[o] | frame[o + 1] << 8 | frame[o + 2] << 16
+		return (v >> (col * 10 % 8) & 1023) - BLACK
+	r = g = b = 0
+	for row in range(200, H - 200, 40):
+		for col in range(200, W - 200, 40):
+			g1, rr, bb, g2 = px(row, col), px(row, col + 1), px(row + 1, col), px(row + 1, col + 1)
+			if min(g1, rr, bb, g2) > 8 and max(g1, rr, bb, g2) < 940:
+				r += rr; g += (g1 + g2) / 2; b += bb
+	return (g / r, g / b) if r and b else (1.0, 1.0)
+
+
+def with_awb(blocks, gains):
+	"""The view preferences' awb_gains (a ChannelGain: four fixed32 floats, fields 1-4) are the
+	last ChannelGain in the device blocks; set them to this photo's gains, same size."""
+	pat = b"".join(bytes([tag]) + b"(....)" for tag in (0x0d, 0x15, 0x1d, 0x25))
+	m = list(re.finditer(pat, blocks, re.S))
+	if not m:
+		return blocks
+	new = struct.pack("<BfBfBfBf", 0x0d, gains[0], 0x15, 1.0, 0x1d, 1.0, 0x25, gains[1])
+	return blocks[:m[-1].start()] + new + blocks[m[-1].end():]
+
+
 out = sys.argv[1]
+gains = None
 with open(out, "wb") as o:
 	for path in sys.argv[2:]:
-		for part in block(path):
+		parts = block(path)
+		if gains is None:
+			gains = awb_gains(parts[0])
+			print("white balance: red %.3f blue %.3f" % gains)
+		for part in parts:
 			o.write(part)
 	try:
 		with open(DEVICE_BLOCKS, "rb") as f:
-			o.write(f.read())
+			o.write(with_awb(f.read(), gains))
 		print("appended", DEVICE_BLOCKS)
 	except FileNotFoundError:
 		print("no", DEVICE_BLOCKS, "(calibration); renderers may need it")
