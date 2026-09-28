@@ -1,0 +1,68 @@
+# Build the L16 packages with pmbootstrap and publish them to the apk repository
+# (gh-pages). Run by hand with a release tag to also build the image and publish a
+# GitHub release, with notes from releases/<tag>.md.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pmaports/**"
+      - "kernel/**"
+      - "tools/ci/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release tag (notes from releases/<tag>.md); leave empty to only publish packages"
+        required: false
+        default: ""
+      prerelease:
+        description: "Mark the release as a pre-release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# one build at a time: they all push gh-pages
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # native aarch64: the kernel builds without emulation
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the release notes
+        if: inputs.release != ''
+        run: test -f "releases/${{ inputs.release }}.md"
+
+      - name: Set up pmbootstrap
+        env:
+          APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
+        run: |
+          sh tools/ci/setup.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build packages
+        run: pmbootstrap -y build linux-light-lfc device-light-lfc
+
+      - name: Publish packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: sh tools/ci/publish-packages.sh
+
+      - name: Build and publish the release
+        if: inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh tools/ci/release.sh "${{ inputs.release }}" "${{ inputs.prerelease }}"
+
+      - name: pmbootstrap log
+        if: failure()
+        run: tail -n 200 "$HOME/.local/var/pmbootstrap/log.txt" || true
