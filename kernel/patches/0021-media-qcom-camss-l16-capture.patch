@@ -1,0 +1,129 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] media: qcom: camss: L16 captures (virtual channel parameter, taller raw frames)
+
+---
+diff --git a/drivers/media/platform/qcom/camss/camss-csid-4-7.c b/drivers/media/platform/qcom/camss/camss-csid-4-7.c
+index 66054d487..72a2b8e26 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid-4-7.c
++++ b/drivers/media/platform/qcom/camss/camss-csid-4-7.c
+@@ -53,7 +53,7 @@ static void csid_configure_stream(struct csid_device *csid, u8 enable)
+ 	if (enable) {
+ 		struct v4l2_mbus_framefmt *input_format;
+ 		const struct csid_format_info *format;
+-		u8 vc = 0; /* Virtual Channel 0 */
++		u8 vc = camss_vc; /* L16: the ASICs send captures on VC 1 */
+ 		u8 cid = vc * 4; /* id of Virtual Channel and Data Type set */
+ 		u8 dt_shift;
+ 
+diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
+index 5284b5857..2eb860d3d 100644
+--- a/drivers/media/platform/qcom/camss/camss-csid.c
++++ b/drivers/media/platform/qcom/camss/camss-csid.c
+@@ -833,7 +833,7 @@ static void csid_try_format(struct csid_device *csid,
+ 			fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
+ 
+ 		fmt->width = clamp_t(u32, fmt->width, 1, 8191);
+-		fmt->height = clamp_t(u32, fmt->height, 1, 8191);
++		fmt->height = clamp_t(u32, fmt->height, 1, 16383);
+ 
+ 		fmt->field = V4L2_FIELD_NONE;
+ 		fmt->colorspace = V4L2_COLORSPACE_SRGB;
+@@ -863,7 +863,7 @@ static void csid_try_format(struct csid_device *csid,
+ 				fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
+ 
+ 			fmt->width = clamp_t(u32, fmt->width, 1, 8191);
+-			fmt->height = clamp_t(u32, fmt->height, 1, 8191);
++			fmt->height = clamp_t(u32, fmt->height, 1, 16383);
+ 
+ 			fmt->field = V4L2_FIELD_NONE;
+ 		}
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
+index a734fb7dd..834fef81f 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.c
+@@ -382,7 +382,7 @@ static void csiphy_try_format(struct csiphy_device *csiphy,
+ 			fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
+ 
+ 		fmt->width = clamp_t(u32, fmt->width, 1, 8191);
+-		fmt->height = clamp_t(u32, fmt->height, 1, 8191);
++		fmt->height = clamp_t(u32, fmt->height, 1, 16383);
+ 
+ 		fmt->field = V4L2_FIELD_NONE;
+ 		fmt->colorspace = V4L2_COLORSPACE_SRGB;
+diff --git a/drivers/media/platform/qcom/camss/camss-ispif.c b/drivers/media/platform/qcom/camss/camss-ispif.c
+index 43d3b133f..f4f90004b 100644
+--- a/drivers/media/platform/qcom/camss/camss-ispif.c
++++ b/drivers/media/platform/qcom/camss/camss-ispif.c
+@@ -795,7 +795,7 @@ static int ispif_set_stream(struct v4l2_subdev *sd, int enable)
+ 	enum ispif_intf intf = line->interface;
+ 	u8 csid = line->csid_id;
+ 	u8 vfe = line->vfe_id;
+-	u8 vc = 0; /* Virtual Channel 0 */
++	u8 vc = camss_vc; /* L16: the ASICs send captures on VC 1 */
+ 	u8 cid = vc * 4; /* id of Virtual Channel and Data Type set */
+ 	int ret;
+ 
+@@ -903,7 +903,7 @@ static void ispif_try_format(struct ispif_line *line,
+ 			fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
+ 
+ 		fmt->width = clamp_t(u32, fmt->width, 1, 8191);
+-		fmt->height = clamp_t(u32, fmt->height, 1, 8191);
++		fmt->height = clamp_t(u32, fmt->height, 1, 16383);
+ 
+ 		fmt->field = V4L2_FIELD_NONE;
+ 		fmt->colorspace = V4L2_COLORSPACE_SRGB;
+diff --git a/drivers/media/platform/qcom/camss/camss-vfe.c b/drivers/media/platform/qcom/camss/camss-vfe.c
+index d9105f73f..3e1fb9977 100644
+--- a/drivers/media/platform/qcom/camss/camss-vfe.c
++++ b/drivers/media/platform/qcom/camss/camss-vfe.c
+@@ -1393,7 +1393,7 @@ static void vfe_try_format(struct vfe_line *line,
+ 			fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
+ 
+ 		fmt->width = clamp_t(u32, fmt->width, 1, 8191);
+-		fmt->height = clamp_t(u32, fmt->height, 1, 8191);
++		fmt->height = clamp_t(u32, fmt->height, 1, 16383);
+ 
+ 		fmt->field = V4L2_FIELD_NONE;
+ 		fmt->colorspace = V4L2_COLORSPACE_SRGB;
+diff --git a/drivers/media/platform/qcom/camss/camss-video.c b/drivers/media/platform/qcom/camss/camss-video.c
+index 831486e14..8adfdf6ad 100644
+--- a/drivers/media/platform/qcom/camss/camss-video.c
++++ b/drivers/media/platform/qcom/camss/camss-video.c
+@@ -21,7 +21,7 @@
+ #define CAMSS_FRAME_MIN_WIDTH		1
+ #define CAMSS_FRAME_MAX_WIDTH		8191
+ #define CAMSS_FRAME_MIN_HEIGHT		1
+-#define CAMSS_FRAME_MAX_HEIGHT_RDI	8191
++#define CAMSS_FRAME_MAX_HEIGHT_RDI	16383
+ #define CAMSS_FRAME_MAX_HEIGHT_PIX	4096
+ 
+ /* -----------------------------------------------------------------------------
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index 1c9bb62b9..2b844595b 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -4944,6 +4944,10 @@ static const struct of_device_id camss_dt_match[] = {
+ 
+ MODULE_DEVICE_TABLE(of, camss_dt_match);
+ 
++int camss_vc;
++module_param_named(vc, camss_vc, int, 0644);
++MODULE_PARM_DESC(vc, "CSI-2 virtual channel to receive (L16: 0 preview, 1 capture)");
++
+ static int __maybe_unused camss_runtime_suspend(struct device *dev)
+ {
+ 	struct camss *camss = dev_get_drvdata(dev);
+diff --git a/drivers/media/platform/qcom/camss/camss.h b/drivers/media/platform/qcom/camss/camss.h
+index e084fb77c..94c4eeeac 100644
+--- a/drivers/media/platform/qcom/camss/camss.h
++++ b/drivers/media/platform/qcom/camss/camss.h
+@@ -13,6 +13,9 @@
+ #include <linux/device.h>
+ #include <linux/types.h>
+ #include <media/v4l2-async.h>
++
++/* L16: CSI-2 virtual channel that CSID and ISPIF take (0 = preview, 1 = capture) */
++extern int camss_vc;
+ #include <media/v4l2-device.h>
+ #include <media/v4l2-subdev.h>
+ #include <media/media-device.h>
