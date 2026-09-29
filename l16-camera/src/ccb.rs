@@ -27,9 +27,15 @@ pub struct Capture {
     pub records: [u16; 3],
     pub record_bytes: u32,
     pub status: i32,
+    pub burst: u8,
+    pub flags: u8,
+    pub fps: u16,
 }
 
-const IOC_CAPTURE: u64 = 3 << 30 | 36 << 16 | (b'L' as u64) << 8 | 5;
+pub const CAPTURE_NO_PRECAPTURE: u8 = 1; // the preview's exposure as it is
+pub const CAPTURE_NO_STACK: u8 = 2; // one frame per module
+
+const IOC_CAPTURE: u64 = 3 << 30 | 40 << 16 | (b'L' as u64) << 8 | 5;
 const IOC_TRANSFER: u64 = 1 << 30 | 4 << 16 | (b'L' as u64) << 8 | 6;
 
 const VIDIOC_G_CTRL: u64 = 0xc008_561b;
@@ -61,8 +67,8 @@ impl Ccb {
     }
 
     // the preview pauses while the modules in @mask expose; the ASICs then hold the records
-    pub fn capture(&self, mask: u32) -> Result<Capture, String> {
-        let mut c = Capture { mask, ..Default::default() };
+    pub fn capture(&self, mask: u32, burst: u8, flags: u8) -> Result<Capture, String> {
+        let mut c = Capture { mask, burst, flags, ..Default::default() };
         if let Ok(mut f) = File::open("/dev/urandom") {
             use std::io::Read;
             let _ = f.read_exact(&mut c.uuid);

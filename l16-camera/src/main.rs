@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use zoomview::ZoomView;
@@ -38,6 +38,8 @@ const SHUTTER: &[&str] = &[
     "2", "2.5", "3.2", "4", "5", "6", "8", "10", "12", "15",
 ];
 const TIMERS: &[u32] = &[0, 3, 5, 10, 20];
+// OpenLight's burst modes (burst_3, burst_6)
+const BURSTS: &[u8] = &[1, 3, 6];
 // zoom stops: OpenLight's primes, with the L16's real 70 mm B modules
 const PRIMES: &[f64] = &[28.0, 35.0, 70.0, 150.0];
 const ZOOM_MIN: f64 = 28.0;
@@ -70,7 +72,6 @@ enum Mode {
 // a photo's way from the shutter to the LRI (threads report on App::stage_tx)
 enum Stage {
     Captured(Result<PathBuf, String>), // the ASICs hold it (records in DIR)
-    Released,                             // the ASICs are free for the next photo
     Transferred(Result<PathBuf, String>), // in DIR/asic*.raw
     Saved(Result<PathBuf, String>),       // the LRI
 }
@@ -92,6 +93,8 @@ struct State {
     busy: bool,
     counting: bool,
     saving: u32,
+    seq: u32,
+    burst: usize,
     dragged: bool,
     wheel: Option<Dial>,
     wheel_start: usize,
@@ -114,6 +117,7 @@ struct App {
     focusing: Arc<AtomicBool>,
     stage_tx: mpsc::Sender<Stage>,
     transfers: RefCell<Option<transfer::Transfers>>,
+    transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
     pipeline: gst::Pipeline,
     paintable: gdk::Paintable,
@@ -133,6 +137,7 @@ struct App {
     mode_btn: gtk::Button,
     timer_btn: gtk::Button,
     grid_btn: gtk::Button,
+    burst_btn: gtk::Button,
     status: gtk::Label,
     countdown: gtk::Label,
 }
@@ -248,6 +253,13 @@ impl App {
             self.timer_btn.add_css_class("on");
         }
         self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
+        let b = BURSTS[st.burst];
+        self.burst_btn.set_label(&if b > 1 { format!("burst {b}") } else { "burst off".into() });
+        if b > 1 {
+            self.burst_btn.add_css_class("on");
+        } else {
+            self.burst_btn.remove_css_class("on");
+        }
         if st.grid {
             self.grid_btn.add_css_class("on");
         } else {
@@ -401,7 +413,7 @@ impl App {
             let st = self.st.borrow();
             (st.busy, st.counting, TIMERS[st.timer])
         };
-        if busy || counting {
+        if busy || counting || self.st.borrow().saving >= 3 {
             return;
         }
         if t == 0 {
@@ -427,16 +439,18 @@ impl App {
     }
 
     // As stock: the driver takes the photo while the preview runs (it pauses for the
-    // exposure), with the preview's exposure and focus. The records are then pulled over
-    // the CSI links (the preview freezes for that) and joined into an LRI in the background.
+    // exposure), with the preview's exposure and focus, and the next one can be taken right
+    // away. The records come over the CSI links beside the preview, photo after photo, and
+    // are joined into LRIs in the background (a burst: one per frame).
     fn capture(self: &Rc<Self>) {
-        let zoom = {
+        let (zoom, burst, seq, dark) = {
             let mut st = self.st.borrow_mut();
             st.busy = true;
-            st.zoom
+            st.saving += 1;
+            st.seq += 1;
+            (st.zoom, BURSTS[st.burst], st.seq, st.mode == Mode::Auto && st.live_iso > 400)
         };
         self.thumb.set_paintable(Some(&self.paintable.current_image()));
-        self.st.borrow_mut().saving += 1;
         self.blackout.set_opacity(1.0);
         self.blackout.set_visible(true);
         self.thumb.set_opacity(0.5);
@@ -463,47 +477,65 @@ impl App {
             .and_then(|d| d.format("%Y%m%d_%H%M%S").ok())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "photo".into());
-        let dir = PathBuf::from(format!("/tmp/l16-shot-{stamp}"));
+        let dir = PathBuf::from(format!("/tmp/l16-shot-{stamp}-{seq}"));
         let tx = self.stage_tx.clone();
-        let Some(photo) = self.transfers.borrow().as_ref().map(|t| t.photo.clone()) else {
+        let turn = self.transfer_turn.clone();
+        let Some(queue) = self.transfers.borrow().as_ref().map(|t| t.queue.clone()) else {
             self.st.borrow_mut().busy = false;
             self.fade_blackout();
             self.saved();
             return self.show_status("capture failed: no transfer streams", 6);
+        };
+        // Quick shots: no precapture metering (about half a second; the preview is metered)
+        // and one frame per module. In the dark, as stock: the precapture metering, and the
+        // ASICs stack several exposures per module when they judge it needed (slower, 4x
+        // the data, less noise). Bursts are always quick.
+        let flags = if dark && burst == 1 {
+            0
+        } else {
+            ccb::CAPTURE_NO_PRECAPTURE | ccb::CAPTURE_NO_STACK
         };
         thread::spawn(move || {
             let c = match ccb::Ccb::open() {
                 Some(c) => c,
                 None => return drop(tx.send(Stage::Captured(Err("no camera driver".into())))),
             };
-            let cap = match c.capture(mask) {
+            let t = Instant::now();
+            let cap = match c.capture(mask, burst, flags) {
                 Ok(cap) => cap,
                 Err(e) => return drop(tx.send(Stage::Captured(Err(e)))),
             };
-            eprintln!("l16-camera: captured {}: records {:?} (status {})", dir.display(), cap.records, cap.status);
+            eprintln!(
+                "l16-camera: captured {} in {:.2} s: records {:?} (burst {burst}, status {})",
+                dir.display(),
+                t.elapsed().as_secs_f64(),
+                cap.records,
+                cap.status
+            );
+            // the records come in the order asked for: photos take turns
+            let _turn = turn.lock().unwrap();
             match transfer::Photo::new(dir.clone(), cap.records) {
-                Ok(p) => *photo.lock().unwrap() = Some(p),
+                Ok(p) => queue.lock().unwrap().push_back(p),
                 Err(e) => return drop(tx.send(Stage::Captured(Err(e.to_string())))),
             }
             let _ = tx.send(Stage::Captured(Ok(dir.clone())));
-            // The records, ASIC by ASIC; the streams write them as they come. At most four
-            // in flight per ASIC, well within a stream's eight buffers.
-            let pending = |a: usize| -> Option<u16> {
-                let p = photo.lock().unwrap();
-                p.as_ref().filter(|p| p.dir == dir).map(|p| p.received(a, cap.records[a]))
+            // ASIC by ASIC; at most four in flight per ASIC (a stream has eight buffers)
+            let got = |a: usize| -> Option<u16> {
+                let q = queue.lock().unwrap();
+                q.iter().find(|p| p.dir == dir).map(|p| p.received(a))
             };
+            let t = Instant::now();
             let mut err = None;
             'asics: for a in 0..3 {
                 for k in 0..cap.records[a] {
                     let start = Instant::now();
-                    while pending(a).is_some_and(|got| got + 4 <= k) {
+                    while got(a).is_some_and(|n| n + 4 <= k) {
                         if start.elapsed() > Duration::from_secs(3) {
                             err = Some(format!("ASIC{} record {k} did not arrive", a + 1));
                             break 'asics;
                         }
                         thread::sleep(Duration::from_millis(5));
                     }
-                    eprintln!("l16-camera: request ASIC{} record {k}", a + 1);
                     if let Err(e) = c.transfer(a as u32) {
                         err = Some(e);
                         break 'asics;
@@ -512,20 +544,18 @@ impl App {
             }
             // the last records arrive within a moment; give up on missing ones
             for _ in 0..50 {
-                if err.is_some() || photo.lock().unwrap().as_ref().map(|p| &p.dir) != Some(&dir) {
+                if err.is_some() || got(0).is_none() {
                     break;
                 }
                 thread::sleep(Duration::from_millis(100));
             }
-            {
-                let mut p = photo.lock().unwrap();
-                if p.as_ref().map(|p| &p.dir) == Some(&dir) {
-                    *p = None;
-                    let _ = tx.send(Stage::Transferred(Err(err.unwrap_or("records missing".into()))));
-                }
+            let mut q = queue.lock().unwrap();
+            if let Some(i) = q.iter().position(|p| p.dir == dir) {
+                q.remove(i);
+                let _ = tx.send(Stage::Transferred(Err(err.unwrap_or("records missing".into()))));
+            } else {
+                eprintln!("l16-camera: transferred {} in {:.2} s", dir.display(), t.elapsed().as_secs_f64());
             }
-            // the photo is off the ASICs and in its files: the next one can be taken
-            let _ = tx.send(Stage::Released);
         });
     }
 
@@ -585,9 +615,9 @@ impl App {
 
     fn on_stage(self: &Rc<Self>, stage: Stage) {
         match stage {
-            Stage::Captured(Ok(_)) => self.fade_blackout(),
-            Stage::Released => {
+            Stage::Captured(Ok(_)) => {
                 self.st.borrow_mut().busy = false;
+                self.fade_blackout();
             }
             Stage::Transferred(r) => {
                 match r {
@@ -934,12 +964,14 @@ fn build(gapp: &gtk::Application) {
     let mode_btn = gtk::Button::with_label("auto");
     let timer_btn = gtk::Button::with_label("timer off");
     let grid_btn = gtk::Button::with_label("grid off");
+    let burst_btn = gtk::Button::with_label("burst off");
     let close_btn = gtk::Button::with_label("✕");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
     bar.append(&mode_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
+    bar.append(&burst_btn);
     let fill = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     fill.set_hexpand(true);
     bar.append(&fill);
@@ -987,6 +1019,8 @@ fn build(gapp: &gtk::Application) {
             busy: false,
             counting: false,
             saving: 0,
+            seq: 0,
+            burst: 0,
             dragged: false,
             wheel: None,
             wheel_start: 0,
@@ -1007,6 +1041,7 @@ fn build(gapp: &gtk::Application) {
         stage_tx,
         stage_rx,
         transfers: RefCell::new(None),
+        transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
         paintable,
         _bus: bus,
@@ -1025,6 +1060,7 @@ fn build(gapp: &gtk::Application) {
         mode_btn,
         timer_btn,
         grid_btn,
+        burst_btn,
         status,
         countdown,
     });
@@ -1156,6 +1192,14 @@ fn build(gapp: &gtk::Application) {
         {
             let mut st = a.st.borrow_mut();
             st.timer = (st.timer + 1) % TIMERS.len();
+        }
+        a.refresh();
+    });
+    let a = app.clone();
+    app.burst_btn.connect_clicked(move |_| {
+        {
+            let mut st = a.st.borrow_mut();
+            st.burst = (st.burst + 1) % BURSTS.len();
         }
         a.refresh();
     });

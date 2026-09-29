@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..6854bfcb2
+index 000000000..39130108a
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1216 @@
+@@ -0,0 +1,1252 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -134,7 +134,18 @@ index 000000000..6854bfcb2
 +	__u16 records[3];	/* out: records held by ASIC1..3 */
 +	__u32 record_bytes;	/* out: bytes in a frame record */
 +	__s32 status;		/* out: the capture-start reply status */
++	__u8 burst;		/* frames per module, back to back (0 or 1: one; up to 31) */
++	__u8 flags;		/* LIGHT_CCB_CAPTURE_* */
++	__u16 fps;		/* burst frame rate (0: the ASICs' own) */
 +};
++
++/* no precapture metering: the preview's exposure as it is (quicker) */
++#define LIGHT_CCB_CAPTURE_NO_PRECAPTURE	BIT(0)
++/*
++ * no stacked capture (0x006a): one frame per module. In auto the ASICs stack several
++ * exposures per module when they judge it dark, or always without the precapture metering.
++ */
++#define LIGHT_CCB_CAPTURE_NO_STACK	BIT(1)
 +
 +#define LIGHT_CCB_IOC_CAPTURE	_IOWR('L', 5, struct light_ccb_capture)
 +#define LIGHT_CCB_IOC_TRANSFER	_IOW('L', 6, __u32)		/* ASIC index 0..2 */
@@ -825,10 +836,12 @@ index 000000000..6854bfcb2
 +}
 +
 +/*
-+ * With c->lock held, previewing. The sequence of stock's capture (I2C trace, CAPTURE-TRACE.md):
-+ * precapture metering (auto only), preview off, crop and use case 5, UUID, burst 1, capture
-+ * start with {11 F1 00} per module; the ASICs' transfer descriptors (type 8) come before the
-+ * start's reply. Then capture stop, use case 3, preview on, AE unlock.
++ * With c->lock held, previewing. The sequence of stock's capture (I2C trace, CAPTURE-TRACE.md;
++ * liblight_ccb ccb_capture): precapture metering (auto only), preview off, crop and use case
++ * 5, UUID, burst (0x8010 {05 00 count}; for a burst, the frame rate first: 0x0050 {mask, UCID
++ * 5, 00, fps << 8}), capture start with {11 F1 00} per module; the ASICs' transfer
++ * descriptors (type 8, one set per burst frame) come before the start's reply. Then capture
++ * stop, use case 3, preview on (not waited for), AE unlock.
 + */
 +static int ccb_capture(struct ccb *c, struct light_ccb_capture *cap)
 +{
@@ -836,8 +849,11 @@ index 000000000..6854bfcb2
 +	static const u8 crop5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
 +				    0x40, 0x10, 0x30, 0x0c, 0x01, 0x01 };
 +	static const u8 ucid5[] = { 0x05, 0x00 }, ucid3[] = { 0x03, 0x00 };
-+	static const u8 burst[] = { 0x05, 0x00, 0x01 };
++	u8 burst[] = { 0x05, 0x00, 0x01 };
++	u8 fps[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
 +	static const u8 unlock[] = { 0x00 };
++	static const u8 stack_off[] = { 0x00, 0x01 }, stack_on[] = { 0x01, 0x01 };
++	bool restack = false;
 +	u8 body[3 + 3 * 16], prev[6], m[CCB_MSG_MAX];
 +	unsigned long end;
 +	int mod = c->module->cur.val, n = 0, i, t, ret;
@@ -854,7 +870,10 @@ index 000000000..6854bfcb2
 +	memset(cap->records, 0, sizeof(cap->records));
 +	cap->record_bytes = 0;
 +
-+	if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
++	if (cap->burst > 31)
++		return -EINVAL;
++	if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL &&
++	    !(cap->flags & LIGHT_CCB_CAPTURE_NO_PRECAPTURE))
 +		ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x0061, trigger, sizeof(trigger));
 +	memcpy(prev, ccb_module_masks[mod], 3);
 +	prev[3] = 0x10;
@@ -863,10 +882,19 @@ index 000000000..6854bfcb2
 +	if (ret < 0)
 +		return ret;
 +	c->previewing = false;
++	if (cap->flags & LIGHT_CCB_CAPTURE_NO_STACK) {
++		ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack_off, sizeof(stack_off));
++		restack = c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL;
++	}
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x002e, crop5, sizeof(crop5));
 +	ret = ccb_command(c, CCB_KIND_CAPTURE, 0x9000, ucid5, sizeof(ucid5));
 +	if (ret >= 0)
 +		ret = ccb_command(c, CCB_KIND_CAPTURE, 0x8006, cap->uuid, sizeof(cap->uuid));
++	if (ret >= 0 && cap->burst > 1 && cap->fps) {
++		put_unaligned_le16(cap->fps << 8, fps + 5);
++		ret = ccb_command(c, CCB_KIND_CAPTURE, 0x0050, fps, sizeof(fps));
++	}
++	burst[2] = cap->burst > 1 ? cap->burst : 1;
 +	if (ret >= 0)
 +		ret = ccb_command(c, CCB_KIND_CAPTURE, 0x8010, burst, sizeof(burst));
 +	if (ret < 0)
@@ -889,11 +917,16 @@ index 000000000..6854bfcb2
 +	 * size shift, record count, then a u16 size per record (in 2^shift bytes)
 +	 */
 +	ret = -ETIMEDOUT;
-+	end = jiffies + msecs_to_jiffies(5000);
++	/* stock: (frame time + exposure) x frames, at least 500 ms; here more room */
++	end = jiffies + msecs_to_jiffies(3000 + 1000 * burst[2]);
 +	while (time_before(jiffies, end)) {
 +		t = ccb_read(c, m, sizeof(m));
 +		if (t == CCB_TYPE_DESCRIPTOR && get_unaligned_le16(m + 2) >= 6) {
 +			int asic = m[7] & 0x0f, count = m[9];
++
++			if (debug)
++				dev_info(&c->client->dev, "descriptor %*ph\n",
++					 min_t(int, get_unaligned_le16(m + 2), 24), m + 4);
 +
 +			if (asic < 3)
 +				cap->records[asic] += count;
@@ -918,9 +951,12 @@ index 000000000..6854bfcb2
 +	/* back to the preview use case, preview on; and the precapture AE lock released */
 +	ccb_command(c, CCB_KIND_CAPTURE, 0x9000, ucid3, sizeof(ucid3));
 +	prev[3] = 0x11;
-+	if (ccb_command(c, CCB_KIND_CAPTURE, 0x8002, prev, sizeof(prev)) >= 0)
++	/* not waited for (~140 ms): the drain worker reads the reply */
++	if (!ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x8002, prev, sizeof(prev)))
 +		c->previewing = true;
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, unlock, sizeof(unlock));
++	if (restack)
++		ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack_on, sizeof(stack_on));
 +	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	return ret;
 +}
