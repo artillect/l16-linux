@@ -5,6 +5,8 @@ rc-update -q add light-lfc-firmware sysinit
 rc-update -q add light-lfc-bootmode boot
 # the status LED (charging, low battery)
 rc-update -q add light-lfc-led default
+# the touch strip as volume keys
+rc-update -q add light-lfc-strip-volume default
 # suspend-on-blank arms the RTC alarm, which can power on a switched-off L16
 rc-update -q add clear-rtc-wakealarm shutdown
 exit 0

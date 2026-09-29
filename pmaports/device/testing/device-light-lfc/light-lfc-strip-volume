@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-# light-lfc-strip-volume: the touch strip as a volume control, except while the camera app
-# (l16-camera) runs, which uses it for zoom. A swipe of a tenth of the strip is 5%.
+# light-lfc-strip-volume: the touch strip as volume keys, except while the camera app
+# (l16-camera) runs, which uses it for zoom. A swipe of a tenth of the strip is one key
+# press; the keys come from a uinput device, so the desktop handles them as it does the
+# volume button (its on-screen display included).
+import fcntl
 import glob
-import re
 import struct
-import subprocess
 import time
 
-EV_KEY, EV_ABS, ABS_X, BTN_TOUCH = 1, 3, 0, 330
+EV_SYN, EV_KEY, EV_ABS = 0, 1, 3
+SYN_REPORT, ABS_X, BTN_TOUCH = 0, 0, 330
+KEY_VOLUMEDOWN, KEY_VOLUMEUP = 114, 115
 STEP = 768 // 10
+
+UI_DEV_CREATE = 0x5501			# _IO('U', 1)
+UI_DEV_SETUP = 0x405c5503		# _IOW('U', 3, struct uinput_setup)
+UI_SET_EVBIT = 0x40045564		# _IOW('U', 100, int)
+UI_SET_KEYBIT = 0x40045565		# _IOW('U', 101, int)
+BUS_VIRTUAL = 6
 
 
 def strip():
@@ -28,15 +37,23 @@ def camera_running():
 	return False
 
 
-# PulseAudio is the sound server; kept at 100% or below
-def volume(steps):
-	out = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
-			     capture_output=True, text=True).stdout
-	m = re.search(r"(\d+)%", out)
-	if not m:
-		return
-	level = max(0, min(100, int(m.group(1)) + 5 * steps))
-	subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "%d%%" % level])
+def keyboard():
+	ui = open("/dev/uinput", "r+b", buffering=0)	# (r+: never create it)
+	fcntl.ioctl(ui, UI_SET_EVBIT, EV_KEY)
+	for key in (KEY_VOLUMEDOWN, KEY_VOLUMEUP):
+		fcntl.ioctl(ui, UI_SET_KEYBIT, key)
+	# struct uinput_setup: input_id {bustype, vendor, product, version}, name[80], ff_effects_max
+	setup = struct.pack("HHHH80sI", BUS_VIRTUAL, 0, 0, 1, b"Light L16 touch strip volume", 0)
+	fcntl.ioctl(ui, UI_DEV_SETUP, setup)
+	fcntl.ioctl(ui, UI_DEV_CREATE)
+	return ui
+
+
+def press(ui, key, times):
+	for _ in range(times):
+		for value in (1, 0):
+			ui.write(struct.pack("llHHi", 0, 0, EV_KEY, key, value))
+			ui.write(struct.pack("llHHi", 0, 0, EV_SYN, SYN_REPORT, 0))
 
 
 def main():
@@ -44,6 +61,7 @@ def main():
 	while path is None:
 		time.sleep(5)
 		path = strip()
+	ui = keyboard()
 	with open(path, "rb") as f:
 		anchor = None
 		ignore = False
@@ -55,9 +73,9 @@ def main():
 					anchor = value
 					ignore = camera_running()
 				elif not ignore and abs(value - anchor) >= STEP:
-					steps = (value - anchor) // STEP if value > anchor else -((anchor - value) // STEP)
-					volume(steps)
-					anchor += steps * STEP
+					steps = abs(value - anchor) // STEP
+					press(ui, KEY_VOLUMEUP if value > anchor else KEY_VOLUMEDOWN, steps)
+					anchor += steps * STEP if value > anchor else -steps * STEP
 			elif typ == EV_KEY and code == BTN_TOUCH and value == 0:
 				anchor = None
 

@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=19
+pkgrel=20
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -51,7 +51,7 @@ source="
 	light-lfc-led
 	light-lfc-led.initd
 	light-lfc-strip-volume
-	light-lfc-strip-volume.desktop
+	light-lfc-strip-volume.initd
 	libcamera-light-ccb.yaml
 	light-lfc-postprocess.sh
 	light-lfc-reboot-android
@@ -105,11 +105,9 @@ package() {
 	install -Dm755 "$srcdir"/light-lfc-led \
 		"$pkgdir"/usr/libexec/light-lfc-led
 
-	# the touch strip as a volume control outside the camera app
+	# the touch strip as volume keys outside the camera app (a uinput device)
 	install -Dm755 "$srcdir"/light-lfc-strip-volume \
 		"$pkgdir"/usr/libexec/light-lfc-strip-volume
-	install -Dm644 "$srcdir"/light-lfc-strip-volume.desktop \
-		-t "$pkgdir"/etc/xdg/autostart
 
 	# libcamera's software ISP for the camera ASICs (no AGC: the ASICs meter)
 	install -Dm644 "$srcdir"/libcamera-light-ccb.yaml \
@@ -150,6 +148,8 @@ openrc() {
 		"$subpkgdir"/etc/init.d/light-lfc-bootmode
 	install -Dm755 "$srcdir"/light-lfc-led.initd \
 		"$subpkgdir"/etc/init.d/light-lfc-led
+	install -Dm755 "$srcdir"/light-lfc-strip-volume.initd \
+		"$subpkgdir"/etc/init.d/light-lfc-strip-volume
 }
 
 phosh() {
@@ -207,8 +207,8 @@ b654dae938fb3bccf624a8e097734742c693d47d7ec7a35a5675a20e49cb3c16ff5c500656f1a46d
 63263752f146515c8cc59338afe122f78f0dcf469954d203184e7b7de488549a75b17943373cd2f3f568552c5440c240778f480a3fe4b2ac0b12e6de5b4fc5f2  light-lfc-firmware.sh
 f6e09bfe3887ca39d226c560727a63597e10f20eba67516cf25b643d821b009a417193f44eeb5c9ecff36f1316cdb2686dbf0f05e460ff8e64c482ab31296f93  light-lfc-led
 36ddf546effd79c252b2be8337a5121731f700b45c467a19e1fc622f089ab21423401a5262fe2141aa263e79db4e7ad344a90a1076d3a5a184fb1046c472ec47  light-lfc-led.initd
-e8cd4dcb58b8f09d9371a139a3d0e8df47e9e13da7e897e98d5400e4d16d467f6ac2745473b9dccc673138acdc838503db37834c57ad824d45472885c572ba28  light-lfc-strip-volume
-fbd7a7f4cec08ce6bd636ebc61e792bc504198d732f34a3ee2497c6240331d0661a1a2dc2a569b0db8fe79f811fc3866e24cef80147f8c7ec75cffb9a0649dbf  light-lfc-strip-volume.desktop
+e913a563acefc8bf96160e4c76e370bc75bc6fd9f5b96d179c21368e243d46f8c48ce9ee012cf54b7d1c443a96f1f081b8aa91b21621dd611e0b5062d651d2a0  light-lfc-strip-volume
+33757bc54692c6e24ac4b65456dff2bbdc17be39ec16d95454af842902883a064c5863a4a54d40ff755cf35168c1ea71ea9ba3b7c54997a051d76509493872ff  light-lfc-strip-volume.initd
 0e0b9f7efd6e8affc0095000f44bcca58c0254401eb7ff4f9912bd54fb64eb69bdb776b715e40835b1b0222764dcfb33d0bde498fa40aaed18981fa29ecc1024  libcamera-light-ccb.yaml
 8541cc5044aff7df7cab337c0ff3c59c5ad033792b70972626d2c6b634f7d60ac6ed5bb043445db766e3253da1b3a4fc489ca8cf67b441a15fee4ebb7f601bc9  light-lfc-postprocess.sh
 6d9f22b0adc3a2ea7fdd0dbbe907ff7261638b5b20cc52eb02ed96349fbbdf8058259a1879bba643059d36c7f21304451ef1de11bbb0816e18ed45f775ee6976  light-lfc-reboot-android

@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+name="Light L16 touch strip volume"
+description="The touch strip as volume keys, outside the camera app"
+
+command=/usr/libexec/light-lfc-strip-volume
+supervisor=supervise-daemon
+
+depend() {
+	need sysfs
+	after udev
+}
