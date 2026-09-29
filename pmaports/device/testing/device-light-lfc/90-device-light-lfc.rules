@@ -19,10 +19,11 @@ ACTION=="add", SUBSYSTEM=="rtc", KERNEL=="rtc0", RUN+="/bin/chgrp wheel /sys%p/w
 # missed. Pull raw X in by 1% so the edge lands a few pixels inside the screen.
 ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="Synaptics s2726", ENV{LIBINPUT_CALIBRATION_MATRIX}="0.99 0 0.01 0 1 0"
 
-# L16 camera app (l16-camera, as the logged-in user): the shutter button (gpio-keys:
-# half press KEY_CAMERA_FOCUS, full press KEY_CAMERA) and the touch strip
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="gpio-keys", TAG+="uaccess"
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Light L16 touch strip", TAG+="uaccess"
+# L16 camera app (l16-camera) and the touch strip volume, as the user (group video): the
+# shutter button (gpio-keys: half press KEY_CAMERA_FOCUS, full press KEY_CAMERA) and the
+# touch strip
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="gpio-keys", GROUP="video"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Light L16 touch strip", GROUP="video"
 
 # l16-capture (group video): CAMSS's virtual channel and data type parameters, set for the
 # ASICs' capture transfers

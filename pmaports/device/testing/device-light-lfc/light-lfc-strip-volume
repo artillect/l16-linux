@@ -2,7 +2,7 @@
 # light-lfc-strip-volume: the touch strip as a volume control, except while the camera app
 # (l16-camera) runs, which uses it for zoom. A swipe of a tenth of the strip is 5%.
 import glob
-import os
+import re
 import struct
 import subprocess
 import time
@@ -28,9 +28,15 @@ def camera_running():
 	return False
 
 
+# PulseAudio is the sound server; kept at 100% or below
 def volume(steps):
-	change = "%d%%%s" % (5 * abs(steps), "+" if steps > 0 else "-")
-	subprocess.run(["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", change])
+	out = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+			     capture_output=True, text=True).stdout
+	m = re.search(r"(\d+)%", out)
+	if not m:
+		return
+	level = max(0, min(100, int(m.group(1)) + 5 * steps))
+	subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "%d%%" % level])
 
 
 def main():
