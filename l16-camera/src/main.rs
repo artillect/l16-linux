@@ -89,8 +89,8 @@ enum Dial {
 
 struct State {
     mode: Mode,
-    iso: usize,
-    shutter: usize,
+    iso: f64,     // position, see iso_at
+    shutter: f64, // position, see secs_at
     zoom: f64,
     module: usize,
     timer: usize,
@@ -102,12 +102,14 @@ struct State {
     burst_count: u8,  // the burst screen's number (0: not showing)
     burst_captured: bool,
     burst: usize,
+    flash: bool,
     dragged: bool,
     wheel: Option<Dial>,
-    wheel_start: usize,
+    wheel_start: f64,
     zoom_start: f64,
     zoom_wheel_until: Option<Instant>,
     focus_until: Option<Instant>,
+    focus_at: Option<(f64, f64)>,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -132,6 +134,7 @@ struct App {
     view: ZoomView,
     marks: gtk::DrawingArea,
     wheels: gtk::DrawingArea,
+    dial_wheel: gtk::DrawingArea,
     hud: Vec<gtk::Label>,
     top: gtk::DrawingArea,
     bottom: gtk::DrawingArea,
@@ -150,8 +153,30 @@ struct App {
     timer_btn: gtk::Button,
     grid_btn: gtk::Button,
     burst_btn: gtk::Button,
+    flash_btn: gtk::Button,
     status: gtk::Label,
     countdown: gtk::Label,
+}
+
+const ISO_MAX: f64 = 3200.0;
+const ISO_MIN: f64 = 100.0;
+const SECS_MAX: f64 = 15.0;
+const SECS_MIN: f64 = 1.0 / 8000.0;
+
+fn iso_at(pos: f64) -> i32 {
+    (ISO_MAX * (ISO_MIN / ISO_MAX).powf(pos.clamp(0.0, 1.0))).round() as i32
+}
+
+fn secs_at(pos: f64) -> f64 {
+    SECS_MAX * (SECS_MIN / SECS_MAX).powf(pos.clamp(0.0, 1.0))
+}
+
+fn iso_pos(iso: f64) -> f64 {
+    (iso / ISO_MAX).ln() / (ISO_MIN / ISO_MAX).ln()
+}
+
+fn secs_pos(t: f64) -> f64 {
+    (t / SECS_MAX).ln() / (SECS_MIN / SECS_MAX).ln()
 }
 
 fn shutter_secs(s: &str) -> f64 {
@@ -216,7 +241,7 @@ impl App {
 
     fn exposure_us(&self) -> i32 {
         let st = self.st.borrow();
-        ((shutter_secs(SHUTTER[st.shutter]) * 1e6).round() as i32).clamp(1, 15_000_000)
+        ((secs_at(st.shutter) * 1e6).round() as i32).clamp(1, 15_000_000)
     }
 
     // auto: the ASICs meter; manual: the chosen ISO and shutter (the preview slows down for
@@ -225,7 +250,7 @@ impl App {
         let Some(c) = &self.ccb else { return };
         let (mode, iso) = {
             let st = self.st.borrow();
-            (st.mode, ISO[st.iso])
+            (st.mode, iso_at(st.iso))
         };
         match mode {
             Mode::Auto => {
@@ -243,7 +268,7 @@ impl App {
         let st = self.st.borrow();
         let (ev, iso, secs) = match st.mode {
             Mode::Auto => ("0".to_string(), st.live_iso, st.live_secs),
-            Mode::Manual => ("–".to_string(), ISO[st.iso], shutter_secs(SHUTTER[st.shutter])),
+            Mode::Manual => ("–".to_string(), iso_at(st.iso), secs_at(st.shutter)),
         };
         self.hud[0].set_text(&ev);
         self.hud[1].set_text(&if iso > 0 { iso.to_string() } else { "–".into() });
@@ -265,6 +290,12 @@ impl App {
             self.timer_btn.add_css_class("on");
         }
         self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
+        self.flash_btn.set_label(if st.flash { "flash auto" } else { "flash off" });
+        if st.flash {
+            self.flash_btn.add_css_class("on");
+        } else {
+            self.flash_btn.remove_css_class("on");
+        }
         let b = BURSTS[st.burst];
         self.burst_btn.set_label(&if b > 1 { format!("burst {b}") } else { "burst off".into() });
         self.burst_badge.set_text(&format!("×{b}"));
@@ -300,18 +331,18 @@ impl App {
         }
     }
 
-    fn set_dial(&self, dial: Dial, index: isize) {
+    fn set_dial(&self, dial: Dial, pos: f64) {
         {
             let mut st = self.st.borrow_mut();
             match dial {
-                Dial::Iso => st.iso = index.clamp(0, ISO.len() as isize - 1) as usize,
-                Dial::Shutter => st.shutter = index.clamp(0, SHUTTER.len() as isize - 1) as usize,
+                Dial::Iso => st.iso = pos.clamp(0.0, 1.0),
+                Dial::Shutter => st.shutter = pos.clamp(0.0, 1.0),
             }
         }
         if let Some(c) = &self.ccb {
             match dial {
                 Dial::Iso => {
-                    c.set(ccb::ISO, ISO[self.st.borrow().iso]);
+                    c.set(ccb::ISO, iso_at(self.st.borrow().iso));
                 }
                 Dial::Shutter => {
                     c.set(ccb::EXPOSURE_US, self.exposure_us());
@@ -319,7 +350,7 @@ impl App {
             }
         }
         self.refresh();
-        self.wheels.queue_draw();
+        self.dial_wheel.queue_draw();
     }
 
     fn set_mode(&self, mode: Mode) {
@@ -404,16 +435,30 @@ impl App {
         }
     }
 
-    // the ASICs focus on the centre (the driver's AF runs synchronously; off the UI thread)
-    fn focus(self: &Rc<Self>) {
+    // focus on @at (preview coordinates), or the centre: a 200x200 window in the module's
+    // 4160x3120 pixels, through the zoom's crop (the driver runs AF in the background)
+    fn focus(self: &Rc<Self>, at: Option<(f64, f64)>) {
         if self.st.borrow().busy || self.focusing.swap(true, Ordering::SeqCst) {
             return;
         }
-        self.st.borrow_mut().focus_until = Some(Instant::now() + Duration::from_millis(1500));
+        let (w, h) = (self.view.width() as f64, self.view.height() as f64);
+        let z = self.view.zoom();
+        let (px, py) = at.unwrap_or((w / 2.0, h / 2.0));
+        let sx = 2080.0 + (px - w / 2.0) / w * 4160.0 / z;
+        let sy = 1560.0 + (py - h / 2.0) / h * 3120.0 / z;
+        let fx = ((sx - 100.0).round() as i32).clamp(0, 4160 - 200);
+        let fy = ((sy - 100.0).round() as i32).clamp(0, 3120 - 200);
+        {
+            let mut st = self.st.borrow_mut();
+            st.focus_until = Some(Instant::now() + Duration::from_millis(1500));
+            st.focus_at = at;
+        }
         self.marks.queue_draw();
         let focusing = self.focusing.clone();
         thread::spawn(move || {
             if let Some(c) = ccb::Ccb::open() {
+                c.set(ccb::FOCUS_X, fx);
+                c.set(ccb::FOCUS_Y, fy);
                 c.set(ccb::AF_START, 1);
             }
             focusing.store(false, Ordering::SeqCst);
@@ -427,7 +472,7 @@ impl App {
             let st = self.st.borrow();
             (st.busy, st.counting, TIMERS[st.timer])
         };
-        if busy || counting || self.st.borrow().saving >= 3 {
+        if busy || counting || !self.room_for(BURSTS[self.st.borrow().burst]) {
             return;
         }
         if t == 0 {
@@ -456,6 +501,22 @@ impl App {
     // exposure), with the preview's exposure and focus, and the next one can be taken right
     // away. The records come over the CSI links beside the preview, photo after photo, and
     // are joined into LRIs in the background (a burst: one per frame).
+    // room in /tmp for a photo of @frames frames on its way (about 300 MB each: up to 17
+    // records of 16 MB), with a margin for the LRI assembly
+    fn room_for(self: &Rc<Self>, frames: u8) -> bool {
+        let mut fs: libc::statvfs = unsafe { std::mem::zeroed() };
+        let path = std::ffi::CString::new("/tmp").unwrap();
+        if unsafe { libc::statvfs(path.as_ptr(), &mut fs) } != 0 {
+            return true;
+        }
+        let free = fs.f_bavail as u64 * fs.f_frsize as u64;
+        let room = free > (frames as u64 + 1) * 300 << 20;
+        if !room {
+            self.show_status("waiting for photos to save", 2);
+        }
+        room
+    }
+
     fn capture(self: &Rc<Self>) {
         let (zoom, burst, seq, dark) = {
             let mut st = self.st.borrow_mut();
@@ -586,7 +647,7 @@ impl App {
             st.burst_captured = false;
             let secs = match st.mode {
                 Mode::Auto => st.live_secs,
-                Mode::Manual => shutter_secs(SHUTTER[st.shutter]),
+                Mode::Manual => secs_at(st.shutter),
             };
             Duration::from_secs_f64(secs.max(0.1))
         };
@@ -609,16 +670,6 @@ impl App {
                 app.end_burst_screen();
             } else {
                 app.burst_label.set_visible(false);
-                app.burst_saving.set_visible(true);
-                let screen = app.clone();
-                app.burst_dots.add_tick_callback(move |w, _| {
-                    w.queue_draw();
-                    if screen.st.borrow().burst_count > 0 {
-                        glib::ControlFlow::Continue
-                    } else {
-                        glib::ControlFlow::Break
-                    }
-                });
             }
             glib::ControlFlow::Break
         });
@@ -631,7 +682,7 @@ impl App {
             st.burst_count
         };
         // the counter still running shows its last numbers first
-        if counting > 0 && self.burst_saving.is_visible() {
+        if counting > 0 && !self.burst_label.is_visible() {
             self.end_burst_screen();
         }
     }
@@ -762,7 +813,7 @@ impl App {
 
     fn on_input(self: &Rc<Self>, ev: input::Ev) {
         match ev {
-            input::Ev::Key(input::KEY_CAMERA_FOCUS, true) => self.focus(),
+            input::Ev::Key(input::KEY_CAMERA_FOCUS, true) => self.focus(None),
             input::Ev::Key(input::KEY_CAMERA | input::KEY_VOLUMEUP, true) => self.shutter_pressed(),
             input::Ev::Key(..) => {}
             // the strip's position comes before its touch-down in each report
@@ -819,7 +870,8 @@ impl App {
             let _ = cr.stroke();
         }
         if st.focus_until.is_some_and(|t| Instant::now() < t) {
-            let (cx, cy, s, c) = (w / 2.0, h / 2.0, 40.0, 12.0);
+            let (cx, cy) = st.focus_at.unwrap_or((w / 2.0, h / 2.0));
+            let (s, c) = (40.0, 12.0);
             cr.set_source_rgb(1.0, 1.0, 1.0);
             cr.set_line_width(2.0);
             for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
@@ -831,41 +883,70 @@ impl App {
         }
     }
 
+    // The exposure wheel, as the original's FerrisWheel: the title and a pointer on the left,
+    // the values on a wheel of radius 400 turning with the finger, 12 degrees apart (the
+    // original's table entries, as ticks), the current value on the pointer.
+    fn draw_dial_wheel(&self, cr: &cairo::Context, w: f64, h: f64) {
+        let st = self.st.borrow();
+        let Some(dial) = st.wheel else { return };
+        let (title, pos, value, ticks): (&str, f64, String, Vec<(f64, String)>) = match dial {
+            Dial::Iso => (
+                "iso",
+                st.iso,
+                iso_at(st.iso).to_string(),
+                ISO.iter().map(|&i| (iso_pos(i as f64), i.to_string())).collect(),
+            ),
+            Dial::Shutter => (
+                "shutter",
+                st.shutter,
+                fmt_secs(secs_at(st.shutter)),
+                SHUTTER.iter().map(|s| (secs_pos(shutter_secs(s)), s.to_string())).collect(),
+            ),
+        };
+        let _ = w;
+        let (r, cy) = (400.0, h / 2.0);
+        let step = 12f64.to_radians() * (ticks.len() - 1) as f64;
+        // the title and the pointer
+        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
+        cr.set_source_rgb(1.0, 1.0, 1.0);
+        text(cr, title, 8.0, cy, 30.0, 0.0);
+        cr.set_font_size(30.0);
+        let tw = cr.text_extents(title).map(|e| e.x_advance()).unwrap_or(60.0);
+        let px = 8.0 + tw + 14.0;
+        cr.set_source_rgb(ACCENT.0, ACCENT.1, ACCENT.2);
+        cr.move_to(px, cy - 12.0);
+        cr.line_to(px + 18.0, cy);
+        cr.line_to(px, cy + 12.0);
+        cr.close_path();
+        let _ = cr.fill();
+        let x0 = px + 34.0;
+        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
+        let label = |cr: &cairo::Context, s: &str, y: f64, size: f64, alpha: f64| {
+            cr.set_font_size(size);
+            if let Ok(e) = cr.text_extents(s) {
+                cr.move_to(x0 - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
+                cr.text_path(s);
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.3 * alpha);
+                cr.set_line_width(4.0);
+                let _ = cr.stroke_preserve();
+                cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
+                let _ = cr.fill();
+            }
+        };
+        for (tp, s) in &ticks {
+            let th = (tp - pos) * step;
+            if th.abs() < 5f64.to_radians() || th.abs() > 32f64.to_radians() {
+                continue;
+            }
+            let y = cy + th.sin() * r * th.cos().powi(4);
+            label(cr, s, y, (60.0 * th.cos().powi(14)).max(12.0), 0.8 * th.cos());
+        }
+        label(cr, &value, cy, 60.0, 1.0);
+    }
+
     fn draw_wheels(&self, cr: &cairo::Context, w: f64, h: f64) {
         let st = self.st.borrow();
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
-        // the exposure wheel: an arc beside the dials, the value on the pointer
-        if let Some(dial) = st.wheel {
-            let (labels, cur): (Vec<String>, usize) = match dial {
-                Dial::Iso => (ISO.iter().map(|i| i.to_string()).collect(), st.iso),
-                Dial::Shutter => (SHUTTER.iter().map(|s| s.to_string()).collect(), st.shutter),
-            };
-            let r = 400.0;
-            let (cx, cy) = (w - 150.0 + r, h / 2.0);
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.25);
-            cr.set_line_width(2.0);
-            cr.arc(cx, cy, r, PI - 0.7, PI + 0.7);
-            let _ = cr.stroke();
-            for (i, l) in labels.iter().enumerate() {
-                let d = i as f64 - cur as f64;
-                if d.abs() > 6.0 {
-                    continue;
-                }
-                let a = PI + d * 0.1;
-                let (x, y) = (cx + r * a.cos(), cy + r * a.sin());
-                if d == 0.0 {
-                    cr.set_source_rgb(ACCENT.0, ACCENT.1, ACCENT.2);
-                    cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
-                    let _ = cr.fill();
-                    text(cr, l, x - 18.0, y, 34.0, 1.0);
-                } else {
-                    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0 - d.abs() / 7.0);
-                    cr.arc(x, y, 3.0, 0.0, 2.0 * PI);
-                    let _ = cr.fill();
-                    text(cr, l, x - 18.0, y, 20.0, 1.0);
-                }
-            }
-        }
         // the zoom wheel: an arc of dots from 28 (bottom) to 150 mm (top), primes labelled
         if st.zoom_wheel_until.is_some_and(|t| Instant::now() < t) {
             let r = 300.0;
@@ -907,6 +988,9 @@ impl App {
             (false, false) => ("S", false, None),
         };
         let (cx, cy, r) = (w / 2.0, h / 2.0, w.min(h) / 2.0 - 2.0);
+        if st.wheel.is_some() && st.wheel != dial {
+            return;
+        }
         if dial.is_some() && st.wheel == dial {
             cr.set_source_rgba(ACCENT.0, ACCENT.1, ACCENT.2, 0.35);
             cr.arc(cx, cy, r, 0.0, 2.0 * PI);
@@ -1049,10 +1133,12 @@ fn build(gapp: &gtk::Application) {
     let timer_btn = gtk::Button::with_label("timer off");
     let grid_btn = gtk::Button::with_label("grid off");
     let burst_btn = gtk::Button::with_label("burst off");
+    let flash_btn = gtk::Button::with_label("flash off");
     let close_btn = gtk::Button::with_label("✕");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
     bar.append(&mode_btn);
+    bar.append(&flash_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
     bar.append(&burst_btn);
@@ -1066,6 +1152,11 @@ fn build(gapp: &gtk::Application) {
         .valign(gtk::Align::End)
         .build();
 
+    let dial_wheel = gtk::DrawingArea::new();
+    dial_wheel.set_can_target(false);
+    dial_wheel.set_halign(gtk::Align::Center);
+    dial_wheel.set_size_request(400, -1);
+    dial_wheel.set_visible(false);
     let wheels = gtk::DrawingArea::new();
     wheels.set_can_target(false);
     wheels.set_halign(gtk::Align::End);
@@ -1115,6 +1206,7 @@ fn build(gapp: &gtk::Application) {
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
     root.add_overlay(&wheels);
+    root.add_overlay(&dial_wheel);
     root.add_overlay(&status);
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
@@ -1125,8 +1217,8 @@ fn build(gapp: &gtk::Application) {
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
-            iso: 0,
-            shutter: SHUTTER.iter().position(|&s| s == "1/60").unwrap_or(0),
+            iso: 1.0,
+            shutter: secs_pos(1.0 / 60.0),
             zoom: ZOOM_MIN,
             module: 0,
             timer: 0,
@@ -1138,12 +1230,14 @@ fn build(gapp: &gtk::Application) {
             burst_count: 0,
             burst_captured: false,
             burst: 0,
+            flash: false,
             dragged: false,
             wheel: None,
-            wheel_start: 0,
+            wheel_start: 0.0,
             zoom_start: ZOOM_MIN,
             zoom_wheel_until: None,
             focus_until: None,
+            focus_at: None,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -1165,6 +1259,7 @@ fn build(gapp: &gtk::Application) {
         view,
         marks,
         wheels,
+        dial_wheel,
         hud,
         top,
         bottom,
@@ -1183,6 +1278,7 @@ fn build(gapp: &gtk::Application) {
         timer_btn,
         grid_btn,
         burst_btn,
+        flash_btn,
         status,
         countdown,
     });
@@ -1195,6 +1291,8 @@ fn build(gapp: &gtk::Application) {
     app.marks.set_draw_func(move |_, cr, w, h| a.draw_marks(cr, w as f64, h as f64));
     let a = app.clone();
     app.wheels.set_draw_func(move |_, cr, w, h| a.draw_wheels(cr, w as f64, h as f64));
+    let a = app.clone();
+    app.dial_wheel.set_draw_func(move |_, cr, w, h| a.draw_dial_wheel(cr, w as f64, h as f64));
     let a = app.clone();
     app.top.set_draw_func(move |_, cr, w, h| a.draw_dial(cr, w as f64, h as f64, true));
     let a = app.clone();
@@ -1218,14 +1316,14 @@ fn build(gapp: &gtk::Application) {
     // preview: tap focuses (or closes the toolbar), drag and pinch zoom
     let click = gtk::GestureClick::new();
     let a = app.clone();
-    click.connect_released(move |_, _, _, _| {
+    click.connect_released(move |_, _, x, y| {
         if a.st.borrow().dragged {
             return;
         }
         if a.toolbar.reveals_child() {
             a.toolbar.set_reveal_child(false);
         } else {
-            a.focus();
+            a.focus(Some((x, y)));
         }
     });
     app.view.add_controller(click);
@@ -1275,7 +1373,8 @@ fn build(gapp: &gtk::Application) {
             };
             drop(st);
             a.refresh();
-            a.wheels.queue_draw();
+            a.dial_wheel.set_visible(true);
+            a.dial_wheel.queue_draw();
         });
         let a = app.clone();
         drag.connect_drag_update(move |_, _, dy| {
@@ -1284,7 +1383,7 @@ fn build(gapp: &gtk::Application) {
                 (st.wheel == Some(dial), st.wheel_start)
             };
             if active {
-                a.set_dial(dial, start as isize + (-dy / 28.0).round() as isize);
+                a.set_dial(dial, start + dy * 0.001);
             }
         });
         let a = app.clone();
@@ -1293,7 +1392,7 @@ fn build(gapp: &gtk::Application) {
             glib::timeout_add_local_once(Duration::from_millis(600), move || {
                 a.st.borrow_mut().wheel = None;
                 a.refresh();
-                a.wheels.queue_draw();
+                a.dial_wheel.set_visible(false);
             });
         });
         widget.add_controller(drag);
@@ -1325,6 +1424,18 @@ fn build(gapp: &gtk::Application) {
         {
             let mut st = a.st.borrow_mut();
             st.timer = (st.timer + 1) % TIMERS.len();
+        }
+        a.refresh();
+    });
+    let a = app.clone();
+    app.flash_btn.connect_clicked(move |_| {
+        let on = {
+            let mut st = a.st.borrow_mut();
+            st.flash = !st.flash;
+            st.flash
+        };
+        if let Some(c) = &a.ccb {
+            c.set(ccb::FLASH, on as i32);
         }
         a.refresh();
     });
@@ -1376,6 +1487,7 @@ fn build(gapp: &gtk::Application) {
 
     if let Some(c) = &app.ccb {
         c.set(ccb::MODULE, 0);
+        c.set(ccb::FLASH, 0);
     }
     app.start_preview();
     app.apply_exposure();

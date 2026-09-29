@@ -11,6 +11,9 @@ pub const EXPOSURE_US: u32 = 0x0098_1d02; // manual exposure time, 1 us .. 15 s
 pub const ISO: u32 = 0x0098_1d03; // manual ISO, 100 .. 3200
 pub const AE_EXPOSURE_US: u32 = 0x0098_1d04; // the ASICs' metering (read-only)
 pub const AE_ISO: u32 = 0x0098_1d05;
+pub const FOCUS_X: u32 = 0x0098_1d06; // the AF window's top left in the module's 4160x3120
+pub const FOCUS_Y: u32 = 0x0098_1d07;
+pub const FLASH: u32 = 0x0098_1d08; // 0 off, 1 auto (the ASICs may light it to focus and meter)
 
 #[repr(C)]
 struct Control {

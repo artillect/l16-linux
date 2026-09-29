@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..39130108a
+index 000000000..3b58fc4ac
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1252 @@
+@@ -0,0 +1,1322 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -158,10 +158,15 @@ index 000000000..39130108a
 +#define V4L2_CID_LIGHT_ISO		(V4L2_CID_LIGHT_BASE + 3)
 +#define V4L2_CID_LIGHT_AE_EXPOSURE_US	(V4L2_CID_LIGHT_BASE + 4)
 +#define V4L2_CID_LIGHT_AE_ISO		(V4L2_CID_LIGHT_BASE + 5)
++#define V4L2_CID_LIGHT_FOCUS_X		(V4L2_CID_LIGHT_BASE + 6)
++#define V4L2_CID_LIGHT_FOCUS_Y		(V4L2_CID_LIGHT_BASE + 7)
++#define V4L2_CID_LIGHT_FLASH		(V4L2_CID_LIGHT_BASE + 8)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
 +/* preview modules: stock previews on A1 (28 mm), B4 (70 mm) or C5 (150 mm) */
++static const char * const ccb_flash_names[] = { "Off", "Auto", NULL };
++
 +static const char * const ccb_module_names[] = { "A1", "B4", "C5" };
 +static const u8 ccb_module_masks[][3] = {
 +	{ 0x02, 0x00, 0x00 },	/* A1: bit 1 (LRI camera 0) */
@@ -205,6 +210,9 @@ index 000000000..39130108a
 +	struct v4l2_ctrl *ae_iso;	/* read-only: and ISO */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
++	struct v4l2_ctrl *focus_x;	/* the AF window's top left, sensor pixels */
++	struct v4l2_ctrl *focus_y;
++	struct v4l2_ctrl *flash;	/* 0 off, 1 auto */
 +};
 +
 +static inline struct ccb *to_ccb(struct v4l2_subdev *sd)
@@ -469,6 +477,19 @@ index 000000000..39130108a
 +	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
 +}
 +
++/*
++ * The flash LEDs' torch / pre-flash currents (0x0066 {u16 led1, led2}, mA): stock's 1 and 149
++ * (warm, cool) when the flash may be used, so the ASICs light it to focus and meter in the
++ * dark (AF assist); zero when it is off.
++ */
++static int ccb_apply_flash(struct ccb *c)
++{
++	static const u8 on[] = { 0x01, 0x00, 0x95, 0x00 }, off[] = { 0, 0, 0, 0 };
++
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0066, c->flash->cur.val ? on : off,
++			sizeof(off));
++}
++
 +static int ccb_apply_ae(struct ccb *c)
 +{
 +	if (!c->previewing)
@@ -581,6 +602,7 @@ index 000000000..39130108a
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae3b, sizeof(ae3b));
 +	c->previewing = true;
 +	c->ae_seen = false;
++	ccb_apply_flash(c);
 +	ret = ccb_apply_ae(c);
 +	if (ret)
 +		return ret;
@@ -637,13 +659,21 @@ index 000000000..39130108a
 +	return ret;
 +}
 +
-+/* stock's centre autofocus: lock AE, AF ROI 200x200 at (1958, 1482), unlock */
++/*
++ * Stock's autofocus: lock AE, AF on one 200x200 window {01, reason, u16 x, y, w, h, weight 1000}
++ * in the module's 4160x3120 pixels (stock's centre window is at 1958,1482), unlock.
++ */
 +static int ccb_autofocus(struct ccb *c)
 +{
 +	static const u8 lock[] = { 0x01 }, unlock[] = { 0x00 };
-+	static const u8 roi[] = { 0x01, 0x01, 0xa6, 0x07, 0xca, 0x05, 0xc8, 0x00, 0xc8, 0x00,
-+				  0xe8, 0x03 };
++	u8 roi[] = { 0x01, 0x01, 0xa6, 0x07, 0xca, 0x05, 0xc8, 0x00, 0xc8, 0x00, 0xe8, 0x03 };
 +	int ret;
++
++	put_unaligned_le16(c->focus_x->cur.val, roi + 2);
++	put_unaligned_le16(c->focus_y->cur.val, roi + 4);
++	/* the reason byte: stock sends 3 for the centre window, 2 for a touch elsewhere */
++	roi[1] = c->focus_x->cur.val == c->focus_x->default_value &&
++		 c->focus_y->cur.val == c->focus_y->default_value ? 3 : 2;
 +
 +	if (!c->previewing)
 +		return -EBUSY;
@@ -700,6 +730,14 @@ index 000000000..39130108a
 +		 * messages stops ASIC1 answering: send the settings once the changes pause
 +		 */
 +		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
++		break;
++	case V4L2_CID_LIGHT_FLASH:
++		mutex_lock(&c->lock);
++		if (c->previewing)
++			ret = ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0066,
++				       ctrl->val ? (const u8[]){ 0x01, 0x00, 0x95, 0x00 } :
++						   (const u8[]){ 0, 0, 0, 0 }, 4);
++		mutex_unlock(&c->lock);
 +		break;
 +	case V4L2_CID_AUTO_FOCUS_START:
 +		/*
@@ -793,6 +831,35 @@ index 000000000..39130108a
 +	.max = 100000,
 +	.step = 1,
 +	.flags = V4L2_CTRL_FLAG_READ_ONLY,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_focus_x = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_FOCUS_X,
++	.name = "Focus Area X",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.max = CCB_NATIVE_W - 200,
++	.step = 1,
++	.def = 1958,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_focus_y = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_FOCUS_Y,
++	.name = "Focus Area Y",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.max = CCB_NATIVE_H - 200,
++	.step = 1,
++	.def = 1482,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_flash = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_FLASH,
++	.name = "Flash",
++	.type = V4L2_CTRL_TYPE_MENU,
++	.max = 1,
++	.qmenu = ccb_flash_names,
 +};
 +
 +static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
@@ -1151,7 +1218,7 @@ index 000000000..39130108a
 +	if (ret)
 +		return ret;
 +
-+	v4l2_ctrl_handler_init(h, 17);
++	v4l2_ctrl_handler_init(h, 20);
 +	link_freq = v4l2_ctrl_new_int_menu(h, NULL, V4L2_CID_LINK_FREQ, 0, 0, ccb_link_freqs);
 +	if (link_freq)
 +		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -1179,6 +1246,9 @@ index 000000000..39130108a
 +	c->iso = v4l2_ctrl_new_custom(h, &ccb_ctrl_iso, NULL);
 +	c->ae_us = v4l2_ctrl_new_custom(h, &ccb_ctrl_ae_us, NULL);
 +	c->ae_iso = v4l2_ctrl_new_custom(h, &ccb_ctrl_ae_iso, NULL);
++	c->focus_x = v4l2_ctrl_new_custom(h, &ccb_ctrl_focus_x, NULL);
++	c->focus_y = v4l2_ctrl_new_custom(h, &ccb_ctrl_focus_y, NULL);
++	c->flash = v4l2_ctrl_new_custom(h, &ccb_ctrl_flash, NULL);
 +	if (h->error)
 +		return h->error;
 +

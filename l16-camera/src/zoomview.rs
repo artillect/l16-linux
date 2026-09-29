@@ -83,6 +83,10 @@ impl ZoomView {
         self.queue_draw();
     }
 
+    pub fn zoom(&self) -> f64 {
+        self.imp().zoom.get().max(1.0)
+    }
+
     // from the next frame on (the first of another module)
     pub fn set_zoom_next_frame(&self, zoom: f64) {
         self.imp().next_zoom.set(Some(zoom));
