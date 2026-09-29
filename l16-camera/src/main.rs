@@ -61,6 +61,11 @@ window.camera { background: #000; }
 .countdown { color: #fff; font-size: 96px; font-weight: 700; }
 .thumb { border: 2px solid rgba(255,255,255,0.8); border-radius: 4px; }
 .blackout { background: #000; }
+.burst-screen { background: #000; }
+.burst-count { color: #fff; font-size: 48px; }
+.burst-saving { color: #fff; font-size: 24px; }
+.burst-badge { color: #fff; font-size: 13px; font-weight: 600; border: 1px solid #fff;
+    border-radius: 3px; padding: 0 4px; }
 ";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -94,6 +99,8 @@ struct State {
     counting: bool,
     saving: u32,
     seq: u32,
+    burst_count: u8,  // the burst screen's number (0: not showing)
+    burst_captured: bool,
     burst: usize,
     dragged: bool,
     wheel: Option<Dial>,
@@ -132,6 +139,11 @@ struct App {
     thumb: gtk::Image,
     thumb_spin: gtk::DrawingArea,
     blackout: gtk::Box,
+    burst_screen: gtk::Box,
+    burst_label: gtk::Label,
+    burst_saving: gtk::Box,
+    burst_dots: gtk::DrawingArea,
+    burst_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
     mode_btn: gtk::Button,
@@ -255,6 +267,8 @@ impl App {
         self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
         let b = BURSTS[st.burst];
         self.burst_btn.set_label(&if b > 1 { format!("burst {b}") } else { "burst off".into() });
+        self.burst_badge.set_text(&format!("×{b}"));
+        self.burst_badge.set_visible(b > 1);
         if b > 1 {
             self.burst_btn.add_css_class("on");
         } else {
@@ -451,8 +465,12 @@ impl App {
             (st.zoom, BURSTS[st.burst], st.seq, st.mode == Mode::Auto && st.live_iso > 400)
         };
         self.thumb.set_paintable(Some(&self.paintable.current_image()));
-        self.blackout.set_opacity(1.0);
-        self.blackout.set_visible(true);
+        if burst > 1 {
+            self.start_burst_screen(burst);
+        } else {
+            self.blackout.set_opacity(1.0);
+            self.blackout.set_visible(true);
+        }
         self.thumb.set_opacity(0.5);
         let app = self.clone();
         self.thumb_spin.add_tick_callback(move |w, _| {
@@ -559,6 +577,70 @@ impl App {
         });
     }
 
+    // OpenLight's burst screen: the number counts up every exposure (100 ms at least), a
+    // timer as stock's, then "saving captures" until the photo is taken
+    fn start_burst_screen(self: &Rc<Self>, total: u8) {
+        let step = {
+            let mut st = self.st.borrow_mut();
+            st.burst_count = 1;
+            st.burst_captured = false;
+            let secs = match st.mode {
+                Mode::Auto => st.live_secs,
+                Mode::Manual => shutter_secs(SHUTTER[st.shutter]),
+            };
+            Duration::from_secs_f64(secs.max(0.1))
+        };
+        self.burst_label.set_text("1");
+        self.burst_label.set_visible(true);
+        self.burst_saving.set_visible(false);
+        self.burst_screen.set_visible(true);
+        let app = self.clone();
+        glib::timeout_add_local(step, move || {
+            let (n, captured) = {
+                let mut st = app.st.borrow_mut();
+                st.burst_count += 1;
+                (st.burst_count, st.burst_captured)
+            };
+            if n <= total {
+                app.burst_label.set_text(&n.to_string());
+                return glib::ControlFlow::Continue;
+            }
+            if captured {
+                app.end_burst_screen();
+            } else {
+                app.burst_label.set_visible(false);
+                app.burst_saving.set_visible(true);
+                let screen = app.clone();
+                app.burst_dots.add_tick_callback(move |w, _| {
+                    w.queue_draw();
+                    if screen.st.borrow().burst_count > 0 {
+                        glib::ControlFlow::Continue
+                    } else {
+                        glib::ControlFlow::Break
+                    }
+                });
+            }
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn burst_taken(&self) {
+        let counting = {
+            let mut st = self.st.borrow_mut();
+            st.burst_captured = true;
+            st.burst_count
+        };
+        // the counter still running shows its last numbers first
+        if counting > 0 && self.burst_saving.is_visible() {
+            self.end_burst_screen();
+        }
+    }
+
+    fn end_burst_screen(&self) {
+        self.st.borrow_mut().burst_count = 0;
+        self.burst_screen.set_visible(false);
+    }
+
     // the blackout fades as the preview returns (OpenLight: alpha 1 to 0)
     fn fade_blackout(&self) {
         let b = self.blackout.clone();
@@ -618,6 +700,7 @@ impl App {
             Stage::Captured(Ok(_)) => {
                 self.st.borrow_mut().busy = false;
                 self.fade_blackout();
+                self.burst_taken();
             }
             Stage::Transferred(r) => {
                 match r {
@@ -650,6 +733,7 @@ impl App {
             Stage::Captured(Err(e)) => {
                 self.st.borrow_mut().busy = false;
                 self.fade_blackout();
+                self.burst_taken();
                 self.saved();
                 self.show_status(&format!("capture failed: {e}"), 6);
             }
@@ -998,12 +1082,43 @@ fn build(gapp: &gtk::Application) {
     countdown.set_visible(false);
     countdown.set_can_target(false);
 
+    // OpenLight's BurstView: black over everything (touches too), the frame number, then
+    // "saving captures" under three dots until the photo is taken
+    let burst_label = gtk::Label::new(None);
+    burst_label.add_css_class("burst-count");
+    let burst_dots = gtk::DrawingArea::new();
+    burst_dots.set_size_request(72, 72);
+    burst_dots.set_halign(gtk::Align::Center);
+    let saving_text = gtk::Label::new(Some("saving captures"));
+    saving_text.add_css_class("burst-saving");
+    let burst_saving = gtk::Box::new(gtk::Orientation::Vertical, 24);
+    burst_saving.append(&burst_dots);
+    burst_saving.append(&saving_text);
+    burst_saving.set_visible(false);
+    let burst_inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    burst_inner.set_valign(gtk::Align::Center);
+    burst_inner.set_halign(gtk::Align::Center);
+    burst_inner.append(&burst_label);
+    burst_inner.append(&burst_saving);
+    let burst_screen = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    burst_screen.add_css_class("burst-screen");
+    burst_screen.append(&burst_inner);
+    burst_inner.set_vexpand(true);
+    burst_screen.set_visible(false);
+    burst_screen.add_controller(gtk::GestureClick::new()); // swallows taps
+    let burst_badge = gtk::Label::new(None);
+    burst_badge.add_css_class("burst-badge");
+    burst_badge.set_halign(gtk::Align::Center);
+    burst_badge.set_visible(false);
+    left.prepend(&burst_badge);
+
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
     root.add_overlay(&wheels);
     root.add_overlay(&status);
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
+    root.add_overlay(&burst_screen);
     window.set_child(Some(&root));
 
     let (stage_tx, stage_rx) = mpsc::channel();
@@ -1020,6 +1135,8 @@ fn build(gapp: &gtk::Application) {
             counting: false,
             saving: 0,
             seq: 0,
+            burst_count: 0,
+            burst_captured: false,
             burst: 0,
             dragged: false,
             wheel: None,
@@ -1055,6 +1172,11 @@ fn build(gapp: &gtk::Application) {
         thumb,
         thumb_spin,
         blackout,
+        burst_screen,
+        burst_label,
+        burst_saving,
+        burst_dots,
+        burst_badge,
         mode_label,
         toolbar,
         mode_btn,
@@ -1081,6 +1203,17 @@ fn build(gapp: &gtk::Application) {
     app.shutter.set_draw_func(move |_, cr, w, h| a.draw_shutter(cr, w as f64, h as f64));
     let a = app.clone();
     app.thumb_spin.set_draw_func(move |_, cr, w, h| a.draw_thumb_spin(cr, w as f64, h as f64));
+    app.burst_dots.set_draw_func(|_, cr, w, h| {
+        // three dots going round
+        let t = glib::monotonic_time() as f64 / 1e6;
+        let (w, h) = (w as f64, h as f64);
+        for i in 0..3 {
+            let a = t * 4.0 + i as f64 * 2.0 * PI / 3.0;
+            cr.set_source_rgb(1.0, 1.0, 1.0);
+            cr.arc(w / 2.0 + 20.0 * a.cos(), h / 2.0 + 20.0 * a.sin(), 5.0, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+        }
+    });
 
     // preview: tap focuses (or closes the toolbar), drag and pinch zoom
     let click = gtk::GestureClick::new();
