@@ -1,9 +1,9 @@
 From: Riley <oreo4455@gmail.com>
-Subject: [PATCH] media: qcom: camss: L16 captures (virtual channel parameter, taller raw frames)
+Subject: [PATCH] media: qcom: camss: L16 captures (virtual channels, taller raw frames, shared links)
 
 ---
 diff --git a/drivers/media/platform/qcom/camss/camss-csid-4-7.c b/drivers/media/platform/qcom/camss/camss-csid-4-7.c
-index 66054d487..0aa14066c 100644
+index 66054d487..1ff8d5b9f 100644
 --- a/drivers/media/platform/qcom/camss/camss-csid-4-7.c
 +++ b/drivers/media/platform/qcom/camss/camss-csid-4-7.c
 @@ -53,7 +53,7 @@ static void csid_configure_stream(struct csid_device *csid, u8 enable)
@@ -24,8 +24,24 @@ index 66054d487..0aa14066c 100644
  		writel_relaxed(val, csid->base + CAMSS_CSID_CID_LUT_VC_n(vc));
  
  		val = CAMSS_CSID_CID_n_CFG_ISPIF_EN;
+@@ -130,6 +130,15 @@ static void csid_configure_stream(struct csid_device *csid, u8 enable)
+ 
+ 		writel_relaxed(val, csid->base + CAMSS_CSID_CID_n_CFG(cid));
+ 
++		/* L16: virtual channel 1 too (capture transfers), CID 4 */
++		if (camss_vc1_dt && vc != 1) {
++			u32 lut = readl_relaxed(csid->base + CAMSS_CSID_CID_LUT_VC_n(1));
++
++			lut = (lut & ~0xff) | camss_vc1_dt;
++			writel_relaxed(lut, csid->base + CAMSS_CSID_CID_LUT_VC_n(1));
++			writel_relaxed(val, csid->base + CAMSS_CSID_CID_n_CFG(4));
++		}
++
+ 		if (tg->enabled) {
+ 			val = CAMSS_CSID_TG_CTRL_ENABLE;
+ 			writel_relaxed(val, csid->base + CAMSS_CSID_TG_CTRL);
 diff --git a/drivers/media/platform/qcom/camss/camss-csid.c b/drivers/media/platform/qcom/camss/camss-csid.c
-index 5284b5857..2eb860d3d 100644
+index 5284b5857..35ec557a2 100644
 --- a/drivers/media/platform/qcom/camss/camss-csid.c
 +++ b/drivers/media/platform/qcom/camss/camss-csid.c
 @@ -833,7 +833,7 @@ static void csid_try_format(struct csid_device *csid,
@@ -46,6 +62,15 @@ index 5284b5857..2eb860d3d 100644
  
  			fmt->field = V4L2_FIELD_NONE;
  		}
+@@ -1256,7 +1256,7 @@ static int csid_link_setup(struct media_entity *entity,
+ 			   const struct media_pad *local,
+ 			   const struct media_pad *remote, u32 flags)
+ {
+-	if (flags & MEDIA_LNK_FL_ENABLED)
++	if ((flags & MEDIA_LNK_FL_ENABLED) && (local->flags & MEDIA_PAD_FL_SINK))
+ 		if (media_pad_remote_pad_first(local))
+ 			return -EBUSY;
+ 
 diff --git a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
 index 619abbf60..dc112e4e0 100644
 --- a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
@@ -74,19 +99,20 @@ index a734fb7dd..834fef81f 100644
  		fmt->field = V4L2_FIELD_NONE;
  		fmt->colorspace = V4L2_COLORSPACE_SRGB;
 diff --git a/drivers/media/platform/qcom/camss/camss-ispif.c b/drivers/media/platform/qcom/camss/camss-ispif.c
-index 43d3b133f..f4f90004b 100644
+index 43d3b133f..b9d6aca10 100644
 --- a/drivers/media/platform/qcom/camss/camss-ispif.c
 +++ b/drivers/media/platform/qcom/camss/camss-ispif.c
-@@ -795,7 +795,7 @@ static int ispif_set_stream(struct v4l2_subdev *sd, int enable)
+@@ -795,7 +795,8 @@ static int ispif_set_stream(struct v4l2_subdev *sd, int enable)
  	enum ispif_intf intf = line->interface;
  	u8 csid = line->csid_id;
  	u8 vfe = line->vfe_id;
 -	u8 vc = 0; /* Virtual Channel 0 */
-+	u8 vc = camss_vc; /* L16: the ASICs send captures on VC 1 */
++	/* L16: the ASICs send captures on VC 1 (all lines, or per line) */
++	u8 vc = camss_vc ? camss_vc : camss_ispif_vc[line->id & 3];
  	u8 cid = vc * 4; /* id of Virtual Channel and Data Type set */
  	int ret;
  
-@@ -903,7 +903,7 @@ static void ispif_try_format(struct ispif_line *line,
+@@ -903,7 +904,7 @@ static void ispif_try_format(struct ispif_line *line,
  			fmt->code = MEDIA_BUS_FMT_UYVY8_1X16;
  
  		fmt->width = clamp_t(u32, fmt->width, 1, 8191);
@@ -96,15 +122,17 @@ index 43d3b133f..f4f90004b 100644
  		fmt->field = V4L2_FIELD_NONE;
  		fmt->colorspace = V4L2_COLORSPACE_SRGB;
 diff --git a/drivers/media/platform/qcom/camss/camss-vfe-gen1.c b/drivers/media/platform/qcom/camss/camss-vfe-gen1.c
-index d84a375e3..0c2eb73c4 100644
+index d84a375e3..611ead038 100644
 --- a/drivers/media/platform/qcom/camss/camss-vfe-gen1.c
 +++ b/drivers/media/platform/qcom/camss/camss-vfe-gen1.c
-@@ -241,7 +241,7 @@ static int vfe_enable_output(struct vfe_line *line)
+@@ -241,7 +241,9 @@ static int vfe_enable_output(struct vfe_line *line)
  		vfe->ops_gen1->enable_irq_wm_line(vfe, output->wm_idx[0], line->id, 1);
  		vfe->ops_gen1->bus_connect_wm_to_rdi(vfe, output->wm_idx[0], line->id);
  		vfe->ops_gen1->wm_set_subsample(vfe, output->wm_idx[0]);
 -		vfe->ops_gen1->set_rdi_cid(vfe, line->id, 0);
-+		vfe->ops_gen1->set_rdi_cid(vfe, line->id, camss_vc * 4); /* L16: CID of the VC */
++		/* L16: CID of the VC (all RDIs, or per RDI) */
++		vfe->ops_gen1->set_rdi_cid(vfe, line->id, 4 * (camss_vc ? camss_vc :
++					   camss_rdi_vc[(vfe->id * 3 + line->id) % 6]));
  		vfe->ops_gen1->wm_set_ub_cfg(vfe, output->wm_idx[0],
  					    (ub_size + 1) * output->wm_idx[0], ub_size);
  		vfe->ops_gen1->wm_frame_based(vfe, output->wm_idx[0], 1);
@@ -122,7 +150,7 @@ index d9105f73f..3e1fb9977 100644
  		fmt->field = V4L2_FIELD_NONE;
  		fmt->colorspace = V4L2_COLORSPACE_SRGB;
 diff --git a/drivers/media/platform/qcom/camss/camss-video.c b/drivers/media/platform/qcom/camss/camss-video.c
-index 831486e14..8adfdf6ad 100644
+index 831486e14..d42bf9608 100644
 --- a/drivers/media/platform/qcom/camss/camss-video.c
 +++ b/drivers/media/platform/qcom/camss/camss-video.c
 @@ -21,7 +21,7 @@
@@ -134,8 +162,126 @@ index 831486e14..8adfdf6ad 100644
  #define CAMSS_FRAME_MAX_HEIGHT_PIX	4096
  
  /* -----------------------------------------------------------------------------
+@@ -240,6 +240,48 @@ static int video_prepare_streaming(struct vb2_queue *q)
+ 	return ret;
+ }
+ 
++/*
++ * L16: start or stop a subdev for one pipeline, counting: several video nodes can share
++ * subdevs (the sensor, a CSIPHY and CSID carrying a preview on VC 0 and transfers on VC 1),
++ * which start with the first and stop with the last.
++ */
++static int video_subdev_stream(struct camss *camss, struct v4l2_subdev *sd, int enable)
++{
++	int i, free = -1, ret = 0;
++
++	mutex_lock(&camss->stream_lock);
++	for (i = 0; i < ARRAY_SIZE(camss->streams); i++) {
++		if (camss->streams[i].sd == sd)
++			break;
++		if (!camss->streams[i].sd && free < 0)
++			free = i;
++	}
++	if (i == ARRAY_SIZE(camss->streams)) {
++		if (!enable || free < 0) {
++			mutex_unlock(&camss->stream_lock);
++			return enable ? -ENOMEM : 0;
++		}
++		i = free;
++		camss->streams[i].sd = sd;
++		camss->streams[i].count = 0;
++	}
++	if (enable) {
++		if (!camss->streams[i].count)
++			ret = v4l2_subdev_call(sd, video, s_stream, 1);
++		if (ret >= 0 || ret == -ENOIOCTLCMD) {
++			camss->streams[i].count++;
++			ret = 0;
++		}
++	} else if (camss->streams[i].count && !--camss->streams[i].count) {
++		ret = v4l2_subdev_call(sd, video, s_stream, 0);
++		camss->streams[i].sd = NULL;
++		if (ret == -ENOIOCTLCMD)
++			ret = 0;
++	}
++	mutex_unlock(&camss->stream_lock);
++	return ret;
++}
++
+ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
+ {
+ 	struct camss_video *video = vb2_get_drv_priv(q);
+@@ -249,7 +291,16 @@ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
+ 	struct v4l2_subdev *subdev;
+ 	int ret;
+ 
+-	ret = video_device_pipeline_alloc_start(vdev);
++	/*
++	 * L16: a node started while another streams (transfers beside a preview) joins that
++	 * pipeline without taking part in its start count, which it could not give back: the
++	 * media core only counts pads found when the pipeline was built.
++	 */
++	mutex_lock(&vdev->entity.graph_obj.mdev->graph_mutex);
++	video->joined = video->camss->pipe.start_count &&
++			!media_pad_pipeline(&vdev->entity.pads[0]);
++	mutex_unlock(&vdev->entity.graph_obj.mdev->graph_mutex);
++	ret = video->joined ? 0 : video_device_pipeline_start(vdev, &video->camss->pipe);
+ 	if (ret < 0) {
+ 		dev_err(video->camss->dev, "Failed to start media pipeline: %d\n", ret);
+ 		goto flush_buffers;
+@@ -272,15 +323,16 @@ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
+ 		entity = pad->entity;
+ 		subdev = media_entity_to_v4l2_subdev(entity);
+ 
+-		ret = v4l2_subdev_call(subdev, video, s_stream, 1);
+-		if (ret < 0 && ret != -ENOIOCTLCMD)
++		ret = video_subdev_stream(video->camss, subdev, 1);
++		if (ret < 0)
+ 			goto error;
+ 	}
+ 
+ 	return 0;
+ 
+ error:
+-	video_device_pipeline_stop(vdev);
++	if (!video->joined)
++		video_device_pipeline_stop(vdev);
+ 
+ flush_buffers:
+ 	video->ops->flush_buffers(video, VB2_BUF_STATE_QUEUED);
+@@ -310,7 +362,7 @@ static void video_stop_streaming(struct vb2_queue *q)
+ 		entity = pad->entity;
+ 		subdev = media_entity_to_v4l2_subdev(entity);
+ 
+-		ret = v4l2_subdev_call(subdev, video, s_stream, 0);
++		ret = video_subdev_stream(video->camss, subdev, 0);
+ 
+ 		if (ret) {
+ 			dev_err(video->camss->dev, "Video pipeline stop failed: %d\n", ret);
+@@ -318,7 +370,8 @@ static void video_stop_streaming(struct vb2_queue *q)
+ 		}
+ 	}
+ 
+-	video_device_pipeline_stop(vdev);
++	if (!video->joined)
++		video_device_pipeline_stop(vdev);
+ 
+ 	video->ops->flush_buffers(video, VB2_BUF_STATE_ERROR);
+ }
+diff --git a/drivers/media/platform/qcom/camss/camss-video.h b/drivers/media/platform/qcom/camss/camss-video.h
+index d3e56e240..0a76efd59 100644
+--- a/drivers/media/platform/qcom/camss/camss-video.h
++++ b/drivers/media/platform/qcom/camss/camss-video.h
+@@ -35,6 +35,7 @@ struct camss_video_ops {
+ 
+ struct camss_video {
+ 	struct camss *camss;
++	bool joined;	/* L16: streams inside another node's started pipeline */
+ 	struct vb2_queue vb2_q;
+ 	struct video_device vdev;
+ 	struct media_pad pad;
 diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
-index 1c9bb62b9..d846bc736 100644
+index 1c9bb62b9..6ab1d42f5 100644
 --- a/drivers/media/platform/qcom/camss/camss.c
 +++ b/drivers/media/platform/qcom/camss/camss.c
 @@ -3954,10 +3954,20 @@ int camss_get_pixel_clock(struct media_entity *entity, u64 *pixel_clock)
@@ -199,7 +345,21 @@ index 1c9bb62b9..d846bc736 100644
  		if (IS_ERR(csd)) {
  			ret = PTR_ERR(csd);
  			goto err_cleanup;
-@@ -4394,11 +4401,30 @@ static int camss_subdev_notifier_bound(struct v4l2_async_notifier *async,
+@@ -4211,11 +4218,12 @@ static int camss_link_entities(struct camss *camss)
+ 	if (camss->ispif) {
+ 		for (i = 0; i < camss->res->csid_num; i++) {
+ 			for (j = 0; j < camss->ispif->line_num; j++) {
++				/* dynamic: a transfer path is linked while a preview streams */
+ 				ret = media_create_pad_link(&camss->csid[i].subdev.entity,
+ 							    MSM_CSID_PAD_SRC,
+ 							    &camss->ispif->line[j].subdev.entity,
+ 							    MSM_ISPIF_PAD_SINK,
+-							    0);
++							    MEDIA_LNK_FL_DYNAMIC);
+ 				if (ret < 0) {
+ 					camss_link_err(camss,
+ 						       camss->csid[i].subdev.entity.name,
+@@ -4394,11 +4402,30 @@ static int camss_subdev_notifier_bound(struct v4l2_async_notifier *async,
  		container_of(asd, struct camss_async_subdev, asd);
  	u8 id = csd->interface.csiphy_id;
  	struct csiphy_device *csiphy = &camss->csiphy[id];
@@ -232,7 +392,15 @@ index 1c9bb62b9..d846bc736 100644
  }
  
  static int camss_subdev_notifier_complete(struct v4l2_async_notifier *async)
-@@ -4944,6 +4970,18 @@ static const struct of_device_id camss_dt_match[] = {
+@@ -4587,6 +4614,7 @@ static int camss_probe(struct platform_device *pdev)
+ 
+ 	atomic_set(&camss->ref_count, 0);
+ 	camss->dev = dev;
++	mutex_init(&camss->stream_lock);
+ 	platform_set_drvdata(pdev, camss);
+ 
+ 	camss->csiphy = devm_kcalloc(dev, camss->res->csiphy_num,
+@@ -4944,6 +4972,30 @@ static const struct of_device_id camss_dt_match[] = {
  
  MODULE_DEVICE_TABLE(of, camss_dt_match);
  
@@ -242,6 +410,18 @@ index 1c9bb62b9..d846bc736 100644
 +
 +int camss_dt;
 +module_param_named(dt, camss_dt, int, 0644);
++
++int camss_vc1_dt;
++module_param_named(vc1_dt, camss_vc1_dt, int, 0644);
++MODULE_PARM_DESC(vc1_dt, "L16: also pass virtual channel 1 with this data type (0: off)");
++
++int camss_ispif_vc[4];
++module_param_array_named(ispif_vc, camss_ispif_vc, int, NULL, 0644);
++MODULE_PARM_DESC(ispif_vc, "L16: virtual channel of each ISPIF line (when vc is 0)");
++
++int camss_rdi_vc[6];
++module_param_array_named(rdi_vc, camss_rdi_vc, int, NULL, 0644);
++MODULE_PARM_DESC(rdi_vc, "L16: virtual channel of each VFE RDI, VFE0 RDI0-2 then VFE1 (when vc is 0)");
 +MODULE_PARM_DESC(dt, "CSI-2 data type to receive instead of the format's (L16 captures: 0x30)");
 +
 +int camss_settle;
@@ -252,10 +432,10 @@ index 1c9bb62b9..d846bc736 100644
  {
  	struct camss *camss = dev_get_drvdata(dev);
 diff --git a/drivers/media/platform/qcom/camss/camss.h b/drivers/media/platform/qcom/camss/camss.h
-index e084fb77c..0b8e74734 100644
+index e084fb77c..343fdd55d 100644
 --- a/drivers/media/platform/qcom/camss/camss.h
 +++ b/drivers/media/platform/qcom/camss/camss.h
-@@ -13,6 +13,13 @@
+@@ -13,6 +13,18 @@
  #include <linux/device.h>
  #include <linux/types.h>
  #include <media/v4l2-async.h>
@@ -264,8 +444,30 @@ index e084fb77c..0b8e74734 100644
 +extern int camss_vc;
 +/* L16: CSI-2 data type that CSID takes instead of the format's, if not 0 */
 +extern int camss_dt;
++/* L16: per-line virtual channels, so a preview (VC 0) and capture transfers (VC 1) can
++ * come over one CSI-2 link at once */
++extern int camss_vc1_dt;
++extern int camss_ispif_vc[4];
++extern int camss_rdi_vc[6];
 +/* L16: CSIPHY settle count instead of the computed one, if not 0 */
 +extern int camss_settle;
  #include <media/v4l2-device.h>
  #include <media/v4l2-subdev.h>
  #include <media/media-device.h>
+@@ -130,6 +142,16 @@ struct camss {
+ 	struct device_link *genpd_link;
+ 	struct icc_path *icc_path[ICC_SM8250_COUNT];
+ 	const struct camss_resources *res;
++	/*
++	 * L16: one media pipeline for all video nodes, and start/stop counts for the
++	 * subdevs they share (a CSI-2 link carrying both a preview and transfers)
++	 */
++	struct media_pipeline pipe;
++	struct mutex stream_lock;
++	struct {
++		struct v4l2_subdev *sd;
++		int count;
++	} streams[32];
+ };
+ 
+ struct camss_camera_interface {

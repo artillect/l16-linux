@@ -77,12 +77,13 @@ patch slimbus-qcom-ngd-base-before-add "slimbus: qcom-ngd-ctrl: set the NGD base
 	drivers/slimbus/qcom-ngd-ctrl.c
 patch tty-serial-msm-fourth-port "tty: serial: msm: a fourth port, for the third ASIC's debug UART" \
 	drivers/tty/serial/msm_serial.c
-patch media-qcom-camss-l16-capture "media: qcom: camss: L16 captures (virtual channel parameter, taller raw frames)" \
+patch media-qcom-camss-l16-capture "media: qcom: camss: L16 captures (virtual channels, taller raw frames, shared links)" \
 	drivers/media/platform/qcom/camss/camss.h drivers/media/platform/qcom/camss/camss.c \
 	drivers/media/platform/qcom/camss/camss-csid-4-7.c drivers/media/platform/qcom/camss/camss-ispif.c \
 	drivers/media/platform/qcom/camss/camss-csid.c drivers/media/platform/qcom/camss/camss-csiphy.c \
 	drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c drivers/media/platform/qcom/camss/camss-vfe-gen1.c \
-	drivers/media/platform/qcom/camss/camss-vfe.c drivers/media/platform/qcom/camss/camss-video.c
+	drivers/media/platform/qcom/camss/camss-vfe.c drivers/media/platform/qcom/camss/camss-video.c \
+	drivers/media/platform/qcom/camss/camss-video.h
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)

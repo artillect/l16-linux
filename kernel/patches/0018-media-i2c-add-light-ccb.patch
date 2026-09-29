@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..c1c72f610
+index 000000000..6854bfcb2
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1070 @@
+@@ -0,0 +1,1216 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -103,6 +103,7 @@ index 000000000..c1c72f610
 +#define CCB_TYPE_EMPTY	2
 +#define CCB_TYPE_EVENT	3
 +#define CCB_TYPE_AE	7
++#define CCB_TYPE_DESCRIPTOR 8
 +
 +/* TID kinds as stock uses them (kind << 13) */
 +#define CCB_KIND_AF	1
@@ -119,6 +120,24 @@ index 000000000..c1c72f610
 +#define LIGHT_CCB_IOC_RECV	_IOR('L', 2, struct light_ccb_msg)	/* data = [type][len][payload] */
 +#define LIGHT_CCB_IOC_RESET	_IO('L', 3)				/* power cycle and boot */
 +#define LIGHT_CCB_IOC_OFF	_IO('L', 4)				/* power off now */
++
++/*
++ * A photo, as stock's shutter takes it, while previewing: the preview stops, the modules in
++ * @mask expose into the ASICs' memory, and the preview starts again (about a quarter of a
++ * second). The ASICs then hold @records[asic] records each (frames, then the LRI header
++ * record), which LIGHT_CCB_IOC_TRANSFER sends over each ASIC's CSI-2 link, virtual channel 1,
++ * data type 0x30, one per call, in order.
++ */
++struct light_ccb_capture {
++	__u32 mask;		/* modules: bit n + 1 = LRI camera n */
++	__u8 uuid[16];		/* the photo's id, stored in its LRI header */
++	__u16 records[3];	/* out: records held by ASIC1..3 */
++	__u32 record_bytes;	/* out: bytes in a frame record */
++	__s32 status;		/* out: the capture-start reply status */
++};
++
++#define LIGHT_CCB_IOC_CAPTURE	_IOWR('L', 5, struct light_ccb_capture)
++#define LIGHT_CCB_IOC_TRANSFER	_IOW('L', 6, __u32)		/* ASIC index 0..2 */
 +
 +/* custom controls */
 +#define V4L2_CID_LIGHT_BASE		(V4L2_CID_USER_BASE | 0x1c00)
@@ -771,18 +790,24 @@ index 000000000..c1c72f610
 +	struct device *dev = &c->client->dev;
 +	int ret = 0;
 +
-+	/* capture transfers: userspace drives the ASICs through the message ioctls */
-+	if (c->raw_transfer->val)
-+		return 0;
++	/*
++	 * With the raw-transfer control set, streams start and stop without touching the
++	 * ASICs: capture transfers (userspace streams virtual channel 1 while the ASICs hold
++	 * the photo; stopping the preview would release it), or l16-capture driving the
++	 * ASICs itself. A preview left running then carries on when streaming resumes.
++	 */
++	bool raw = c->raw_transfer->val;
 +
 +	if (enable) {
 +		ret = pm_runtime_resume_and_get(dev);
 +		if (ret)
 +			return ret;
 +		mutex_lock(&c->lock);
-+		ret = ccb_ready(c);
-+		if (!ret && !c->stream_count)
-+			ret = ccb_preview_start(c);
++		if (!raw) {
++			ret = ccb_ready(c);
++			if (!ret && !c->stream_count && !c->previewing)
++				ret = ccb_preview_start(c);
++		}
 +		if (!ret)
 +			c->stream_count++;
 +		mutex_unlock(&c->lock);
@@ -792,11 +817,122 @@ index 000000000..c1c72f610
 +	}
 +
 +	mutex_lock(&c->lock);
-+	if (c->stream_count && !--c->stream_count)
++	if (c->stream_count && !--c->stream_count && !raw && c->previewing)
 +		ret = ccb_preview_stop(c, c->module->val);
 +	mutex_unlock(&c->lock);
 +	pm_runtime_put_autosuspend(dev);
 +	return ret;
++}
++
++/*
++ * With c->lock held, previewing. The sequence of stock's capture (I2C trace, CAPTURE-TRACE.md):
++ * precapture metering (auto only), preview off, crop and use case 5, UUID, burst 1, capture
++ * start with {11 F1 00} per module; the ASICs' transfer descriptors (type 8) come before the
++ * start's reply. Then capture stop, use case 3, preview on, AE unlock.
++ */
++static int ccb_capture(struct ccb *c, struct light_ccb_capture *cap)
++{
++	static const u8 trigger[] = { 0x02 };
++	static const u8 crop5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
++				    0x40, 0x10, 0x30, 0x0c, 0x01, 0x01 };
++	static const u8 ucid5[] = { 0x05, 0x00 }, ucid3[] = { 0x03, 0x00 };
++	static const u8 burst[] = { 0x05, 0x00, 0x01 };
++	static const u8 unlock[] = { 0x00 };
++	u8 body[3 + 3 * 16], prev[6], m[CCB_MSG_MAX];
++	unsigned long end;
++	int mod = c->module->cur.val, n = 0, i, t, ret;
++	u16 tid;
++
++	if (!c->previewing)
++		return -EBUSY;
++	cap->mask &= 0x1fffe;
++	for (i = 1; i <= 16; i++)
++		if (cap->mask & BIT(i))
++			n++;
++	if (!n)
++		return -EINVAL;
++	memset(cap->records, 0, sizeof(cap->records));
++	cap->record_bytes = 0;
++
++	if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
++		ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x0061, trigger, sizeof(trigger));
++	memcpy(prev, ccb_module_masks[mod], 3);
++	prev[3] = 0x10;
++	prev[4] = prev[5] = 0;
++	ret = ccb_command(c, CCB_KIND_CAPTURE, 0x8002, prev, sizeof(prev));
++	if (ret < 0)
++		return ret;
++	c->previewing = false;
++	ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x002e, crop5, sizeof(crop5));
++	ret = ccb_command(c, CCB_KIND_CAPTURE, 0x9000, ucid5, sizeof(ucid5));
++	if (ret >= 0)
++		ret = ccb_command(c, CCB_KIND_CAPTURE, 0x8006, cap->uuid, sizeof(cap->uuid));
++	if (ret >= 0)
++		ret = ccb_command(c, CCB_KIND_CAPTURE, 0x8010, burst, sizeof(burst));
++	if (ret < 0)
++		goto preview;
++
++	body[0] = cap->mask;
++	body[1] = cap->mask >> 8;
++	body[2] = cap->mask >> 16;
++	for (i = 0; i < n; i++) {
++		body[3 + 3 * i] = 0x11;
++		body[4 + 3 * i] = 0xf1;
++		body[5 + 3 * i] = 0x00;
++	}
++	tid = ccb_tid(c, CCB_KIND_CAPTURE);
++	ret = ccb_send(c, tid, 0x8002, body, 3 + 3 * n);
++	if (ret)
++		goto preview;
++	/*
++	 * Descriptor payload: tid, burst index, asic (bits 0-3; bit 7 = more follow),
++	 * size shift, record count, then a u16 size per record (in 2^shift bytes)
++	 */
++	ret = -ETIMEDOUT;
++	end = jiffies + msecs_to_jiffies(5000);
++	while (time_before(jiffies, end)) {
++		t = ccb_read(c, m, sizeof(m));
++		if (t == CCB_TYPE_DESCRIPTOR && get_unaligned_le16(m + 2) >= 6) {
++			int asic = m[7] & 0x0f, count = m[9];
++
++			if (asic < 3)
++				cap->records[asic] += count;
++			if (count && get_unaligned_le16(m + 2) >= 8 && m[7] & 0x80 &&
++			    !cap->record_bytes)
++				cap->record_bytes = (u32)get_unaligned_le16(m + 10) << m[8];
++		} else if (t == CCB_TYPE_REPLY && get_unaligned_be16(m + 4) == tid) {
++			cap->status = get_unaligned_le16(m + 6);
++			ret = 0;
++			break;
++		} else if (t < 0 || t == CCB_TYPE_EMPTY) {
++			usleep_range(2000, 4000);
++		}
++	}
++	if (ret)
++		dev_err(&c->client->dev, "capture start: %d\n", ret);
++
++	for (i = 0; i < n; i++)
++		body[3 + 3 * i] = 0x10;
++	ccb_command(c, CCB_KIND_CAPTURE, 0x8002, body, 3 + 3 * n);
++preview:
++	/* back to the preview use case, preview on; and the precapture AE lock released */
++	ccb_command(c, CCB_KIND_CAPTURE, 0x9000, ucid3, sizeof(ucid3));
++	prev[3] = 0x11;
++	if (ccb_command(c, CCB_KIND_CAPTURE, 0x8002, prev, sizeof(prev)) >= 0)
++		c->previewing = true;
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, unlock, sizeof(unlock));
++	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
++	return ret;
++}
++
++/* one record from ASIC @asic over its CSI-2 link: 0x8015 {01 5x 00 00}, x = the ASIC */
++static int ccb_transfer(struct ccb *c, u32 asic)
++{
++	u8 body[] = { 0x01, 0x50 | (asic & 0x0f), 0x00, 0x00 };
++
++	if (asic > 2)
++		return -EINVAL;
++	return ccb_command_wait(c, CCB_KIND_CAPTURE, 0x8015, body, sizeof(body), 3000);
 +}
 +
 +static long ccb_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
@@ -836,6 +972,16 @@ index 000000000..c1c72f610
 +		ccb_power_off(c);
 +		mutex_unlock(&c->lock);
 +		return 0;
++	case LIGHT_CCB_IOC_CAPTURE:
++		mutex_lock(&c->lock);
++		ret = ccb_capture(c, arg);
++		mutex_unlock(&c->lock);
++		return ret;
++	case LIGHT_CCB_IOC_TRANSFER:
++		mutex_lock(&c->lock);
++		ret = c->booted ? ccb_transfer(c, *(u32 *)arg) : -ENODEV;
++		mutex_unlock(&c->lock);
++		return ret < 0 ? ret : 0;
 +	}
 +	return -ENOIOCTLCMD;
 +}

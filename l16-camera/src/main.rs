@@ -9,6 +9,7 @@
 
 mod ccb;
 mod input;
+mod transfer;
 mod zoomview;
 
 use gst::prelude::*;
@@ -57,12 +58,21 @@ window.camera { background: #000; }
     border-radius: 8px; padding: 4px 14px; }
 .countdown { color: #fff; font-size: 96px; font-weight: 700; }
 .thumb { border: 2px solid rgba(255,255,255,0.8); border-radius: 4px; }
+.blackout { background: #000; }
 ";
 
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Auto,
     Manual,
+}
+
+// a photo's way from the shutter to the LRI (threads report on App::stage_tx)
+enum Stage {
+    Captured(Result<PathBuf, String>), // the ASICs hold it (records in DIR)
+    Released,                             // the ASICs are free for the next photo
+    Transferred(Result<PathBuf, String>), // in DIR/asic*.raw
+    Saved(Result<PathBuf, String>),       // the LRI
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -81,6 +91,7 @@ struct State {
     grid: bool,
     busy: bool,
     counting: bool,
+    saving: u32,
     dragged: bool,
     wheel: Option<Dial>,
     wheel_start: usize,
@@ -95,13 +106,15 @@ struct State {
     strip_t0: Instant,
     settle: Option<glib::SourceId>,
     switching: Option<mpsc::Receiver<usize>>,
-    capture_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 }
 
 struct App {
     st: RefCell<State>,
     ccb: Option<ccb::Ccb>,
     focusing: Arc<AtomicBool>,
+    stage_tx: mpsc::Sender<Stage>,
+    transfers: RefCell<Option<transfer::Transfers>>,
+    stage_rx: mpsc::Receiver<Stage>,
     pipeline: gst::Pipeline,
     paintable: gdk::Paintable,
     _bus: gst::bus::BusWatchGuard,
@@ -113,6 +126,8 @@ struct App {
     bottom: gtk::DrawingArea,
     shutter: gtk::DrawingArea,
     thumb: gtk::Image,
+    thumb_spin: gtk::DrawingArea,
+    blackout: gtk::Box,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
     mode_btn: gtk::Button,
@@ -411,48 +426,210 @@ impl App {
         });
     }
 
+    // As stock: the driver takes the photo while the preview runs (it pauses for the
+    // exposure), with the preview's exposure and focus. The records are then pulled over
+    // the CSI links (the preview freezes for that) and joined into an LRI in the background.
     fn capture(self: &Rc<Self>) {
-        let (mode, iso, shutter, zoom) = {
+        let zoom = {
             let mut st = self.st.borrow_mut();
             st.busy = true;
-            (st.mode, ISO[st.iso], SHUTTER[st.shutter], st.zoom)
+            st.zoom
         };
         self.thumb.set_paintable(Some(&self.paintable.current_image()));
-        self.stop_preview();
-        self.refresh();
-        self.show_status("capturing…", 0);
-
-        let focal = ["28", "70", "150"][module_for(zoom)];
-        let dir = glib::user_special_dir(glib::UserDirectory::Pictures)
-            .unwrap_or_else(|| glib::home_dir().join("Pictures"))
-            .join("L16");
-        let _ = std::fs::create_dir_all(&dir);
-        let name = glib::DateTime::now_local()
-            .ok()
-            .and_then(|d| d.format("L16_%Y%m%d_%H%M%S.lri").ok())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "L16.lri".into());
-        let path = dir.join(name);
-        let mut cmd = Command::new("l16-capture");
-        cmd.arg(focal).arg(&path);
-        if mode == Mode::Manual {
-            cmd.env("ISO", iso.to_string()).env("SHUTTER", shutter);
-        }
-        let (tx, rx) = mpsc::channel();
-        self.st.borrow_mut().capture_rx = Some(rx);
-        thread::spawn(move || {
-            let r = match cmd.output() {
-                Ok(o) if o.status.success() => Ok(path),
-                Ok(o) => {
-                    let err = String::from_utf8_lossy(&o.stderr);
-                    let out = String::from_utf8_lossy(&o.stdout);
-                    let last = err.lines().chain(out.lines()).filter(|l| !l.is_empty()).last();
-                    Err(last.unwrap_or("l16-capture failed").to_string())
-                }
-                Err(e) => Err(format!("l16-capture: {e}")),
-            };
-            let _ = tx.send(r);
+        self.st.borrow_mut().saving += 1;
+        self.blackout.set_opacity(1.0);
+        self.blackout.set_visible(true);
+        self.thumb.set_opacity(0.5);
+        let app = self.clone();
+        self.thumb_spin.add_tick_callback(move |w, _| {
+            w.queue_draw();
+            if app.st.borrow().saving > 0 {
+                glib::ControlFlow::Continue
+            } else {
+                glib::ControlFlow::Break
+            }
         });
+        self.refresh();
+
+        // the modules for the zoom, as stock's 28/70/150 sets (bit n + 1 = LRI camera n)
+        let cams = match module_for(zoom) {
+            0 => 0..10,  // A1-A5 B1-B5
+            1 => 5..16,  // B1-B5 C1-C6
+            _ => 10..16, // C1-C6
+        };
+        let mask = cams.fold(0u32, |m, i| m | 1 << (i + 1));
+        let stamp = glib::DateTime::now_local()
+            .ok()
+            .and_then(|d| d.format("%Y%m%d_%H%M%S").ok())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "photo".into());
+        let dir = PathBuf::from(format!("/tmp/l16-shot-{stamp}"));
+        let tx = self.stage_tx.clone();
+        let Some(photo) = self.transfers.borrow().as_ref().map(|t| t.photo.clone()) else {
+            self.st.borrow_mut().busy = false;
+            self.fade_blackout();
+            self.saved();
+            return self.show_status("capture failed: no transfer streams", 6);
+        };
+        thread::spawn(move || {
+            let c = match ccb::Ccb::open() {
+                Some(c) => c,
+                None => return drop(tx.send(Stage::Captured(Err("no camera driver".into())))),
+            };
+            let cap = match c.capture(mask) {
+                Ok(cap) => cap,
+                Err(e) => return drop(tx.send(Stage::Captured(Err(e)))),
+            };
+            eprintln!("l16-camera: captured {}: records {:?} (status {})", dir.display(), cap.records, cap.status);
+            match transfer::Photo::new(dir.clone(), cap.records) {
+                Ok(p) => *photo.lock().unwrap() = Some(p),
+                Err(e) => return drop(tx.send(Stage::Captured(Err(e.to_string())))),
+            }
+            let _ = tx.send(Stage::Captured(Ok(dir.clone())));
+            // The records, ASIC by ASIC; the streams write them as they come. At most four
+            // in flight per ASIC, well within a stream's eight buffers.
+            let pending = |a: usize| -> Option<u16> {
+                let p = photo.lock().unwrap();
+                p.as_ref().filter(|p| p.dir == dir).map(|p| p.received(a, cap.records[a]))
+            };
+            let mut err = None;
+            'asics: for a in 0..3 {
+                for k in 0..cap.records[a] {
+                    let start = Instant::now();
+                    while pending(a).is_some_and(|got| got + 4 <= k) {
+                        if start.elapsed() > Duration::from_secs(3) {
+                            err = Some(format!("ASIC{} record {k} did not arrive", a + 1));
+                            break 'asics;
+                        }
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    eprintln!("l16-camera: request ASIC{} record {k}", a + 1);
+                    if let Err(e) = c.transfer(a as u32) {
+                        err = Some(e);
+                        break 'asics;
+                    }
+                }
+            }
+            // the last records arrive within a moment; give up on missing ones
+            for _ in 0..50 {
+                if err.is_some() || photo.lock().unwrap().as_ref().map(|p| &p.dir) != Some(&dir) {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            {
+                let mut p = photo.lock().unwrap();
+                if p.as_ref().map(|p| &p.dir) == Some(&dir) {
+                    *p = None;
+                    let _ = tx.send(Stage::Transferred(Err(err.unwrap_or("records missing".into()))));
+                }
+            }
+            // the photo is off the ASICs and in its files: the next one can be taken
+            let _ = tx.send(Stage::Released);
+        });
+    }
+
+    // the blackout fades as the preview returns (OpenLight: alpha 1 to 0)
+    fn fade_blackout(&self) {
+        let b = self.blackout.clone();
+        let start = Instant::now();
+        glib::timeout_add_local(Duration::from_millis(16), move || {
+            let t = start.elapsed().as_secs_f64() / 0.25;
+            if t >= 1.0 {
+                b.set_visible(false);
+                return glib::ControlFlow::Break;
+            }
+            b.set_opacity(1.0 - t);
+            glib::ControlFlow::Continue
+        });
+    }
+
+    fn saved(&self) {
+        let left = {
+            let mut st = self.st.borrow_mut();
+            st.saving = st.saving.saturating_sub(1);
+            st.saving
+        };
+        if left == 0 {
+            self.thumb.set_opacity(1.0);
+        }
+        self.thumb_spin.queue_draw();
+    }
+
+    // three dots going round over the thumbnail while photos are saved
+    fn draw_thumb_spin(&self, cr: &cairo::Context, w: f64, h: f64) {
+        if self.st.borrow().saving == 0 {
+            return;
+        }
+        let t = glib::monotonic_time() as f64 / 1e6;
+        for i in 0..3 {
+            let a = t * 4.0 + i as f64 * 2.0 * PI / 3.0;
+            cr.set_source_rgb(1.0, 1.0, 1.0);
+            cr.arc(w / 2.0 + 10.0 * a.cos(), h / 2.0 + 10.0 * a.sin(), 3.0, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+        }
+    }
+
+    fn run(cmd: &mut Command) -> Result<(), String> {
+        match cmd.output() {
+            Ok(o) if o.status.success() => Ok(()),
+            Ok(o) => {
+                let err = String::from_utf8_lossy(&o.stderr);
+                let out = String::from_utf8_lossy(&o.stdout);
+                let last = err.lines().chain(out.lines()).filter(|l| !l.is_empty()).last();
+                Err(last.unwrap_or("failed").to_string())
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn on_stage(self: &Rc<Self>, stage: Stage) {
+        match stage {
+            Stage::Captured(Ok(_)) => self.fade_blackout(),
+            Stage::Released => {
+                self.st.borrow_mut().busy = false;
+            }
+            Stage::Transferred(r) => {
+                match r {
+                    Ok(dir) => {
+                        let out = glib::user_special_dir(glib::UserDirectory::Pictures)
+                            .unwrap_or_else(|| glib::home_dir().join("Pictures"))
+                            .join("L16");
+                        let _ = std::fs::create_dir_all(&out);
+                        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned());
+                        let stamp = name.unwrap_or_default().replace("l16-shot-", "");
+                        let out = out.join(format!("L16_{stamp}.lri"));
+                        let tx = self.stage_tx.clone();
+                        thread::spawn(move || {
+                            let mut raws: Vec<PathBuf> = (1..=3)
+                                .map(|a| dir.join(format!("asic{a}.raw")))
+                                .filter(|p| p.exists())
+                                .collect();
+                            raws.sort();
+                            let r = App::run(Command::new("l16-lri-assemble").arg(&out).args(&raws));
+                            let _ = std::fs::remove_dir_all(&dir);
+                            let _ = tx.send(Stage::Saved(r.map(|_| out)));
+                        });
+                    }
+                    Err(e) => {
+                        self.saved();
+                        self.show_status(&format!("capture failed: {e}"), 6);
+                    }
+                }
+            }
+            Stage::Captured(Err(e)) => {
+                self.st.borrow_mut().busy = false;
+                self.fade_blackout();
+                self.saved();
+                self.show_status(&format!("capture failed: {e}"), 6);
+            }
+            Stage::Saved(Ok(_)) => self.saved(),
+            Stage::Saved(Err(e)) => {
+                self.saved();
+                self.show_status(&format!("saving failed: {e}"), 6);
+            }
+        }
+        self.refresh();
     }
 
     fn poll(self: &Rc<Self>) {
@@ -465,29 +642,6 @@ impl App {
                 st.live_iso = iso;
                 st.live_secs = us as f64 / 1e6;
             }
-        }
-        let done = {
-            let st = self.st.borrow();
-            st.capture_rx.as_ref().and_then(|rx| rx.try_recv().ok())
-        };
-        if let Some(r) = done {
-            {
-                let mut st = self.st.borrow_mut();
-                st.capture_rx = None;
-                st.busy = false;
-            }
-            match r {
-                Ok(p) => {
-                    let name = p.file_name().map(|n| n.to_string_lossy().into_owned());
-                    self.show_status(&format!("saved {}", name.unwrap_or_default()), 3);
-                }
-                Err(e) => self.show_status(&format!("capture failed: {e}"), 6),
-            }
-            if let Some(c) = &self.ccb {
-                c.set(ccb::MODULE, self.st.borrow().module as i32);
-            }
-            self.start_preview();
-            self.apply_exposure();
         }
         self.refresh();
     }
@@ -711,6 +865,11 @@ fn build(gapp: &gtk::Application) {
     let preview = gtk::Overlay::new();
     preview.set_child(Some(&view));
     preview.add_overlay(&marks);
+    let blackout = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    blackout.add_css_class("blackout");
+    blackout.set_can_target(false);
+    blackout.set_visible(false);
+    preview.add_overlay(&blackout);
     let frame = gtk::AspectFrame::new(0.5, 0.5, 4.0 / 3.0, false);
     frame.set_child(Some(&preview));
     frame.set_hexpand(true);
@@ -728,8 +887,13 @@ fn build(gapp: &gtk::Application) {
     let thumb = gtk::Image::new();
     thumb.set_pixel_size(44);
     thumb.add_css_class("thumb");
-    thumb.set_halign(gtk::Align::Center);
-    thumb.set_margin_top(16);
+    let thumb_spin = gtk::DrawingArea::new();
+    thumb_spin.set_can_target(false);
+    let thumb_box = gtk::Overlay::new();
+    thumb_box.set_child(Some(&thumb));
+    thumb_box.add_overlay(&thumb_spin);
+    thumb_box.set_halign(gtk::Align::Center);
+    thumb_box.set_margin_top(16);
     let dial = |size: i32| {
         let d = gtk::DrawingArea::new();
         d.set_size_request(size, size);
@@ -753,7 +917,7 @@ fn build(gapp: &gtk::Application) {
         s.set_vexpand(true);
         s
     };
-    right.append(&thumb);
+    right.append(&thumb_box);
     right.append(&spacer());
     right.append(&top);
     right.append(&shutter);
@@ -810,6 +974,7 @@ fn build(gapp: &gtk::Application) {
     root.add_overlay(&toolbar);
     window.set_child(Some(&root));
 
+    let (stage_tx, stage_rx) = mpsc::channel();
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -821,6 +986,7 @@ fn build(gapp: &gtk::Application) {
             grid: false,
             busy: false,
             counting: false,
+            saving: 0,
             dragged: false,
             wheel: None,
             wheel_start: 0,
@@ -835,10 +1001,12 @@ fn build(gapp: &gtk::Application) {
             strip_t0: Instant::now(),
             settle: None,
             switching: None,
-            capture_rx: None,
         }),
         ccb: ccb::Ccb::open(),
         focusing: Arc::new(AtomicBool::new(false)),
+        stage_tx,
+        stage_rx,
+        transfers: RefCell::new(None),
         pipeline,
         paintable,
         _bus: bus,
@@ -850,6 +1018,8 @@ fn build(gapp: &gtk::Application) {
         bottom,
         shutter,
         thumb,
+        thumb_spin,
+        blackout,
         mode_label,
         toolbar,
         mode_btn,
@@ -873,6 +1043,8 @@ fn build(gapp: &gtk::Application) {
     app.bottom.set_draw_func(move |_, cr, w, h| a.draw_dial(cr, w as f64, h as f64, false));
     let a = app.clone();
     app.shutter.set_draw_func(move |_, cr, w, h| a.draw_shutter(cr, w as f64, h as f64));
+    let a = app.clone();
+    app.thumb_spin.set_draw_func(move |_, cr, w, h| a.draw_thumb_spin(cr, w as f64, h as f64));
 
     // preview: tap focuses (or closes the toolbar), drag and pinch zoom
     let click = gtk::GestureClick::new();
@@ -1005,6 +1177,9 @@ fn build(gapp: &gtk::Application) {
             a.on_input(ev);
         }
         a.switched();
+        while let Ok(stage) = a.stage_rx.try_recv() {
+            a.on_stage(stage);
+        }
         glib::ControlFlow::Continue
     });
     let a = app.clone();
@@ -1015,6 +1190,9 @@ fn build(gapp: &gtk::Application) {
 
     let a = app.clone();
     window.connect_close_request(move |_| {
+        if let Some(t) = a.transfers.borrow_mut().as_mut() {
+            t.stop();
+        }
         a.stop_preview();
         glib::Propagation::Proceed
     });
@@ -1024,6 +1202,20 @@ fn build(gapp: &gtk::Application) {
     }
     app.start_preview();
     app.apply_exposure();
+    // the photo transfer streams, beside the preview (done: Stage::Transferred)
+    let (done_tx, done_rx) = mpsc::channel();
+    match transfer::Transfers::start(done_tx) {
+        Ok(t) => *app.transfers.borrow_mut() = Some(t),
+        Err(e) => app.show_status(&format!("no photo transfers: {e}"), 0),
+    }
+    let tx = app.stage_tx.clone();
+    thread::spawn(move || {
+        while let Ok(r) = done_rx.recv() {
+            if tx.send(Stage::Transferred(r)).is_err() {
+                break;
+            }
+        }
+    });
     app.refresh();
     window.fullscreen();
     window.present();

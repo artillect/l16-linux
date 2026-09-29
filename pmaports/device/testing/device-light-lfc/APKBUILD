@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=20
+pkgrel=21
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -53,6 +53,7 @@ source="
 	light-lfc-strip-volume
 	light-lfc-strip-volume.initd
 	libcamera-light-ccb.yaml
+	light-lfc-camss.conf
 	light-lfc-postprocess.sh
 	light-lfc-reboot-android
 	light-lfc-reboot-android.desktop
@@ -112,6 +113,10 @@ package() {
 	# libcamera's software ISP for the camera ASICs (no AGC: the ASICs meter)
 	install -Dm644 "$srcdir"/libcamera-light-ccb.yaml \
 		"$pkgdir"/usr/share/libcamera/ipa/simple/light-ccb.yaml
+
+	# CAMSS: the preview and photo transfers over one CSI-2 link at once
+	install -Dm644 "$srcdir"/light-lfc-camss.conf \
+		"$pkgdir"/etc/modprobe.d/light-lfc-camss.conf
 
 	# dual boot: "Reboot to Android" (shown by light-lfc-bootmode only when dual booting)
 	install -Dm755 "$srcdir"/light-lfc-reboot-android \
@@ -210,6 +215,7 @@ f6e09bfe3887ca39d226c560727a63597e10f20eba67516cf25b643d821b009a417193f44eeb5c9e
 e913a563acefc8bf96160e4c76e370bc75bc6fd9f5b96d179c21368e243d46f8c48ce9ee012cf54b7d1c443a96f1f081b8aa91b21621dd611e0b5062d651d2a0  light-lfc-strip-volume
 33757bc54692c6e24ac4b65456dff2bbdc17be39ec16d95454af842902883a064c5863a4a54d40ff755cf35168c1ea71ea9ba3b7c54997a051d76509493872ff  light-lfc-strip-volume.initd
 0e0b9f7efd6e8affc0095000f44bcca58c0254401eb7ff4f9912bd54fb64eb69bdb776b715e40835b1b0222764dcfb33d0bde498fa40aaed18981fa29ecc1024  libcamera-light-ccb.yaml
+6dcf5c6755319cc0b886c4bf570a5e169e4b2528fc1ed0a8ee9ddc56b845d4ece26a54f94bb179603bc71b30d2dc6bf2ff58f943031525c198be1334a5cae5ec  light-lfc-camss.conf
 8541cc5044aff7df7cab337c0ff3c59c5ad033792b70972626d2c6b634f7d60ac6ed5bb043445db766e3253da1b3a4fc489ca8cf67b441a15fee4ebb7f601bc9  light-lfc-postprocess.sh
 6d9f22b0adc3a2ea7fdd0dbbe907ff7261638b5b20cc52eb02ed96349fbbdf8058259a1879bba643059d36c7f21304451ef1de11bbb0816e18ed45f775ee6976  light-lfc-reboot-android
 b1e82e8cc14eb85947cb91ec6bbd85dc96beb841f1c5fa665da51a2fe913b003d41531403d7608174bb65cb7e8b69886220031645523f3dbb436358a4b035765  light-lfc-reboot-android.desktop

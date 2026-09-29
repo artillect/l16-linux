@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+# l16-shoot: fast photos through the light-ccb driver while its preview runs (as stock):
+#   l16-shoot capture 28|70|150|CAM... DIR
+#       take the photo (the preview pauses a quarter of a second); DIR/records gets the
+#       records each ASIC holds. Exposure and focus are the preview's.
+#   l16-shoot transfer DIR
+#       pull the records over each ASIC's CSI-2 link (virtual channel 1, data type 0x30)
+#       into DIR/asicN.raw (/dev/video1-3), while the preview streams on.
+#   l16-shoot setup
+#       link and format the transfer paths (/dev/video1-3) only; for a camera app that keeps
+#       them streaming (stopping an idle RDI times out and leaves it unusable).
+# l16-lri-assemble then makes the LRI from DIR/asic*.raw.
+import fcntl
+import glob
+import os
+import struct
+import subprocess
+import sys
+import time
+
+CAMS = ["A1", "A2", "A3", "A4", "A5", "B1", "B2", "B3", "B4", "B5",
+	"C1", "C2", "C3", "C4", "C5", "C6"]
+SETS = {"28": CAMS[0:10], "70": CAMS[5:16], "150": CAMS[10:16]}
+
+# struct light_ccb_capture { u32 mask; u8 uuid[16]; u16 records[3]; u32 record_bytes; s32 status; }
+CAP_FMT = "<I16s3HxxIi"
+CAP_SIZE = struct.calcsize(CAP_FMT)
+
+
+def ioc(direction, nr, size):
+	return direction << 30 | size << 16 | ord("L") << 8 | nr
+
+
+IOC_CAPTURE = ioc(3, 5, CAP_SIZE)		# _IOWR('L', 5, struct light_ccb_capture)
+IOC_TRANSFER = ioc(1, 6, 4)			# _IOW('L', 6, u32)
+FMT = "fmt:SGRBG10_1X10/1408x9219"
+
+
+def subdev():
+	for name in glob.glob("/sys/class/video4linux/v4l-subdev*/name"):
+		if open(name).read().startswith("light-ccb"):
+			return "/dev/" + name.split("/")[4]
+	sys.exit("l16-shoot: no light-ccb subdev")
+
+
+def sensor_entity():
+	out = subprocess.run(["media-ctl", "-d", "/dev/media0", "-p"], capture_output=True,
+			     text=True).stdout
+	for line in out.splitlines():
+		if line.startswith("- entity") and "light-ccb" in line:
+			return line.split(": ", 1)[1].split(" (")[0]
+	sys.exit("l16-shoot: no light-ccb entity")
+
+
+def capture(which, d):
+	cams = SETS.get(which, which.split(","))
+	mask = 0
+	for c in cams:
+		mask |= 1 << (CAMS.index(c) + 1)
+	buf = bytearray(struct.pack(CAP_FMT, mask, os.urandom(16), 0, 0, 0, 0, 0))
+	with open(subdev(), "rb+", buffering=0) as f:
+		fcntl.ioctl(f, IOC_CAPTURE, buf)
+	_, _, r1, r2, r3, size, status = struct.unpack(CAP_FMT, buf)
+	os.makedirs(d, exist_ok=True)
+	with open(os.path.join(d, "records"), "w") as f:
+		f.write("%d %d %d %d\n" % (r1, r2, r3, size))
+	print("captured: records %d %d %d, %d bytes each (status %d)" % (r1, r2, r3, size, status))
+
+
+# the transfer paths, beside the preview (ASIC1's preview on VC 0 goes csid0 -> ispif0 ->
+# vfe0_rdi0): each ASIC's VC 1 into its own RDI. CAMSS runs with vc1_dt=48,
+# ispif_vc=0,1,1,1 and rdi_vc=0,1,1,1,0,0 (device-light-lfc's modprobe options). CSID->ISPIF
+# links are dynamic (they change while the preview streams): flags 5 = enabled | dynamic.
+PATHS = [
+	# ASIC1: the preview's CSID, a second ISPIF line
+	(1, ['"msm_csid0":1->"msm_ispif1":0[5]', '"msm_ispif1":1->"msm_vfe0_rdi1":0[1]'],
+	 ['"msm_ispif1":0', '"msm_vfe0_rdi1":0']),
+	(2, ['"msm_csiphy1":1->"msm_csid1":0[1]', '"msm_csid1":1->"msm_ispif2":0[5]',
+	     '"msm_ispif2":1->"msm_vfe0_rdi2":0[1]'],
+	 ['"msm_csiphy1":0', '"msm_csid1":0', '"msm_csid1":1', '"msm_ispif2":0', '"msm_vfe0_rdi2":0']),
+	(3, ['"msm_csiphy2":1->"msm_csid2":0[1]', '"msm_csid2":1->"msm_ispif3":0[5]',
+	     '"msm_ispif3":1->"msm_vfe1_rdi0":0[1]'],
+	 ['"msm_csiphy2":0', '"msm_csid2":0', '"msm_csid2":1', '"msm_ispif3":0', '"msm_vfe1_rdi0":0']),
+]
+
+
+def setup(asics=(1, 2, 3)):
+	m = ["media-ctl", "-d", "/dev/media0"]
+	sensor = sensor_entity()
+	for a, links, pads in PATHS:
+		if a not in asics:
+			continue
+		subprocess.run(m + ["-l", ",".join(links)], check=True)
+		fmts = pads + (['"%s":%d' % (sensor, a - 1)] if a > 1 else [])
+		subprocess.run(m + ["-V", ",".join("%s[%s]" % (p, FMT) for p in fmts)], check=True)
+		subprocess.run(["v4l2-ctl", "-d", "/dev/video%d" % a,
+				"--set-fmt-video=width=1408,height=9219,pixelformat=pgAA"], check=True)
+
+
+def transfer(d):
+	r = [int(x) for x in open(os.path.join(d, "records")).read().split()[:3]]
+	m = ["media-ctl", "-d", "/dev/media0"]
+	sensor = sensor_entity()
+	for a, links, pads in PATHS:
+		if not r[a - 1]:
+			continue
+		subprocess.run(m + ["-l", ",".join(links)], check=True)
+		fmts = pads + (['"%s":%d' % (sensor, a - 1)] if a > 1 else [])
+		subprocess.run(m + ["-V", ",".join("%s[%s]" % (p, FMT) for p in fmts)], check=True)
+		subprocess.run(["v4l2-ctl", "-d", "/dev/video%d" % a,
+				"--set-fmt-video=width=1408,height=9219,pixelformat=pgAA"], check=True)
+	for f in glob.glob(os.path.join(d, "asic*.raw")):
+		os.remove(f)
+	streams = []
+	try:
+		for a in range(3):
+			if r[a]:
+				streams.append(subprocess.Popen(
+					["v4l2-ctl", "-d", "/dev/video%d" % (a + 1), "--stream-mmap=4",
+					 "--stream-count=%d" % r[a],
+					 "--stream-to=%s" % os.path.join(d, "asic%d.raw" % (a + 1))],
+					stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+		time.sleep(0.3)		# the streams are on
+		t = time.time()
+		with open(subdev(), "rb+", buffering=0) as f:
+			for a in range(3):
+				for k in range(r[a]):
+					fcntl.ioctl(f, IOC_TRANSFER, struct.pack("<I", a))
+		# the ASICs hold nothing more: a next photo can be taken (camera apps wait for this)
+		print("transferred %d records in %.2f s" % (sum(r), time.time() - t), flush=True)
+		for p in streams:
+			p.wait(timeout=15)
+	finally:
+		for p in streams:
+			if p.poll() is None:
+				p.kill()
+
+
+if len(sys.argv) == 4 and sys.argv[1] == "capture":
+	capture(sys.argv[2], sys.argv[3])
+elif len(sys.argv) == 3 and sys.argv[1] == "transfer":
+	transfer(sys.argv[2])
+elif len(sys.argv) == 2 and sys.argv[1] == "setup":
+	setup()
+else:
+	sys.exit("usage: l16-shoot capture 28|70|150|CAM,... DIR | transfer DIR | setup")

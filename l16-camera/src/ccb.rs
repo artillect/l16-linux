@@ -18,6 +18,20 @@ struct Control {
     value: i32,
 }
 
+// struct light_ccb_capture: a photo while previewing (LIGHT_CCB_IOC_CAPTURE)
+#[repr(C)]
+#[derive(Default)]
+pub struct Capture {
+    pub mask: u32,
+    pub uuid: [u8; 16],
+    pub records: [u16; 3],
+    pub record_bytes: u32,
+    pub status: i32,
+}
+
+const IOC_CAPTURE: u64 = 3 << 30 | 36 << 16 | (b'L' as u64) << 8 | 5;
+const IOC_TRANSFER: u64 = 1 << 30 | 4 << 16 | (b'L' as u64) << 8 | 6;
+
 const VIDIOC_G_CTRL: u64 = 0xc008_561b;
 const VIDIOC_S_CTRL: u64 = 0xc008_561c;
 
@@ -44,6 +58,30 @@ impl Ccb {
         let mut c = Control { id, value: 0 };
         let r = unsafe { libc::ioctl(self.file.as_raw_fd(), VIDIOC_G_CTRL as _, &mut c) };
         (r == 0).then_some(c.value)
+    }
+
+    // the preview pauses while the modules in @mask expose; the ASICs then hold the records
+    pub fn capture(&self, mask: u32) -> Result<Capture, String> {
+        let mut c = Capture { mask, ..Default::default() };
+        if let Ok(mut f) = File::open("/dev/urandom") {
+            use std::io::Read;
+            let _ = f.read_exact(&mut c.uuid);
+        }
+        let r = unsafe { libc::ioctl(self.file.as_raw_fd(), IOC_CAPTURE as _, &mut c) };
+        if r != 0 {
+            return Err(format!("capture: {}", std::io::Error::last_os_error()));
+        }
+        Ok(c)
+    }
+
+    // ASIC @asic (0-2) sends its next record over virtual channel 1
+    pub fn transfer(&self, asic: u32) -> Result<(), String> {
+        let a = asic;
+        let r = unsafe { libc::ioctl(self.file.as_raw_fd(), IOC_TRANSFER as _, &a) };
+        if r != 0 {
+            return Err(format!("transfer: {}", std::io::Error::last_os_error()));
+        }
+        Ok(())
     }
 
     pub fn set(&self, id: u32, value: i32) -> bool {
