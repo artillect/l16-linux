@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: CC0-1.0
+# libcamera software ISP tuning for the L16's camera ASICs (light-ccb). The ASICs run
+# exposure themselves, so there is no Agc here: it would write exposure and gain to the
+# sensor every frame and fight manual settings. Black level: 42 of 1023 (the ASIC's raw
+# pedestal), in 16-bit units.
+%YAML 1.1
+---
+version: 1
+algorithms:
+  - BlackLevel:
+      blackLevel: 2688
+  - Awb:
+  - Adjust:
+...

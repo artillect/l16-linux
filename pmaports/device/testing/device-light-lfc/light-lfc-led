@@ -1,0 +1,62 @@
+#!/bin/sh
+# light-lfc-led: the status LED by the shutter button, as stock LightOS's BatteryService
+# drove it: light blue breathing while charging, solid when full, red breathing below 10%
+# (charging or not), off otherwise.
+#
+# The breathing is the PMI8994 LPG's hardware pattern (the leds "pattern" trigger), so it
+# keeps running while the device is suspended. All channels of the LED share one pattern,
+# so a breathing colour mixes its channels at equal levels; stock's light blue (0,176,237)
+# breathes as blue + green, and is exact only when solid.
+LED=/sys/class/leds/rgb:status
+BAT=/sys/class/power_supply/qcom-battery
+USB=/sys/class/power_supply/qcom-smbchg-usb
+
+# stock's timing: 3.5 s up, 3.5 s down, 3 s dark. 12 steps up (quadratic, to look even)
+# played forward and back ("ping pong"); the first entry's time is the dark pause.
+breathe=""
+for k in 0 1 2 3 4 5 6 7 8 9 10 11 10 9 8 7 6 5 4 3 2 1 0; do
+	b=$((511 * k * k / 121))
+	t=318
+	[ -z "$breathe" ] && t=3000
+	breathe="$breathe$b $t $b 0 "
+done
+
+cur=
+show() {
+	[ "$1" = "$cur" ] && return
+	cur=$1
+	echo none > $LED/trigger
+	echo 0 > $LED/brightness
+	case $1 in
+	full)			# multi_index: blue green red
+		echo "237 176 0" > $LED/multi_intensity
+		echo 511 > $LED/brightness ;;
+	charging)
+		echo "255 255 0" > $LED/multi_intensity
+		echo pattern > $LED/trigger
+		echo "$breathe" > $LED/hw_pattern ;;
+	low)
+		echo "0 0 255" > $LED/multi_intensity
+		echo pattern > $LED/trigger
+		echo "$breathe" > $LED/hw_pattern ;;
+	esac
+}
+
+# the LPG driver is a module; wait for it
+while [ ! -e $LED/trigger ]; do sleep 2; done
+
+while :; do
+	status=$(cat $BAT/status 2>/dev/null)
+	level=$(cat $BAT/capacity 2>/dev/null)
+	online=$(cat $USB/online 2>/dev/null)
+	if [ "${level:-100}" -lt 10 ]; then
+		show low
+	elif [ "$online" = 1 ] && { [ "$status" = Full ] || [ "${level:-0}" -ge 100 ]; }; then
+		show full
+	elif [ "$status" = Charging ]; then
+		show charging
+	else
+		show off
+	fi
+	sleep 10
+done

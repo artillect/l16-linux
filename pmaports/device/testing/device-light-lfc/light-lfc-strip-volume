@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+# light-lfc-strip-volume: the touch strip as a volume control, except while the camera app
+# (l16-camera) runs, which uses it for zoom. A swipe of a tenth of the strip is 5%.
+import glob
+import os
+import struct
+import subprocess
+import time
+
+EV_KEY, EV_ABS, ABS_X, BTN_TOUCH = 1, 3, 0, 330
+STEP = 768 // 10
+
+
+def strip():
+	for name in glob.glob("/sys/class/input/event*/device/name"):
+		if open(name).read().strip() == "Light L16 touch strip":
+			return "/dev/input/" + name.split("/")[4]
+	return None
+
+
+def camera_running():
+	for comm in glob.glob("/proc/[0-9]*/comm"):
+		try:
+			if open(comm).read().strip() == "l16-camera":
+				return True
+		except OSError:
+			pass
+	return False
+
+
+def volume(steps):
+	change = "%d%%%s" % (5 * abs(steps), "+" if steps > 0 else "-")
+	subprocess.run(["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", change])
+
+
+def main():
+	path = strip()
+	while path is None:
+		time.sleep(5)
+		path = strip()
+	with open(path, "rb") as f:
+		anchor = None
+		ignore = False
+		while True:
+			_, _, typ, code, value = struct.unpack("llHHi", f.read(24))
+			if typ == EV_ABS and code == ABS_X:
+				if anchor is None:
+					# a new touch (its position comes before the touch-down)
+					anchor = value
+					ignore = camera_running()
+				elif not ignore and abs(value - anchor) >= STEP:
+					steps = (value - anchor) // STEP if value > anchor else -((anchor - value) // STEP)
+					volume(steps)
+					anchor += steps * STEP
+			elif typ == EV_KEY and code == BTN_TOUCH and value == 0:
+				anchor = None
+
+
+main()

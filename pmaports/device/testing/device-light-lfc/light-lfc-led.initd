@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+name="Light L16 status LED"
+description="Charging and low-battery light by the shutter button, as in stock"
+
+command=/usr/libexec/light-lfc-led
+supervisor=supervise-daemon
+
+depend() {
+	need sysfs
+	after udev
+}

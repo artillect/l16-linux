@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Touch strip volume
+Comment=The L16's touch strip as a volume control
+Exec=/usr/libexec/light-lfc-strip-volume
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications
