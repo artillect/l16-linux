@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..d1c60fa55
+index 000000000..c1c72f610
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,903 @@
+@@ -0,0 +1,1070 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -95,6 +95,7 @@ index 000000000..d1c60fa55
 +#define CCB_LINE_LEN	12533
 +#define CCB_FRAME_LINES	1596
 +#define CCB_HBLANK	(CCB_LINE_LEN - CCB_WIDTH)
++#define CCB_MAX_EXPOSURE (15000000000ULL / CCB_LINE_NS)
 +#define CCB_VBLANK	(CCB_FRAME_LINES - CCB_HEIGHT)
 +
 +#define CCB_MSG_MAX	128
@@ -123,6 +124,10 @@ index 000000000..d1c60fa55
 +#define V4L2_CID_LIGHT_BASE		(V4L2_CID_USER_BASE | 0x1c00)
 +#define V4L2_CID_LIGHT_MODULE		(V4L2_CID_LIGHT_BASE + 0)
 +#define V4L2_CID_LIGHT_RAW_TRANSFER	(V4L2_CID_LIGHT_BASE + 1)
++#define V4L2_CID_LIGHT_EXPOSURE_US	(V4L2_CID_LIGHT_BASE + 2)
++#define V4L2_CID_LIGHT_ISO		(V4L2_CID_LIGHT_BASE + 3)
++#define V4L2_CID_LIGHT_AE_EXPOSURE_US	(V4L2_CID_LIGHT_BASE + 4)
++#define V4L2_CID_LIGHT_AE_ISO		(V4L2_CID_LIGHT_BASE + 5)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
@@ -150,11 +155,24 @@ index 000000000..d1c60fa55
 +	int stream_count;		/* s_stream(1) calls not yet undone */
 +	bool previewing;
 +	u8 seq;
++	u32 zoom;			/* the zoom factor (f32) the ASIC has */
++	ktime_t last_send;
++	bool ae_seen;			/* an AE push since the preview started */
 +	struct delayed_work drain;	/* reads the queue while previewing */
++	struct work_struct af;		/* a focus run (seconds; not under the control lock) */
++	struct delayed_work ae;		/* exposure settings, sent once a burst of changes ends */
 +
++	/*
++	 * Exposure: libcamera writes the standard exposure and gain controls with every
++	 * request (its defaults, whatever the app wants), so they are only stored; manual
++	 * exposure is set through exp_us and iso, and the ASICs' metering read from ae_us
++	 * and ae_iso.
++	 */
 +	struct v4l2_ctrl *exp_auto;
-+	struct v4l2_ctrl *exposure;	/* lines of CCB_LINE_NS */
-+	struct v4l2_ctrl *gain;		/* analog gain x 100 */
++	struct v4l2_ctrl *exp_us;	/* manual exposure time */
++	struct v4l2_ctrl *iso;		/* manual ISO (the ASIC's gain x 100) */
++	struct v4l2_ctrl *ae_us;	/* read-only: the ASICs' current exposure time */
++	struct v4l2_ctrl *ae_iso;	/* read-only: and ISO */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
 +};
@@ -178,18 +196,36 @@ index 000000000..d1c60fa55
 +	return ret == len ? 0 : ret < 0 ? ret : -EIO;
 +}
 +
++/*
++ * Messages are spaced out: the ASIC drops some of a burst (the preview start's AE config
++ * went unheeded when sent back to back), as stock's HAL never sends them that fast.
++ */
++#define CCB_SEND_GAP_US	15000
++
++static bool debug;
++module_param(debug, bool, 0644);
++MODULE_PARM_DESC(debug, "log each message to the ASICs and each AE push");
++
 +static int ccb_send(struct ccb *c, u16 tid, u16 cmd, const void *body, int n)
 +{
 +	u8 buf[CCB_MSG_MAX];
++	s64 since = ktime_us_delta(ktime_get(), c->last_send);
++	int ret;
 +
 +	if (n + 4 > sizeof(buf))
 +		return -EINVAL;
++	if (since >= 0 && since < CCB_SEND_GAP_US)
++		usleep_range(CCB_SEND_GAP_US - since, CCB_SEND_GAP_US - since + 1000);
 +	buf[0] = tid >> 8;
 +	buf[1] = tid;
 +	put_unaligned_le16(cmd, buf + 2);
 +	if (n)
 +		memcpy(buf + 4, body, n);
-+	return ccb_write(c, buf, n + 4);
++	ret = ccb_write(c, buf, n + 4);
++	c->last_send = ktime_get();
++	if (debug)
++		dev_info(&c->client->dev, "send %04x %*ph: %d\n", cmd, n, body, ret);
++	return ret;
 +}
 +
 +/* one message from ASIC1's queue: m[0..1] type, m[2..3] len, then the payload */
@@ -247,8 +283,8 @@ index 000000000..d1c60fa55
 +	return -ETIMEDOUT;
 +}
 +
-+/* send a bit-15 command and wait for its reply; returns the reply status */
-+static int ccb_command(struct ccb *c, int kind, u16 cmd, const void *body, int n)
++/* send a bit-15 command and wait up to @ms for its reply; returns the reply status */
++static int ccb_command_wait(struct ccb *c, int kind, u16 cmd, const void *body, int n, int ms)
 +{
 +	u16 tid = ccb_tid(c, kind);
 +	u8 m[CCB_MSG_MAX];
@@ -256,12 +292,17 @@ index 000000000..d1c60fa55
 +
 +	ret = ccb_send(c, tid, cmd, body, n);
 +	if (!ret)
-+		ret = ccb_wait(c, CCB_TYPE_REPLY, tid, 2000, m);
++		ret = ccb_wait(c, CCB_TYPE_REPLY, tid, ms, m);
 +	if (ret) {
 +		dev_err(&c->client->dev, "command 0x%04x: %d\n", cmd, ret);
 +		return ret;
 +	}
 +	return get_unaligned_le16(m + 6);
++}
++
++static int ccb_command(struct ccb *c, int kind, u16 cmd, const void *body, int n)
++{
++	return ccb_command_wait(c, kind, cmd, body, n, 2000);
 +}
 +
 +/* --- power ----------------------------------------------------------------------------- */
@@ -296,6 +337,7 @@ index 000000000..d1c60fa55
 +		return ret;
 +	}
 +	c->booted = true;
++	c->zoom = ccb_module_zoom[0];
 +	dev_info(&c->client->dev, "ASICs booted\n");
 +	return 0;
 +}
@@ -328,6 +370,8 @@ index 000000000..d1c60fa55
 +	struct ccb *c = to_ccb(i2c_get_clientdata(to_i2c_client(dev)));
 +
 +	cancel_delayed_work_sync(&c->drain);
++	cancel_work_sync(&c->af);
++	cancel_delayed_work_sync(&c->ae);
 +	mutex_lock(&c->lock);
 +	ccb_power_off(c);
 +	mutex_unlock(&c->lock);
@@ -348,11 +392,6 @@ index 000000000..d1c60fa55
 +	return (127 + e) << 23 | (m & 0x7fffff);
 +}
 +
-+/*
-+ * AE config (0x0060) mode 0 = manual: camera 0, then {f32 gain, u64 exposure ns, u16 fps}
-+ * for preview and for capture (liblight_ccb ccb_config_ae_manual_mode). The ASICs' gain
-+ * unit is twice the sensors' analog gain, so analog gain g/100 is sent as g/50.
-+ */
 +/* round(f * k) for the IEEE-754 single @bits of a non-negative f (no floating point here) */
 +static u32 ccb_f32_mul(u32 bits, u32 k)
 +{
@@ -366,33 +405,45 @@ index 000000000..d1c60fa55
 +	return e < -63 ? 0 : (m + (1ULL << (-e - 1))) >> -e;
 +}
 +
++/*
++ * Exposure as stock's camera app sets it (I2C trace of its manual and priority modes):
++ * 0x0060 the AE mode (2 auto, 1 manual, then 00 00 3c 00), and 0x0067 the exposure
++ * {f32 gain, f32 gain, u64 exposure ns, u64 exposure ns}, gain in ISO/100, a zero meaning
++ * the ASIC's own choice (all zero in auto); 0x006a is 00 01 in manual, 01 01 in auto.
++ */
 +static int ccb_ae_manual(struct ccb *c)
 +{
-+	u64 ns = (u64)c->exposure->val * CCB_LINE_NS;
-+	u32 gain = ccb_f32(c->gain->val, 50);
-+	u8 b[30] = { 0, 0 };
++	static const u8 stack[] = { 0x00, 0x01 };
++	static const u8 mode[] = { 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00 };
++	u64 ns = (u64)c->exp_us->cur.val * 1000;
++	u32 gain = ccb_f32(c->iso->cur.val, 100);
++	u8 b[24];
 +
-+	put_unaligned_le32(gain, b + 2);
-+	put_unaligned_le64(ns, b + 6);
-+	put_unaligned_le16(30, b + 14);
-+	put_unaligned_le32(gain, b + 16);
-+	put_unaligned_le64(ns, b + 20);
-+	put_unaligned_le16(0, b + 28);
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, sizeof(b));
++	put_unaligned_le32(gain, b);
++	put_unaligned_le32(gain, b + 4);
++	put_unaligned_le64(ns, b + 8);
++	put_unaligned_le64(ns, b + 16);
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, mode, sizeof(mode));
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, b, sizeof(b));
 +}
 +
 +static int ccb_ae_auto(struct ccb *c)
 +{
-+	static const u8 b[] = { 0x02, 0x00, 0x00, 0x00, 0x3c, 0x00 };
++	static const u8 stack[] = { 0x01, 0x01 };
++	static const u8 mode[] = { 0x02, 0x00, 0x00, 0x00, 0x3c, 0x00 };
++	static const u8 zero[24] = { 0 };
 +
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, sizeof(b));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, mode, sizeof(mode));
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, zero, sizeof(zero));
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
 +}
 +
 +static int ccb_apply_ae(struct ccb *c)
 +{
 +	if (!c->previewing)
 +		return 0;
-+	return c->exp_auto->val == V4L2_EXPOSURE_MANUAL ? ccb_ae_manual(c) : ccb_ae_auto(c);
++	return c->exp_auto->cur.val == V4L2_EXPOSURE_MANUAL ? ccb_ae_manual(c) : ccb_ae_auto(c);
 +}
 +
 +/*
@@ -424,17 +475,21 @@ index 000000000..d1c60fa55
 +			ns = get_unaligned_le64(m + 4);
 +			gain = get_unaligned_le32(m + 16);
 +			ae = true;
++			if (debug)
++				dev_info(&c->client->dev, "AE push %llu us, ISO %u\n",
++					 div_u64(ns, 1000), ccb_f32_mul(gain, 100));
++			if (!c->ae_seen)
++				dev_info(&c->client->dev, "AE running: %llu us, ISO %u\n",
++					 div_u64(ns, 1000), ccb_f32_mul(gain, 100));
++			c->ae_seen = true;
 +		}
 +	}
 +	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	mutex_unlock(&c->lock);
 +
-+	if (ae && c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL) {
-+		/* in auto mode s_ctrl only stores these */
-+		v4l2_ctrl_s_ctrl(c->exposure, clamp_t(u64, div_u64(ns + CCB_LINE_NS / 2, CCB_LINE_NS),
-+						      c->exposure->minimum, c->exposure->maximum));
-+		v4l2_ctrl_s_ctrl(c->gain, clamp_t(u32, ccb_f32_mul(gain, 50),
-+						  c->gain->minimum, c->gain->maximum));
++	if (ae) {
++		v4l2_ctrl_s_ctrl(c->ae_us, clamp_t(u64, div_u64(ns, 1000), 0, c->ae_us->maximum));
++		v4l2_ctrl_s_ctrl(c->ae_iso, clamp_t(u32, ccb_f32_mul(gain, 100), 0, c->ae_iso->maximum));
 +	}
 +}
 +
@@ -459,7 +514,7 @@ index 000000000..d1c60fa55
 +	static const u8 ae3b[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xa0, 0x90, 0x40,
 +				   0x8c, 0xcc, 0x02, 0x01, 0, 0, 0, 0, 0, 0 };
 +	int mod = c->module->val;
-+	u8 on[6], time[16];
++	u8 on[6], time[16], z[4];
 +	struct timespec64 now;
 +	int ret;
 +
@@ -495,28 +550,33 @@ index 000000000..d1c60fa55
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae3b, sizeof(ae3b));
 +	c->previewing = true;
++	c->ae_seen = false;
 +	ret = ccb_apply_ae(c);
 +	if (ret)
 +		return ret;
 +
-+	/* the ASIC skips AE unless its zoom factor matches the preview module */
-+	if (mod) {
-+		u8 z[4];
-+
++	/*
++	 * the ASIC skips AE unless its zoom factor matches the preview module, and focuses
++	 * for its zoom factor too; it keeps the factor across a module switch. Only send a
++	 * change: 1.0 sent to a fresh A1 preview stops its AE (no more type 7 pushes).
++	 */
++	if (c->zoom != ccb_module_zoom[mod]) {
 +		put_unaligned_le32(ccb_module_zoom[mod], z);
 +		ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x005c, z, sizeof(z));
++		c->zoom = ccb_module_zoom[mod];
 +	}
 +	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	return 0;
 +}
 +
-+static int ccb_preview_stop(struct ccb *c)
++/* @mod: the module previewing (the control's value may already be the next one) */
++static int ccb_preview_stop(struct ccb *c, int mod)
 +{
 +	static const u8 close[] = { 0x01, 0x00, 0x00, 0x00 };
 +	u8 off[6];
 +	int ret;
 +
-+	memcpy(off, ccb_module_masks[c->module->val], 3);
++	memcpy(off, ccb_module_masks[mod], 3);
 +	off[3] = 0x10;
 +	off[4] = 0x00;
 +	off[5] = 0x00;
@@ -532,6 +592,21 @@ index 000000000..d1c60fa55
 +	return 0;
 +}
 +
++/*
++ * With c->lock held, while streaming: ASIC1 stopped answering (or a restart failed). Boot
++ * the ASICs again and restart the preview, so the stream keeps a preview behind it.
++ */
++static int ccb_restart_preview(struct ccb *c)
++{
++	int ret;
++
++	dev_warn(&c->client->dev, "ASICs not answering; restarting them\n");
++	ret = ccb_boot(c);
++	if (!ret)
++		ret = ccb_preview_start(c);
++	return ret;
++}
++
 +/* stock's centre autofocus: lock AE, AF ROI 200x200 at (1958, 1482), unlock */
 +static int ccb_autofocus(struct ccb *c)
 +{
@@ -543,11 +618,35 @@ index 000000000..d1c60fa55
 +	if (!c->previewing)
 +		return -EBUSY;
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, lock, sizeof(lock));
-+	ret = ccb_command(c, CCB_KIND_AF, 0x8058, roi, sizeof(roi));
++	/* on the B and C modules focus runs across the ASICs and takes a few seconds */
++	ret = ccb_command_wait(c, CCB_KIND_AF, 0x8058, roi, sizeof(roi), 6000);
++	if (ret == -EIO || ret == -ENXIO || ret == -EREMOTEIO) {
++		ccb_restart_preview(c);
++		return ret;
++	}
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, unlock, sizeof(unlock));
 +	if (ret >= 0)
 +		dev_dbg(&c->client->dev, "autofocus status %d\n", ret);
 +	return ret < 0 ? ret : 0;
++}
++
++static void ccb_ae_work(struct work_struct *work)
++{
++	struct ccb *c = container_of(to_delayed_work(work), struct ccb, ae);
++
++	mutex_lock(&c->lock);
++	ccb_apply_ae(c);
++	mutex_unlock(&c->lock);
++}
++
++static void ccb_af_work(struct work_struct *work)
++{
++	struct ccb *c = container_of(work, struct ccb, af);
++
++	mutex_lock(&c->lock);
++	if (c->previewing)
++		ccb_autofocus(c);
++	mutex_unlock(&c->lock);
 +}
 +
 +/* --- V4L2 ------------------------------------------------------------------------------- */
@@ -559,25 +658,44 @@ index 000000000..d1c60fa55
 +
 +	/* only send to the ASICs while they are previewing; otherwise remember the value */
 +	switch (ctrl->id) {
-+	case V4L2_CID_EXPOSURE:
-+	case V4L2_CID_ANALOGUE_GAIN:
++	case V4L2_CID_LIGHT_EXPOSURE_US:
++	case V4L2_CID_LIGHT_ISO:
 +		/* in auto mode the ASICs meter themselves; the value is kept for manual mode */
-+		if (c->exp_auto->val != V4L2_EXPOSURE_MANUAL)
++		if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
 +			break;
 +		fallthrough;
 +	case V4L2_CID_EXPOSURE_AUTO:
-+		mutex_lock(&c->lock);
-+		ret = ccb_apply_ae(c);
-+		mutex_unlock(&c->lock);
++		/*
++		 * a dial being dragged sets these many times a second, and a burst of AE
++		 * messages stops ASIC1 answering: send the settings once the changes pause
++		 */
++		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
 +		break;
 +	case V4L2_CID_AUTO_FOCUS_START:
-+		mutex_lock(&c->lock);
-+		ret = ccb_autofocus(c);
-+		mutex_unlock(&c->lock);
++		/*
++		 * a focus run takes seconds; the control handler's lock is held for the whole
++		 * of s_ctrl, which would stall every other control access (the camera app's
++		 * exposure readout) until it ends. Run it in the background, as stock does.
++		 */
++		if (!c->previewing)
++			ret = -EBUSY;
++		else
++			schedule_work(&c->af);
 +		break;
 +	case V4L2_CID_LIGHT_MODULE:
-+		if (c->previewing)
-+			ret = -EBUSY;
++		/*
++		 * while previewing, restart the ASICs' preview on the new module; the CSI-2
++		 * stream just pauses, and whoever is streaming keeps going
++		 */
++		mutex_lock(&c->lock);
++		if (c->previewing) {
++			ret = ccb_preview_stop(c, c->module->cur.val);
++			if (!ret)
++				ret = ccb_preview_start(c);
++			if (ret)
++				ret = ccb_restart_preview(c);
++		}
++		mutex_unlock(&c->lock);
 +		break;
 +	}
 +	return ret;
@@ -603,6 +721,48 @@ index 000000000..d1c60fa55
 +	.type = V4L2_CTRL_TYPE_BOOLEAN,
 +	.max = 1,
 +	.step = 1,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_exp_us = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_EXPOSURE_US,
++	.name = "Manual Exposure Time (us)",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.min = 1,
++	.max = 15000000,	/* stock's longest shutter; the preview slows down */
++	.step = 1,
++	.def = 16667,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_iso = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_ISO,
++	.name = "Manual ISO",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.min = 100,
++	.max = 3200,
++	.step = 1,
++	.def = 100,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_ae_us = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_AE_EXPOSURE_US,
++	.name = "Metered Exposure Time (us)",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.max = 15000000,
++	.step = 1,
++	.flags = V4L2_CTRL_FLAG_READ_ONLY,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_ae_iso = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_AE_ISO,
++	.name = "Metered ISO",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.max = 100000,
++	.step = 1,
++	.flags = V4L2_CTRL_FLAG_READ_ONLY,
 +};
 +
 +static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
@@ -633,7 +793,7 @@ index 000000000..d1c60fa55
 +
 +	mutex_lock(&c->lock);
 +	if (c->stream_count && !--c->stream_count)
-+		ret = ccb_preview_stop(c);
++		ret = ccb_preview_stop(c, c->module->val);
 +	mutex_unlock(&c->lock);
 +	pm_runtime_put_autosuspend(dev);
 +	return ret;
@@ -809,7 +969,7 @@ index 000000000..d1c60fa55
 +	if (ret)
 +		return ret;
 +
-+	v4l2_ctrl_handler_init(h, 13);
++	v4l2_ctrl_handler_init(h, 17);
 +	link_freq = v4l2_ctrl_new_int_menu(h, NULL, V4L2_CID_LINK_FREQ, 0, 0, ccb_link_freqs);
 +	if (link_freq)
 +		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -819,11 +979,10 @@ index 000000000..d1c60fa55
 +	c->exp_auto = v4l2_ctrl_new_std_menu(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE_AUTO,
 +					     V4L2_EXPOSURE_MANUAL, ~(BIT(V4L2_EXPOSURE_AUTO) |
 +					     BIT(V4L2_EXPOSURE_MANUAL)), V4L2_EXPOSURE_AUTO);
-+	/* sensor lines: up to the frame, 1/60 s by default */
-+	c->exposure = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE,
-+					1, CCB_FRAME_LINES - 4, 1, CCB_FRAME_LINES / 2);
-+	/* analog gain x 100: ISO 100 to 800 */
-+	c->gain = v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_ANALOGUE_GAIN, 100, 800, 1, 100);
++	/* for libcamera, which needs them (in lines, and ISO): stored, not used */
++	v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_EXPOSURE,
++					1, CCB_MAX_EXPOSURE, 1, CCB_FRAME_LINES / 2);
++	v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_ANALOGUE_GAIN, 100, 3200, 1, 100);
 +	v4l2_ctrl_new_std(h, &ccb_ctrl_ops, V4L2_CID_AUTO_FOCUS_START, 0, 1, 1, 0);
 +	hblank = v4l2_ctrl_new_std(h, NULL, V4L2_CID_HBLANK, CCB_HBLANK, CCB_HBLANK, 1, CCB_HBLANK);
 +	if (hblank)
@@ -834,6 +993,10 @@ index 000000000..d1c60fa55
 +	v4l2_ctrl_new_fwnode_properties(h, &ccb_ctrl_ops, &props);
 +	c->module = v4l2_ctrl_new_custom(h, &ccb_ctrl_module, NULL);
 +	c->raw_transfer = v4l2_ctrl_new_custom(h, &ccb_ctrl_raw_transfer, NULL);
++	c->exp_us = v4l2_ctrl_new_custom(h, &ccb_ctrl_exp_us, NULL);
++	c->iso = v4l2_ctrl_new_custom(h, &ccb_ctrl_iso, NULL);
++	c->ae_us = v4l2_ctrl_new_custom(h, &ccb_ctrl_ae_us, NULL);
++	c->ae_iso = v4l2_ctrl_new_custom(h, &ccb_ctrl_ae_iso, NULL);
 +	if (h->error)
 +		return h->error;
 +
@@ -854,6 +1017,8 @@ index 000000000..d1c60fa55
 +	c->client = client;
 +	mutex_init(&c->lock);
 +	INIT_DELAYED_WORK(&c->drain, ccb_drain_work);
++	INIT_WORK(&c->af, ccb_af_work);
++	INIT_DELAYED_WORK(&c->ae, ccb_ae_work);
 +
 +	/* boot straps low = boot from the ASICs' own flash; never driven high */
 +	c->straps = devm_gpiod_get_array(dev, "strap", GPIOD_OUT_LOW);
@@ -915,6 +1080,8 @@ index 000000000..d1c60fa55
 +	media_entity_cleanup(&sd->entity);
 +	pm_runtime_disable(&client->dev);
 +	cancel_delayed_work_sync(&c->drain);
++	cancel_work_sync(&c->af);
++	cancel_delayed_work_sync(&c->ae);
 +	ccb_power_off(c);
 +}
 +
