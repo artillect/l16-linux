@@ -18,7 +18,7 @@ case "${1:-28}" in
 *)	cams="$1" ;;
 esac
 out=${2:-$HOME/L16_$(date +%Y%m%d_%H%M%S).lri}
-tmp=/var/tmp/l16-capture
+tmp=/var/tmp/l16-capture-$(id -u)
 P=/sys/module/qcom_camss/parameters
 M="media-ctl -d /dev/media0"
 F="fmt:SGRBG10_1X10/1408x9219"
