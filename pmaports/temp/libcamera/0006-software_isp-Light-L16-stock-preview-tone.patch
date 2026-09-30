@@ -1,59 +1,46 @@
-From d53b42e7caa436ed7783a4380e2b1481e49a6a32 Mon Sep 17 00:00:00 2001
+From 4b410ae766c48888f53d8c64b6c6b29d3b8a7ff3 Mon Sep 17 00:00:00 2001
 From: L16 Linux <oreo4455@gmail.com>
-Date: Wed, 30 Sep 2026 15:29:51 -0700
+Date: Wed, 30 Sep 2026 16:29:20 -0700
 Subject: [PATCH] software_isp: Light L16 stock preview tone: digital gain,
- GTM, gamma
+ gamma
 
 The Light L16's camera ASICs send the preview at analogue gain only and
-report a digital boost of up to 4.13x on top. Stock applies it as a
-linear ISP digital gain, then Qualcomm's global tone map (GTM, enabled
-in its chromatix preview tuning only) and a 512-entry gamma table.
+report a digital boost on top, which stock applies as a linear ISP
+digital gain, then its 512-entry preview gamma table. (Its global tone
+map is programmed flat, gain 1.0 throughout, as its ISP debug log
+shows.)
 
 Do the same: the DigitalGain control multiplies the linear image after
-the colour matrix, the GTM's key and maximum come from each frame's
-luminance histogram with the stock tuning's parameters, and the stock
-gamma table replaces the power-law gamma.
+the colour matrix, and the stock gamma table replaces the power-law
+gamma.
 ---
- .../internal/software_isp/debayer_params.h    |  6 ++
- src/ipa/simple/algorithms/adjust.cpp          | 80 ++++++++++++++++++-
- src/ipa/simple/algorithms/adjust.h            |  1 +
- src/ipa/simple/ipa_context.h                  |  7 ++
- src/libcamera/shaders/bayer_1x_packed.frag    | 32 +++++++-
- src/libcamera/shaders/bayer_unpacked.frag     | 32 +++++++-
- src/libcamera/software_isp/debayer_egl.cpp    | 36 +++++++++
- src/libcamera/software_isp/debayer_egl.h      |  4 +
- 8 files changed, 192 insertions(+), 6 deletions(-)
+ .../internal/software_isp/debayer_params.h    |  2 ++
+ src/ipa/simple/algorithms/adjust.cpp          | 13 +++++++-
+ src/ipa/simple/ipa_context.h                  |  1 +
+ src/libcamera/shaders/bayer_1x_packed.frag    | 15 +++++++--
+ src/libcamera/shaders/bayer_unpacked.frag     | 15 +++++++--
+ src/libcamera/software_isp/debayer_egl.cpp    | 31 +++++++++++++++++++
+ src/libcamera/software_isp/debayer_egl.h      |  2 ++
+ 7 files changed, 74 insertions(+), 5 deletions(-)
 
 diff --git a/include/libcamera/internal/software_isp/debayer_params.h b/include/libcamera/internal/software_isp/debayer_params.h
-index 6772b43..3c84c0d 100644
+index 6772b43..7e0a584 100644
 --- a/include/libcamera/internal/software_isp/debayer_params.h
 +++ b/include/libcamera/internal/software_isp/debayer_params.h
-@@ -25,6 +25,12 @@ struct DebayerParams {
+@@ -25,6 +25,8 @@ struct DebayerParams {
  	float gamma = 1.0;
  	float contrastExp = 1.0;
  	RGB<float> gains = RGB<float>({ 1.0, 1.0, 1.0 });
 +	/* digital gain, applied in linear space after the colour matrix */
 +	float digitalGain = 1.0;
-+	/* global tone map (Qualcomm GTM, as the Light L16's stock preview): key and maximum in
-+	 * 14-bit linear units; a key of 0 turns it off */
-+	float gtmKey = 0.0;
-+	float gtmMax = 16383.0;
  };
  
  } /* namespace libcamera */
 diff --git a/src/ipa/simple/algorithms/adjust.cpp b/src/ipa/simple/algorithms/adjust.cpp
-index 8bf39c4..9f48655 100644
+index 8bf39c4..43e48de 100644
 --- a/src/ipa/simple/algorithms/adjust.cpp
 +++ b/src/ipa/simple/algorithms/adjust.cpp
-@@ -14,6 +14,7 @@
- #include <libcamera/control_ids.h>
- 
- #include "libcamera/internal/matrix.h"
-+#include "libcamera/internal/software_isp/swisp_stats.h"
- 
- namespace libcamera {
- 
-@@ -30,6 +31,8 @@ int Adjust::init(IPAContext &context, [[maybe_unused]] const ValueNode &tuningDa
+@@ -30,6 +30,8 @@ int Adjust::init(IPAContext &context, [[maybe_unused]] const ValueNode &tuningDa
  		ControlInfo(0.1f, 10.0f, kDefaultGamma);
  	context.ctrlMap[&controls::Contrast] =
  		ControlInfo(0.0f, 2.0f, kDefaultContrast);
@@ -62,16 +49,15 @@ index 8bf39c4..9f48655 100644
  	if (context.ccmEnabled)
  		context.ctrlMap[&controls::Saturation] =
  			ControlInfo(0.0f, 2.0f, kDefaultSaturation);
-@@ -42,6 +45,8 @@ int Adjust::configure(IPAContext &context,
+@@ -42,6 +44,7 @@ int Adjust::configure(IPAContext &context,
  	context.activeState.knobs.gamma = kDefaultGamma;
  	context.activeState.knobs.contrast = std::optional<float>();
  	context.activeState.knobs.saturation = std::optional<float>();
 +	context.activeState.knobs.digitalGain = 1.0f;
-+	context.activeState.gtm.valid = false;
  
  	return 0;
  }
-@@ -63,6 +68,10 @@ void Adjust::queueRequest(typename Module::Context &context,
+@@ -63,6 +66,10 @@ void Adjust::queueRequest(typename Module::Context &context,
  		LOG(IPASoftAdjust, Debug) << "Setting contrast to " << contrast.value();
  	}
  
@@ -82,137 +68,49 @@ index 8bf39c4..9f48655 100644
  	const auto &saturation = controls.get(controls::Saturation);
  	if (saturation.has_value()) {
  		context.activeState.knobs.saturation = saturation;
-@@ -109,12 +118,75 @@ void Adjust::prepare(IPAContext &context,
+@@ -109,9 +116,11 @@ void Adjust::prepare(IPAContext &context,
  	params->gamma = 1.0 / context.activeState.knobs.gamma;
  	const float contrast = context.activeState.knobs.contrast.value_or(kDefaultContrast);
  	params->contrastExp = tan(std::clamp(contrast * M_PI_4, 0.0, M_PI_2 - 0.00001));
 +
 +	params->digitalGain = context.activeState.knobs.digitalGain;
-+	/* before the first statistics: the GTM's default curve (gtm46_calculate_default_cuve) */
-+	const auto &gtm = context.activeState.gtm;
-+	params->gtmKey = gtm.valid ? gtm.key : 170.06f;
-+	params->gtmMax = gtm.valid ? gtm.max : 2863.0f;
-+}
-+
-+/*
-+ * The global tone map of the Light L16's stock preview (Qualcomm's GTM, as its chromatix
-+ * preview tuning sets it: middle tone 0.14, middle tone weight 3.6, key 64 to 4096,
-+ * maximum at least 1024, minimum at most 128, temporal weight 0.92), from the frame's
-+ * luminance histogram, after the black level and the digital gain, in 14-bit units.
-+ */
-+void Adjust::updateGtm(IPAContext &context, const SwIspStats *stats)
-+{
-+	constexpr float kWhite = 16383.0f;
-+	constexpr float kMaxPercentile = 0.99999f, kMinPercentile = 0.00001f;
-+	constexpr float kMiddleToneW = 3.6f, kTemporalW = 0.92f;
-+
-+	const auto &hist = stats->yHistogram;
-+	const unsigned int bins = SwIspStats::kYHistogramSize;
-+	const float black = context.activeState.blc.level;
-+	const float gain = context.activeState.knobs.digitalGain;
-+	/* a histogram position (0..bins) in 14-bit linear units, as the shader makes it */
-+	auto linear = [&](float pos) {
-+		float v = (pos * 256.0f / bins - black) / 255.0f * gain;
-+		return std::clamp(v, 0.0f, 1.0f) * kWhite;
-+	};
-+
-+	uint64_t n = 0;
-+	for (unsigned int i = 0; i < bins; i++)
-+		n += hist[i];
-+	if (!n)
-+		return;
-+
-+	/* the percentiles, interpolated within the bins; the log average at the bins' middles */
-+	auto percentile = [&](float p) {
-+		const float want = p * n;
-+		uint64_t cum = 0;
-+		for (unsigned int i = 0; i < bins; i++) {
-+			if (cum + hist[i] >= want && hist[i])
-+				return linear(i + (want - cum) / hist[i]);
-+			cum += hist[i];
-+		}
-+		return linear(bins);
-+	};
-+	float maxV = std::max(percentile(kMaxPercentile), 1024.0f);
-+	float minV = std::min(percentile(kMinPercentile), 128.0f);
-+	double logSum = 0.0;
-+	for (unsigned int i = 0; i < bins; i++)
-+		logSum += hist[i] * std::log(std::max(linear(i + 0.5f), 1.0f));
-+	const float logAvg = std::exp(logSum / n);
-+	const float range = std::max(maxV - minV, 1024.0f);
-+	float key = std::clamp(kMiddleToneW * logAvg * 1024.0f / range, 64.0f, 4096.0f);
-+
-+	auto &gtm = context.activeState.gtm;
-+	if (gtm.valid) {
-+		key = key + kTemporalW * (gtm.key - key);
-+		maxV = maxV + kTemporalW * (gtm.max - maxV);
-+		minV = minV + kTemporalW * (gtm.min - minV);
-+	}
-+	gtm = { true, key, maxV, minV };
  }
  
 -void Adjust::process([[maybe_unused]] IPAContext &context,
 +void Adjust::process(IPAContext &context,
  		     [[maybe_unused]] const uint32_t frame,
  		     IPAFrameContext &frameContext,
--		     [[maybe_unused]] const SwIspStats *stats,
-+		     const SwIspStats *stats,
- 		     ControlList &metadata)
- {
- 	const auto &gamma = frameContext.gamma;
-@@ -125,6 +197,10 @@ void Adjust::process([[maybe_unused]] IPAContext &context,
+ 		     [[maybe_unused]] const SwIspStats *stats,
+@@ -125,6 +134,8 @@ void Adjust::process([[maybe_unused]] IPAContext &context,
  
  	const auto &saturation = frameContext.saturation;
  	metadata.set(controls::Saturation, saturation.value_or(kDefaultSaturation));
 +
 +	metadata.set(controls::DigitalGain, context.activeState.knobs.digitalGain);
-+	if (stats && stats->valid)
-+		updateGtm(context, stats);
  }
  
  REGISTER_IPA_ALGORITHM(Adjust, "Adjust")
-diff --git a/src/ipa/simple/algorithms/adjust.h b/src/ipa/simple/algorithms/adjust.h
-index 49c1f26..feedaf7 100644
---- a/src/ipa/simple/algorithms/adjust.h
-+++ b/src/ipa/simple/algorithms/adjust.h
-@@ -43,6 +43,7 @@ public:
- 
- private:
- 	void applySaturation(Matrix<float, 3, 3> &ccm, float saturation);
-+	void updateGtm(IPAContext &context, const SwIspStats *stats);
- };
- 
- } /* namespace ipa::soft::algorithms */
 diff --git a/src/ipa/simple/ipa_context.h b/src/ipa/simple/ipa_context.h
-index 34f7403..aa77f9b 100644
+index 34f7403..d90b6e6 100644
 --- a/src/ipa/simple/ipa_context.h
 +++ b/src/ipa/simple/ipa_context.h
-@@ -60,7 +60,14 @@ struct IPAActiveState {
+@@ -60,6 +60,7 @@ struct IPAActiveState {
  		/* 0..2 range, 1.0 = normal */
  		std::optional<float> contrast;
  		std::optional<float> saturation;
 +		float digitalGain;
  	} knobs;
-+	struct {
-+		bool valid;
-+		float key;
-+		float max;
-+		float min;
-+	} gtm;
  };
  
- struct IPAFrameContext : public FrameContext {
 diff --git a/src/libcamera/shaders/bayer_1x_packed.frag b/src/libcamera/shaders/bayer_1x_packed.frag
-index 23747f7..ddc0caa 100644
+index 23747f7..b5dc688 100644
 --- a/src/libcamera/shaders/bayer_1x_packed.frag
 +++ b/src/libcamera/shaders/bayer_1x_packed.frag
-@@ -69,6 +69,32 @@ uniform mat3 ccm;
+@@ -69,6 +69,17 @@ uniform mat3 ccm;
  uniform vec3 blacklevel;
  uniform float gamma;
  uniform float contrastExp;
 +uniform float digitalGain;
-+uniform float gtmKey;
-+uniform float gtmMax;
 +uniform float stockGamma[129];
 +
 +/* the stock gamma, interpolated between its points */
@@ -223,30 +121,15 @@ index 23747f7..ddc0caa 100644
 +	return mix(stockGamma[i], stockGamma[i + 1], p - float(i));
 +}
 +
-+/*
-+ * The global tone map (Qualcomm's GTM, as the Light L16's stock preview): Reinhard's curve
-+ * on the luminance, with the frame's key and maximum, in 14-bit units, as a ratio on RGB
-+ */
-+vec3 apply_gtm(vec3 rgb)
-+{
-+	float x = max(dot(rgb, vec3(0.299, 0.587, 0.114)) * 16383.0, 1.0);
-+	float l = 0.14 * x / gtmKey;
-+	float lw = 0.14 * gtmMax / gtmKey;
-+	float y = 16383.0 * l * (1.0 + l / (lw * lw)) / (1.0 + l);
-+	return rgb * (y / x);
-+}
-+
  
  float apply_contrast(float value)
  {
-@@ -275,13 +301,15 @@ void main(void)
+@@ -275,13 +286,13 @@ void main(void)
  	 * Contrast
  	 * contrastExp 0..2 contrast to 0..infinity; avoid actual infinity at tan(pi/2)
  	 */
 -	rgb = clamp(rgb, 0.0, 1.0);
 +	rgb = clamp(rgb * digitalGain, 0.0, 1.0);
-+	if (gtmKey > 0.0)
-+		rgb = clamp(apply_gtm(rgb), 0.0, 1.0);
  	rgb.r = apply_contrast(rgb.r);
  	rgb.g = apply_contrast(rgb.g);
  	rgb.b = apply_contrast(rgb.b);
@@ -258,16 +141,14 @@ index 23747f7..ddc0caa 100644
  #if defined (SWAP_BLUE)
  	gl_FragColor = vec4(rgb.bgr, 1.0);
 diff --git a/src/libcamera/shaders/bayer_unpacked.frag b/src/libcamera/shaders/bayer_unpacked.frag
-index 1b85196..a50943b 100644
+index 1b85196..3b6ee5a 100644
 --- a/src/libcamera/shaders/bayer_unpacked.frag
 +++ b/src/libcamera/shaders/bayer_unpacked.frag
-@@ -28,6 +28,32 @@ uniform mat3            ccm;
+@@ -28,6 +28,17 @@ uniform mat3            ccm;
  uniform vec3            blacklevel;
  uniform float           gamma;
  uniform float           contrastExp;
 +uniform float digitalGain;
-+uniform float gtmKey;
-+uniform float gtmMax;
 +uniform float stockGamma[129];
 +
 +/* the stock gamma, interpolated between its points */
@@ -278,30 +159,15 @@ index 1b85196..a50943b 100644
 +	return mix(stockGamma[i], stockGamma[i + 1], p - float(i));
 +}
 +
-+/*
-+ * The global tone map (Qualcomm's GTM, as the Light L16's stock preview): Reinhard's curve
-+ * on the luminance, with the frame's key and maximum, in 14-bit units, as a ratio on RGB
-+ */
-+vec3 apply_gtm(vec3 rgb)
-+{
-+	float x = max(dot(rgb, vec3(0.299, 0.587, 0.114)) * 16383.0, 1.0);
-+	float l = 0.14 * x / gtmKey;
-+	float lw = 0.14 * gtmMax / gtmKey;
-+	float y = 16383.0 * l * (1.0 + l / (lw * lw)) / (1.0 + l);
-+	return rgb * (y / x);
-+}
-+
  
  float apply_contrast(float value)
  {
-@@ -177,13 +203,15 @@ void main(void) {
+@@ -177,13 +188,13 @@ void main(void) {
      /*
       * Contrast
       */
 -    rgb = clamp(rgb, 0.0, 1.0);
 +    rgb = clamp(rgb * digitalGain, 0.0, 1.0);
-+    if (gtmKey > 0.0)
-+        rgb = clamp(apply_gtm(rgb), 0.0, 1.0);
      rgb.r = apply_contrast(rgb.r);
      rgb.g = apply_contrast(rgb.g);
      rgb.b = apply_contrast(rgb.b);
@@ -313,7 +179,7 @@ index 1b85196..a50943b 100644
  #if defined (SWAP_BLUE)
      gl_FragColor = vec4(rgb.bgr, 1.0);
 diff --git a/src/libcamera/software_isp/debayer_egl.cpp b/src/libcamera/software_isp/debayer_egl.cpp
-index f4fc2a6..b3eb832 100644
+index f4fc2a6..3f241b9 100644
 --- a/src/libcamera/software_isp/debayer_egl.cpp
 +++ b/src/libcamera/software_isp/debayer_egl.cpp
 @@ -93,6 +93,28 @@ int DebayerEGL::getOutputConfig(PixelFormat outputFormat, DebayerOutputConfig &c
@@ -345,45 +211,38 @@ index f4fc2a6..b3eb832 100644
  int DebayerEGL::getShaderVariableLocations(void)
  {
  	attributeVertex_ = glGetAttribLocation(programId_, "vertexIn");
-@@ -103,6 +125,10 @@ int DebayerEGL::getShaderVariableLocations(void)
+@@ -103,6 +125,8 @@ int DebayerEGL::getShaderVariableLocations(void)
  	blackLevelUniformDataIn_ = glGetUniformLocation(programId_, "blacklevel");
  	gammaUniformDataIn_ = glGetUniformLocation(programId_, "gamma");
  	contrastExpUniformDataIn_ = glGetUniformLocation(programId_, "contrastExp");
 +	digitalGainUniformDataIn_ = glGetUniformLocation(programId_, "digitalGain");
-+	gtmKeyUniformDataIn_ = glGetUniformLocation(programId_, "gtmKey");
-+	gtmMaxUniformDataIn_ = glGetUniformLocation(programId_, "gtmMax");
 +	stockGammaUniformDataIn_ = glGetUniformLocation(programId_, "stockGamma");
  
  	textureUniformStep_ = glGetUniformLocation(programId_, "tex_step");
  	textureUniformSize_ = glGetUniformLocation(programId_, "tex_size");
-@@ -492,6 +518,16 @@ void DebayerEGL::setShaderVariableValues(const DebayerParams &params)
+@@ -492,6 +516,13 @@ void DebayerEGL::setShaderVariableValues(const DebayerParams &params)
  	glUniform1f(contrastExpUniformDataIn_, params.contrastExp);
  	LOG(Debayer, Debug) << " contrastExpUniformDataIn_ " << contrastExpUniformDataIn_ << " data " << params.contrastExp;
  
 +	/*
-+	 * Digital gain, the global tone map and the stock gamma
++	 * Digital gain and the stock gamma
 +	 */
 +	glUniform1f(digitalGainUniformDataIn_, params.digitalGain);
-+	glUniform1f(gtmKeyUniformDataIn_, params.gtmKey);
-+	glUniform1f(gtmMaxUniformDataIn_, params.gtmMax);
 +	glUniform1fv(stockGammaUniformDataIn_, 129, kStockGamma);
-+	LOG(Debayer, Debug) << " digitalGain " << params.digitalGain
-+			    << " gtmKey " << params.gtmKey << " gtmMax " << params.gtmMax;
++	LOG(Debayer, Debug) << " digitalGain " << params.digitalGain;
 +
  	return;
  }
  
 diff --git a/src/libcamera/software_isp/debayer_egl.h b/src/libcamera/software_isp/debayer_egl.h
-index 5a1e4df..cf4a19f 100644
+index 5a1e4df..c29e174 100644
 --- a/src/libcamera/software_isp/debayer_egl.h
 +++ b/src/libcamera/software_isp/debayer_egl.h
-@@ -101,6 +101,10 @@ private:
+@@ -101,6 +101,8 @@ private:
  
  	/* Contrast */
  	GLint contrastExpUniformDataIn_;
 +	GLint digitalGainUniformDataIn_;
-+	GLint gtmKeyUniformDataIn_;
-+	GLint gtmMaxUniformDataIn_;
 +	GLint stockGammaUniformDataIn_;
  
  	Rectangle window_;
