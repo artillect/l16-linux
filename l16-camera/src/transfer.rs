@@ -7,6 +7,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -58,15 +59,22 @@ impl Transfers {
         let queue: Queue = Arc::new(Mutex::new(VecDeque::new()));
         let mut streams = Vec::new();
         for a in 0..3usize {
-            let mut child = Command::new("v4l2-ctl")
-                .args(["-d", &format!("/dev/video{}", a + 1)])
+            let mut cmd = Command::new("v4l2-ctl");
+            cmd.args(["-d", &format!("/dev/video{}", a + 1)])
                 // eight buffers: a photo's records (six per ASIC) all fit, so the RDI never
                 // runs dry mid-photo (CAMSS's re-arm of an idle RDI loses what follows)
                 .args(["--stream-mmap=8", "--stream-to=-"])
                 .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(|e| e.to_string())?;
+                .stderr(Stdio::null());
+            // if the app dies without closing (a SIGKILL), the stream goes with it rather than
+            // holding the RDI for the next start
+            unsafe {
+                cmd.pre_exec(|| {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                    Ok(())
+                });
+            }
+            let mut child = cmd.spawn().map_err(|e| e.to_string())?;
             let mut out = child.stdout.take().unwrap();
             let queue = queue.clone();
             let done = done.clone();

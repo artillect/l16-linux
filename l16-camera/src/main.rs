@@ -2136,6 +2136,16 @@ fn build(gapp: &gtk::Application) {
         a.stop_preview();
         glib::Propagation::Proceed
     });
+    // a kill (TERM, INT, HUP) closes the window as the user would, so the transfer streams
+    // and the preview stop in their order (killed under a running preview, the streams leave
+    // CAMSS unable to start it again until a reboot)
+    for sig in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+        let w = window.clone();
+        glib::unix_signal_add_local(sig, move || {
+            w.close();
+            glib::ControlFlow::Break
+        });
+    }
 
     if let Some(c) = &app.ccb {
         let st = app.st.borrow();
