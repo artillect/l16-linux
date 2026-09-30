@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..b22845c62
+index 000000000..f8662a8ee
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1600 @@
+@@ -0,0 +1,1609 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -631,7 +631,7 @@ index 000000000..b22845c62
 +	struct ccb *c = container_of(to_delayed_work(work), struct ccb, drain);
 +	u8 m[CCB_MSG_MAX];
 +	u64 ns = 0;
-+	u32 gain = 0;
++	u32 sens, boost, iso = 0;
 +	bool ae = false;
 +	int i, t;
 +
@@ -645,17 +645,26 @@ index 000000000..b22845c62
 +		if (t < 0 || t == CCB_TYPE_EMPTY)
 +			break;
 +		if (t == CCB_TYPE_AE && get_unaligned_le16(m + 2) >= 16) {
++			/*
++			 * {u64 exposure ns, f32 sensitivity, f32 boost} (liblight_ccb's names):
++			 * the sensors' gain, at most 7.75, and a digital boost on top; the ISO
++			 * running is their product x 100
++			 */
 +			ns = get_unaligned_le64(m + 4);
-+			gain = get_unaligned_le32(m + 16);
++			sens = get_unaligned_le32(m + 12);
++			boost = get_unaligned_le32(m + 16);
++			iso = ccb_f32_mul(boost, ccb_f32_mul(sens, 100));
 +			if (get_unaligned_le16(m + 2) >= 33)
 +				c->flash_needed = m[4 + 32] & 1;
 +			ae = true;
 +			if (debug)
-+				dev_info(&c->client->dev, "AE push %llu us, ISO %u\n",
-+					 div_u64(ns, 1000), ccb_f32_mul(gain, 100));
++				dev_info(&c->client->dev,
++					 "AE push %llu us, sensitivity %u, boost %u/100, ISO %u\n",
++					 div_u64(ns, 1000), ccb_f32_mul(sens, 100),
++					 ccb_f32_mul(boost, 100), iso);
 +			if (!c->ae_seen)
 +				dev_info(&c->client->dev, "AE running: %llu us, ISO %u\n",
-+					 div_u64(ns, 1000), ccb_f32_mul(gain, 100));
++					 div_u64(ns, 1000), iso);
 +			c->ae_seen = true;
 +		}
 +	}
@@ -675,7 +684,7 @@ index 000000000..b22845c62
 +
 +	if (ae) {
 +		v4l2_ctrl_s_ctrl(c->ae_us, clamp_t(u64, div_u64(ns, 1000), 0, c->ae_us->maximum));
-+		v4l2_ctrl_s_ctrl(c->ae_iso, clamp_t(u32, ccb_f32_mul(gain, 100), 0, c->ae_iso->maximum));
++		v4l2_ctrl_s_ctrl(c->ae_iso, clamp_t(u32, iso, 0, c->ae_iso->maximum));
 +	}
 +}
 +
