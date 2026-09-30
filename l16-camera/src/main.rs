@@ -180,6 +180,7 @@ struct State {
     // closes the exposure wheel after a drag; a new drag cancels it
     wheel_close: Option<glib::SourceId>,
     haptics: u8, // 0 off, 1 normal, 2 strong (stock's)
+    continuous: bool, // ISO and shutter anywhere, rather than stock's 1/3-stop list
     zoom_start: f64,
     zoom_wheel_until: Option<Instant>,
     focus_until: Option<Instant>,
@@ -211,7 +212,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\nstrip_zoom={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -227,6 +228,7 @@ impl State {
             self.exposure_info as u8,
             self.inverse_wheel as u8,
             self.haptics,
+            self.continuous as u8,
             self.strip_zoom as u8,
         )
     }
@@ -252,6 +254,7 @@ impl State {
         self.exposure_info = flag("exposure_info", self.exposure_info);
         self.inverse_wheel = flag("inverse_wheel", self.inverse_wheel);
         self.haptics = num("haptics").map_or(self.haptics, |v| (v as u8).min(2));
+        self.continuous = flag("continuous", self.continuous);
         self.strip_zoom = flag("strip_zoom", self.strip_zoom);
     }
 }
@@ -292,6 +295,15 @@ const SETTINGS: &[SettingRow] = &[
         title: "Exposure info",
         sub: "EV, ISO, shutter and focal length beside the preview",
         kind: SettingKind::Switch(|s| s.exposure_info, |s, v| s.exposure_info = v),
+    },
+    SettingRow {
+        title: "Exposure steps",
+        sub: "ISO and shutter in stock's 1/3 stops, or anywhere in between",
+        kind: SettingKind::Choice(
+            &["1/3 stop", "Continuous"],
+            |s| s.continuous as usize,
+            |s, v| s.continuous = v == 1,
+        ),
     },
     SettingRow {
         title: "Haptics",
@@ -429,13 +441,18 @@ fn fmt_secs(t: f64) -> String {
     }
 }
 
-// the list value nearest @pos on a dial (its tick marks)
-fn dial_tick(dial: Dial, pos: f64) -> usize {
-    let ticks: Vec<f64> = match dial {
+// a dial's list values (its tick marks) as positions: stock's ISO and shutter lists, EV thirds
+fn dial_ticks(dial: Dial) -> Vec<f64> {
+    match dial {
         Dial::Iso => ISO.iter().map(|&i| iso_pos(i as f64)).collect(),
         Dial::Shutter => SHUTTER.iter().map(|s| secs_pos(shutter_secs(s))).collect(),
         Dial::Ev => (-9..=9).map(ev_pos).collect(),
-    };
+    }
+}
+
+// the list value nearest @pos on a dial
+fn dial_tick(dial: Dial, pos: f64) -> usize {
+    let ticks = dial_ticks(dial);
     let mut best = 0;
     for (i, t) in ticks.iter().enumerate() {
         if (t - pos).abs() < (ticks[best] - pos).abs() {
@@ -465,12 +482,20 @@ fn module_for(zoom: f64) -> usize {
 }
 
 // text at (x, y), vertically centred; align 0 = left, 0.5 = centre, 1 = right
+// (through Pango, which falls back to other fonts for glyphs like ⅓ that cairo's own text
+// drew as boxes)
 fn text(cr: &cairo::Context, s: &str, x: f64, y: f64, size: f64, align: f64) {
-    cr.set_font_size(size);
-    if let Ok(e) = cr.text_extents(s) {
-        cr.move_to(x - e.width() * align - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
-        let _ = cr.show_text(s);
-    }
+    let layout = pangocairo::functions::create_layout(cr);
+    let mut font = gtk::pango::FontDescription::from_string("Sans Bold");
+    font.set_absolute_size(size * gtk::pango::SCALE as f64);
+    layout.set_font_description(Some(&font));
+    layout.set_text(s);
+    let (ink, _) = layout.pixel_extents();
+    cr.move_to(
+        x - ink.width() as f64 * align - ink.x() as f64,
+        y - ink.height() as f64 / 2.0 - ink.y() as f64,
+    );
+    pangocairo::functions::show_layout(cr, &layout);
 }
 
 fn make_pipeline() -> (gst::Pipeline, gdk::Paintable) {
@@ -614,6 +639,12 @@ impl App {
                 Dial::Shutter => st.shutter,
                 Dial::Ev => st.ev,
             }
+        };
+        // 1/3 stops: the nearest list value (EV is always in thirds)
+        let pos = if self.st.borrow().continuous || dial == Dial::Ev {
+            pos
+        } else {
+            dial_ticks(dial)[dial_tick(dial, pos.clamp(0.0, 1.0))]
         };
         if dial_tick(dial, before) != dial_tick(dial, pos.clamp(0.0, 1.0)) {
             self.buzz(6);
@@ -1951,6 +1982,7 @@ fn build(gapp: &gtk::Application) {
             wheel_start: 0.0,
             wheel_close: None,
             haptics: 1,
+            continuous: false,
             zoom_start: ZOOM_MIN,
             zoom_wheel_until: None,
             focus_until: None,

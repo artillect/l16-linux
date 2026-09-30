@@ -8,6 +8,7 @@ description = "Camera app for the Light L16 on Linux, after OpenLight's layout"
 [dependencies]
 gtk = { package = "gtk4", version = "0.10", features = ["v4_12"] }
 gst = { package = "gstreamer", version = "0.24" }
+pangocairo = "0.21"
 libc = "0.2"
 
 [profile.release]
