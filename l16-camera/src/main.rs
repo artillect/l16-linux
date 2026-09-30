@@ -71,10 +71,21 @@ window.camera { background: #000; }
     border-radius: 3px; padding: 0 4px; }
 .settings { background: #000; }
 .settings list { background: #000; }
-.settings row { padding: 14px 32px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+.settings row, .chooser row { padding: 14px 32px; border-bottom: 1px solid rgba(255,255,255,0.15);
+    background: none; }
+.settings row:active, .chooser row:active { background: rgba(255,255,255,0.12); }
 .set-title { color: #fff; font-size: 18px; font-weight: 600; }
 .set-sub { color: rgba(255,255,255,0.6); font-size: 14px; }
 .set-value { color: #00B1ED; font-size: 17px; font-weight: 600; }
+.set-chevron { color: rgba(255,255,255,0.6); font-size: 22px; }
+.settings switch { background: rgba(255,255,255,0.25); border: none; }
+.settings switch:checked { background: #00B1ED; }
+.settings switch slider { background: #fff; border: none; box-shadow: none; }
+.chooser { background: rgba(0,0,0,0.6); }
+.chooser-card { background: #1c1c1c; border-radius: 12px; }
+.chooser-card list { background: none; }
+.chooser-title { color: rgba(255,255,255,0.6); font-size: 15px; padding: 16px 32px 8px 32px; }
+.chooser-check { color: #00B1ED; font-size: 18px; font-weight: 700; }
 ";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -180,50 +191,47 @@ impl State {
     }
 }
 
-// a row of the settings screen: tapping it steps through the options
+// a row of the settings screen: a switch, or a value that opens a list to choose from
+enum SettingKind {
+    Switch(fn(&State) -> bool, fn(&mut State, bool)),
+    Choice(&'static [&'static str], fn(&State) -> usize, fn(&mut State, usize)),
+}
+
 struct SettingRow {
     title: &'static str,
     sub: &'static str,
-    options: &'static [&'static str],
-    get: fn(&State) -> usize,
-    set: fn(&mut State, usize),
+    kind: SettingKind,
 }
 
 const SETTINGS: &[SettingRow] = &[
     SettingRow {
         title: "Metering",
         sub: "Where auto exposure meters: the centre, or the spot you tap",
-        options: &["centre-weighted", "touch"],
-        get: |s| s.touch_meter as usize,
-        set: |s, v| s.touch_meter = v == 1,
+        kind: SettingKind::Choice(
+            &["Centre-weighted", "Touch"],
+            |s| s.touch_meter as usize,
+            |s, v| s.touch_meter = v == 1,
+        ),
     },
     SettingRow {
         title: "Stacked capture",
         sub: "In low light, several exposures per module for less noise",
-        options: &["on", "off"],
-        get: |s| !s.stacked as usize,
-        set: |s, v| s.stacked = v == 0,
+        kind: SettingKind::Switch(|s| s.stacked, |s, v| s.stacked = v),
     },
     SettingRow {
         title: "Exposure info",
         sub: "EV, ISO, shutter and focal length beside the preview",
-        options: &["on", "off"],
-        get: |s| !s.exposure_info as usize,
-        set: |s, v| s.exposure_info = v == 0,
+        kind: SettingKind::Switch(|s| s.exposure_info, |s, v| s.exposure_info = v),
     },
     SettingRow {
         title: "Inverse wheel scroll",
         sub: "Turn the exposure wheels the other way",
-        options: &["off", "on"],
-        get: |s| s.inverse_wheel as usize,
-        set: |s, v| s.inverse_wheel = v == 1,
+        kind: SettingKind::Switch(|s| s.inverse_wheel, |s, v| s.inverse_wheel = v),
     },
     SettingRow {
         title: "Touch strip",
         sub: "Zoom with the touch strip",
-        options: &["on", "off"],
-        get: |s| !s.strip_zoom as usize,
-        set: |s, v| s.strip_zoom = v == 0,
+        kind: SettingKind::Switch(|s| s.strip_zoom, |s, v| s.strip_zoom = v),
     },
 ];
 
@@ -262,7 +270,7 @@ struct App {
     burst_btn: gtk::Button,
     flash_btn: gtk::Button,
     hud_box: gtk::Box,
-    settings_page: gtk::Box,
+    settings_page: gtk::Overlay,
     last_saved: RefCell<String>,
     status: gtk::Label,
     countdown: gtk::Label,
@@ -1278,11 +1286,33 @@ fn build(gapp: &gtk::Application) {
     settings_back.add_css_class("flat-white");
     settings_back.set_halign(gtk::Align::Start);
     settings_back.set_margin_start(16);
-    let settings_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    settings_page.add_css_class("settings");
-    settings_page.append(&settings_back);
-    settings_page.append(&settings_scroll);
+    let settings_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    settings_box.add_css_class("settings");
+    settings_box.append(&settings_back);
+    settings_box.append(&settings_scroll);
+    let settings_page = gtk::Overlay::new();
+    settings_page.set_child(Some(&settings_box));
     settings_page.set_visible(false);
+    // the list a setting's value is chosen from, over the settings screen
+    let chooser_title = gtk::Label::new(None);
+    chooser_title.add_css_class("chooser-title");
+    chooser_title.set_halign(gtk::Align::Start);
+    let chooser_list = gtk::ListBox::new();
+    chooser_list.set_selection_mode(gtk::SelectionMode::None);
+    let chooser_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    chooser_card.add_css_class("chooser-card");
+    chooser_card.set_halign(gtk::Align::Center);
+    chooser_card.set_valign(gtk::Align::Center);
+    chooser_card.set_size_request(420, -1);
+    chooser_card.set_overflow(gtk::Overflow::Hidden);
+    chooser_card.append(&chooser_title);
+    chooser_card.append(&chooser_list);
+    let chooser = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    chooser.add_css_class("chooser");
+    chooser.append(&chooser_card);
+    chooser_card.set_vexpand(true);
+    chooser.set_visible(false);
+    settings_page.add_overlay(&chooser);
     let toolbar = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::SlideUp)
         .child(&bar)
@@ -1592,13 +1622,28 @@ fn build(gapp: &gtk::Application) {
         a.refresh();
     });
     let a = app.clone();
+    let ch = chooser.clone();
     settings_btn.connect_clicked(move |_| {
         a.toolbar.set_reveal_child(false);
+        ch.set_visible(false);
         a.settings_page.set_visible(true);
     });
     let a = app.clone();
     settings_back.connect_clicked(move |_| a.settings_page.set_visible(false));
-    for row in SETTINGS {
+    // after a setting changes: the driver's side of it, the screen, the settings file
+    let changed = {
+        let a = app.clone();
+        move || {
+            let meter = a.st.borrow().touch_meter;
+            let _ = a.ctl_tx.send((ccb::METERING, meter as i32));
+            a.refresh();
+        }
+    };
+    // the chooser: which setting it is choosing for, and that row's value label
+    let choosing: Rc<RefCell<Option<(usize, gtk::Label)>>> = Rc::new(RefCell::new(None));
+    // a row's tap: a switch flips, a choice opens the chooser
+    let mut on_tap: Vec<Box<dyn Fn()>> = Vec::new();
+    for (i, row) in SETTINGS.iter().enumerate() {
         let title = gtk::Label::new(Some(row.title));
         title.add_css_class("set-title");
         title.set_halign(gtk::Align::Start);
@@ -1609,28 +1654,87 @@ fn build(gapp: &gtk::Application) {
         text.append(&title);
         text.append(&sub);
         text.set_hexpand(true);
-        let value = gtk::Label::new(Some(row.options[(row.get)(&app.st.borrow())]));
-        value.add_css_class("set-value");
         let line = gtk::Box::new(gtk::Orientation::Horizontal, 16);
         line.append(&text);
-        line.append(&value);
-        let click = gtk::GestureClick::new();
-        let a = app.clone();
-        click.connect_released(move |_, _, _, _| {
-            let v = {
-                let mut st = a.st.borrow_mut();
-                let v = ((row.get)(&st) + 1) % row.options.len();
-                (row.set)(&mut st, v);
-                v
-            };
-            value.set_text(row.options[v]);
-            let meter = a.st.borrow().touch_meter;
-            let _ = a.ctl_tx.send((ccb::METERING, meter as i32));
-            a.refresh();
-        });
-        line.add_controller(click);
+        match row.kind {
+            SettingKind::Switch(get, set) => {
+                let sw = gtk::Switch::new();
+                sw.set_active(get(&app.st.borrow()));
+                sw.set_valign(gtk::Align::Center);
+                sw.set_can_target(false); // the row's tap flips it
+                let a = app.clone();
+                let changed = changed.clone();
+                sw.connect_active_notify(move |sw| {
+                    set(&mut a.st.borrow_mut(), sw.is_active());
+                    changed();
+                });
+                line.append(&sw);
+                on_tap.push(Box::new(move || sw.set_active(!sw.is_active())));
+            }
+            SettingKind::Choice(options, get, _) => {
+                let value = gtk::Label::new(Some(options[get(&app.st.borrow())]));
+                value.add_css_class("set-value");
+                let chevron = gtk::Label::new(Some("›"));
+                chevron.add_css_class("set-chevron");
+                line.append(&value);
+                line.append(&chevron);
+                let a = app.clone();
+                let choosing = choosing.clone();
+                let (chooser, chooser_title, chooser_list) =
+                    (chooser.clone(), chooser_title.clone(), chooser_list.clone());
+                on_tap.push(Box::new(move || {
+                    let now = get(&a.st.borrow());
+                    chooser_title.set_text(row.title);
+                    while let Some(c) = chooser_list.first_child() {
+                        chooser_list.remove(&c);
+                    }
+                    for (k, o) in options.iter().enumerate() {
+                        let l = gtk::Label::new(Some(o));
+                        l.add_css_class("set-title");
+                        l.set_halign(gtk::Align::Start);
+                        l.set_hexpand(true);
+                        let check = gtk::Label::new(Some(if k == now { "✓" } else { "" }));
+                        check.add_css_class("chooser-check");
+                        let b = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+                        b.append(&l);
+                        b.append(&check);
+                        chooser_list.append(&b);
+                    }
+                    *choosing.borrow_mut() = Some((i, value.clone()));
+                    chooser.set_visible(true);
+                }));
+            }
+        }
         settings_list.append(&line);
     }
+    settings_list.connect_row_activated(move |_, r| on_tap[r.index() as usize]());
+    // a choice made: set it, show it on its row, close the chooser
+    let a = app.clone();
+    let (ch, ch_choosing) = (chooser.clone(), choosing.clone());
+    chooser_list.connect_row_activated(move |_, r| {
+        if let Some((i, value)) = ch_choosing.borrow_mut().take() {
+            if let SettingKind::Choice(options, _, set) = SETTINGS[i].kind {
+                let k = r.index() as usize;
+                set(&mut a.st.borrow_mut(), k);
+                value.set_text(options[k]);
+                changed();
+            }
+        }
+        ch.set_visible(false);
+    });
+    // a tap beside the list: nothing chosen
+    let backdrop = gtk::GestureClick::new();
+    let (ch, card) = (chooser.clone(), chooser_card.clone());
+    backdrop.connect_released(move |_, _, x, y| {
+        let inside = card.compute_bounds(&ch).is_some_and(|b| {
+            b.contains_point(&gtk::graphene::Point::new(x as f32, y as f32))
+        });
+        if !inside {
+            choosing.borrow_mut().take();
+            ch.set_visible(false);
+        }
+    });
+    chooser.add_controller(backdrop);
     let a = app.clone();
     app.burst_btn.connect_clicked(move |_| {
         {
