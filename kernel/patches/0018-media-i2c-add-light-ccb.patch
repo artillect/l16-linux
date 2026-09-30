@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..59b2f1c68
+index 000000000..31e206c01
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1338 @@
+@@ -0,0 +1,1347 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -107,6 +107,7 @@ index 000000000..59b2f1c68
 +
 +/* TID kinds as stock uses them (kind << 13) */
 +#define CCB_KIND_AF	1
++#define CCB_KIND_MIRROR	2
 +#define CCB_KIND_CMD	3
 +#define CCB_KIND_CAPTURE 4
 +#define CCB_KIND_CFG	5
@@ -627,8 +628,13 @@ index 000000000..59b2f1c68
 +	 * change: 1.0 sent to a fresh A1 preview stops its AE (no more type 7 pushes).
 +	 */
 +	if (c->zoom != ccb_module_zoom[mod]) {
++		static const u8 mirrors[] = { 0x00 };
++
 +		put_unaligned_le32(ccb_module_zoom[mod], z);
 +		ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x005c, z, sizeof(z));
++		/* stock's mirror move after a zoom: the factor again, then the mirror update */
++		ccb_send(c, ccb_tid(c, CCB_KIND_MIRROR), 0x005c, z, sizeof(z));
++		ccb_send(c, ccb_tid(c, CCB_KIND_MIRROR), 0x8059, mirrors, sizeof(mirrors));
 +		c->zoom = ccb_module_zoom[mod];
 +	}
 +	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
@@ -680,6 +686,7 @@ index 000000000..59b2f1c68
 +static int ccb_autofocus(struct ccb *c)
 +{
 +	static const u8 lock[] = { 0x01 }, unlock[] = { 0x00 };
++	u8 z[4];
 +	u8 roi[] = { 0x01, 0x01, 0xa6, 0x07, 0xca, 0x05, 0xc8, 0x00, 0xc8, 0x00, 0xe8, 0x03 };
 +	int ret;
 +
@@ -693,6 +700,8 @@ index 000000000..59b2f1c68
 +	if (!c->previewing)
 +		return -EBUSY;
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, lock, sizeof(lock));
++	put_unaligned_le32(c->zoom, z);
++	ccb_send(c, ccb_tid(c, CCB_KIND_AF), 0x005c, z, sizeof(z));
 +	/* on the B and C modules focus runs across the ASICs and takes a few seconds */
 +	ret = ccb_command_wait(c, CCB_KIND_AF, 0x8058, roi, sizeof(roi), 6000);
 +	if (ret == -EIO || ret == -ENXIO || ret == -EREMOTEIO) {
