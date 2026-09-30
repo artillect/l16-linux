@@ -17,6 +17,8 @@ pub const FLASH: u32 = 0x0098_1d08; // 0 off, 1 auto, 2 on
 pub const ZOOM: u32 = 0x0098_1d09; // the zoom factor x 1000 (1000: 28 mm)
 pub const MIRRORS: u32 = 0x0098_1d0a; // button: the mirrors for the zoom (once it settles)
 pub const METERING: u32 = 0x0098_1d0b; // 0 centre-weighted, 1 touch
+pub const PRIORITY: u32 = 0x0098_1d0c; // in auto: 0 none, 1 ISO, 2 shutter
+pub const EV: u32 = 0x0098_1d0d; // EV compensation in thirds, -9 .. 9
 
 #[repr(C)]
 struct Control {

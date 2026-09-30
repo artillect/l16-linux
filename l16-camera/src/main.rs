@@ -91,7 +91,46 @@ window.camera { background: #000; }
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Auto,
+    Iso,     // ISO priority: the ASICs choose the shutter
+    Shutter, // shutter priority: they choose the ISO
     Manual,
+}
+
+// stock's modes in its mode wheel's order (CameraMode; its video mode aside)
+const MODES: [Mode; 4] = [Mode::Auto, Mode::Iso, Mode::Shutter, Mode::Manual];
+
+impl Mode {
+    fn index(self) -> usize {
+        MODES.iter().position(|&m| m == self).unwrap_or(0)
+    }
+
+    // the mode wheel's label
+    fn label(self) -> &'static str {
+        ["auto", "iso priority", "shutter priority", "manual"][self.index()]
+    }
+
+    // the toolbar opener's (and the settings file's)
+    fn short(self) -> &'static str {
+        ["auto", "iso", "shutter", "manual"][self.index()]
+    }
+
+    // the dials above and below the shutter (stock's getTopControlWheel / getBottomControlWheel)
+    fn dials(self) -> (Option<Dial>, Dial) {
+        match self {
+            Mode::Auto => (None, Dial::Ev),
+            Mode::Iso => (Some(Dial::Iso), Dial::Ev),
+            Mode::Shutter => (Some(Dial::Ev), Dial::Shutter),
+            Mode::Manual => (Some(Dial::Iso), Dial::Shutter),
+        }
+    }
+
+    fn fixes_iso(self) -> bool {
+        matches!(self, Mode::Iso | Mode::Manual)
+    }
+
+    fn fixes_shutter(self) -> bool {
+        matches!(self, Mode::Shutter | Mode::Manual)
+    }
 }
 
 // a photo's way from the shutter to the LRI (threads report on App::stage_tx)
@@ -105,12 +144,16 @@ enum Stage {
 enum Dial {
     Iso,
     Shutter,
+    Ev,
 }
 
 struct State {
     mode: Mode,
+    mode_pos: f64, // the mode wheel's position, 0 (auto) to 1 (manual)
+    mode_start: f64,
     iso: f64,     // position, see iso_at
     shutter: f64, // position, see secs_at
+    ev: f64,      // position, see ev_at
     zoom: f64,
     module: usize,
     timer: usize,
@@ -131,8 +174,11 @@ struct State {
     focus_until: Option<Instant>,
     focus_at: Option<(f64, f64)>,
     zoom_sent: Instant,
+    // continuous focus: the metered exposure (log) and zoom at the last focus
+    caf_ref: Option<(f64, f64)>,
     // the settings screen's
-    touch_meter: bool,
+    metering: u8, // 0 centre-weighted, 1 touch
+    caf: bool,
     stacked: bool,
     exposure_info: bool,
     inverse_wheel: bool,
@@ -150,20 +196,19 @@ struct State {
 impl State {
     // what's kept between runs, as the settings file's lines
     fn saved(&self) -> String {
-        let mode = match self.mode {
-            Mode::Auto => "auto",
-            Mode::Manual => "manual",
-        };
+        let mode = self.mode.short();
         format!(
-            "mode={mode}\niso={}\nshutter={}\nflash={}\ntimer={}\ngrid={}\nburst={}\n\
-             metering={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nstrip_zoom={}\n",
+            "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nburst={}\n\
+             metering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nstrip_zoom={}\n",
             self.iso,
             self.shutter,
+            self.ev,
             self.flash,
             self.timer,
             self.grid as u8,
             self.burst,
-            self.touch_meter as u8,
+            self.metering,
+            self.caf as u8,
             self.stacked as u8,
             self.exposure_info as u8,
             self.inverse_wheel as u8,
@@ -174,16 +219,18 @@ impl State {
     fn load(&mut self, m: &std::collections::HashMap<String, String>) {
         let num = |k: &str| m.get(k).and_then(|v| v.parse::<f64>().ok());
         let flag = |k: &str, d: bool| num(k).map_or(d, |v| v != 0.0);
-        if m.get("mode").map(String::as_str) == Some("manual") {
-            self.mode = Mode::Manual;
+        if let Some(&mode) = MODES.iter().find(|md| m.get("mode").map(String::as_str) == Some(md.short())) {
+            self.mode = mode;
         }
+        self.ev = num("ev").unwrap_or(self.ev).clamp(0.0, 1.0);
         self.iso = num("iso").unwrap_or(self.iso).clamp(0.0, 1.0);
         self.shutter = num("shutter").unwrap_or(self.shutter).clamp(0.0, 1.0);
         self.flash = num("flash").map_or(self.flash, |v| (v as u8).min(2));
         self.timer = num("timer").map_or(self.timer, |v| (v as usize).min(TIMERS.len() - 1));
         self.grid = flag("grid", self.grid);
         self.burst = num("burst").map_or(self.burst, |v| (v as usize).min(BURSTS.len() - 1));
-        self.touch_meter = flag("metering", self.touch_meter);
+        self.metering = num("metering").map_or(self.metering, |v| (v as u8).min(1));
+        self.caf = flag("caf", self.caf);
         self.stacked = flag("stacked", self.stacked);
         self.exposure_info = flag("exposure_info", self.exposure_info);
         self.inverse_wheel = flag("inverse_wheel", self.inverse_wheel);
@@ -209,9 +256,14 @@ const SETTINGS: &[SettingRow] = &[
         sub: "Where auto exposure meters: the centre, or the spot you tap",
         kind: SettingKind::Choice(
             &["Centre-weighted", "Touch"],
-            |s| s.touch_meter as usize,
-            |s, v| s.touch_meter = v == 1,
+            |s| s.metering as usize,
+            |s, v| s.metering = v as u8,
         ),
+    },
+    SettingRow {
+        title: "Continuous focus",
+        sub: "Refocus when the scene changes (AF-D), outside manual mode",
+        kind: SettingKind::Switch(|s| s.caf, |s, v| s.caf = v),
     },
     SettingRow {
         title: "Stacked capture",
@@ -264,7 +316,8 @@ struct App {
     burst_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
-    mode_btn: gtk::Button,
+    right: gtk::Box,
+    mode_wheel: gtk::DrawingArea,
     timer_btn: gtk::Button,
     grid_btn: gtk::Button,
     burst_btn: gtk::Button,
@@ -295,6 +348,28 @@ fn iso_pos(iso: f64) -> f64 {
 
 fn secs_pos(t: f64) -> f64 {
     (t / SECS_MAX).ln() / (SECS_MIN / SECS_MAX).ln()
+}
+
+// EV compensation in thirds: +3 EV at the top of the wheel (position 0), -3 at the bottom
+fn ev_at(pos: f64) -> i32 {
+    (9.0 - 18.0 * pos.clamp(0.0, 1.0)).round() as i32
+}
+
+fn ev_pos(ev: i32) -> f64 {
+    (9 - ev) as f64 / 18.0
+}
+
+fn fmt_ev(ev: i32) -> String {
+    if ev == 0 {
+        return "0".into();
+    }
+    let sign = if ev > 0 { "+" } else { "-" };
+    let (whole, third) = (ev.abs() / 3, ["", "⅓", "⅔"][(ev.abs() % 3) as usize]);
+    if whole == 0 {
+        format!("{sign}{third}")
+    } else {
+        format!("{sign}{whole}{third}")
+    }
 }
 
 fn shutter_secs(s: &str) -> f64 {
@@ -366,44 +441,40 @@ impl App {
         ((secs_at(st.shutter) * 1e6).round() as i32).clamp(1, 15_000_000)
     }
 
-    // auto: the ASICs meter; manual: the chosen ISO and shutter (the preview slows down for
-    // long shutters, as stock's)
+    // auto: the ASICs meter; the priority modes: they meter the other half; manual: the chosen
+    // ISO and shutter (the preview slows down for long shutters, as stock's)
     fn apply_exposure(&self) {
         let Some(c) = &self.ccb else { return };
-        let (mode, iso) = {
+        let (mode, iso, ev) = {
             let st = self.st.borrow();
-            (st.mode, iso_at(st.iso))
+            (st.mode, iso_at(st.iso), ev_at(st.ev))
         };
-        match mode {
-            Mode::Auto => {
-                c.set(ccb::EXPOSURE_AUTO, 0);
-            }
-            Mode::Manual => {
-                c.set(ccb::ISO, iso);
-                c.set(ccb::EXPOSURE_US, self.exposure_us());
-                c.set(ccb::EXPOSURE_AUTO, 1);
-            }
+        c.set(ccb::EV, ev);
+        if mode.fixes_iso() {
+            c.set(ccb::ISO, iso);
         }
+        if mode.fixes_shutter() {
+            c.set(ccb::EXPOSURE_US, self.exposure_us());
+        }
+        let priority = match mode {
+            Mode::Iso => 1,
+            Mode::Shutter => 2,
+            _ => 0,
+        };
+        c.set(ccb::PRIORITY, priority);
+        c.set(ccb::EXPOSURE_AUTO, (mode == Mode::Manual) as i32);
     }
 
     fn refresh(&self) {
         let st = self.st.borrow();
-        let (ev, iso, secs) = match st.mode {
-            Mode::Auto => ("0".to_string(), st.live_iso, st.live_secs),
-            Mode::Manual => ("–".to_string(), iso_at(st.iso), secs_at(st.shutter)),
-        };
+        let ev = if st.mode == Mode::Manual { "–".to_string() } else { fmt_ev(ev_at(st.ev)) };
+        let iso = if st.mode.fixes_iso() { iso_at(st.iso) } else { st.live_iso };
+        let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
         self.hud[0].set_text(&ev);
         self.hud[1].set_text(&if iso > 0 { iso.to_string() } else { "–".into() });
         self.hud[2].set_text(&if secs > 0.0 { fmt_secs(secs) } else { "–".into() });
         self.hud[3].set_text(&format!("{:.0}", st.zoom));
-        self.mode_label.set_text(match st.mode {
-            Mode::Auto => "auto",
-            Mode::Manual => "manual",
-        });
-        self.mode_btn.set_label(match st.mode {
-            Mode::Auto => "auto",
-            Mode::Manual => "manual",
-        });
+        self.mode_label.set_text(st.mode.short());
         let t = TIMERS[st.timer];
         self.timer_btn.set_label(&if t == 0 { "timer off".into() } else { format!("timer {t}s") });
         if t == 0 {
@@ -465,6 +536,7 @@ impl App {
             match dial {
                 Dial::Iso => st.iso = pos.clamp(0.0, 1.0),
                 Dial::Shutter => st.shutter = pos.clamp(0.0, 1.0),
+                Dial::Ev => st.ev = pos.clamp(0.0, 1.0),
             }
         }
         if let Some(c) = &self.ccb {
@@ -474,6 +546,9 @@ impl App {
                 }
                 Dial::Shutter => {
                     c.set(ccb::EXPOSURE_US, self.exposure_us());
+                }
+                Dial::Ev => {
+                    c.set(ccb::EV, ev_at(self.st.borrow().ev));
                 }
             }
         }
@@ -485,6 +560,80 @@ impl App {
         self.st.borrow_mut().mode = mode;
         self.apply_exposure();
         self.refresh();
+    }
+
+    // stock's toolbar: opening it swaps the right-hand column (last photo, dials, shutter)
+    // for the mode wheel (only while no photo is being taken)
+    fn show_toolbar(&self, open: bool) {
+        if open && self.st.borrow().busy {
+            return;
+        }
+        self.toolbar.set_reveal_child(open);
+        self.right.set_opacity(if open { 0.0 } else { 1.0 });
+        self.right.set_can_target(!open);
+        self.mode_wheel.set_visible(open);
+        let pos = self.st.borrow().mode.index() as f64 / (MODES.len() - 1) as f64;
+        self.st.borrow_mut().mode_pos = pos;
+        self.mode_wheel.queue_draw();
+    }
+
+    // the mode wheel's positions: 0 for auto to 1 for manual, a mode per 1/3
+    fn set_mode_pos(&self, pos: f64) {
+        let pos = pos.clamp(0.0, 1.0);
+        let max = (MODES.len() - 1) as f64;
+        let mode = MODES[(pos * max).round() as usize];
+        self.st.borrow_mut().mode_pos = pos;
+        // the mode changes as the wheel passes half way to it, as stock's
+        if mode != self.st.borrow().mode {
+            self.set_mode(mode);
+        }
+        self.mode_wheel.queue_draw();
+    }
+
+    // stock's ModeWheel (landscape) in this screen's units (its pixels / 1.75): the modes as
+    // text on a drum down the right edge, the chosen one level with a white bar at the edge
+    fn mode_item_y(pos: f64, idx: usize, h: f64) -> f64 {
+        let max = (MODES.len() - 1) as f64;
+        let th = 6f64.to_radians() * (idx as f64 - max * pos);
+        h / 2.0 - th.sin() * h * th.cos().powi(5)
+    }
+
+    fn draw_mode_wheel(&self, cr: &cairo::Context, w: f64, h: f64) {
+        let pos = self.st.borrow().mode_pos;
+        // the strip's shade: clear at its left, a quarter black at the edge
+        let g = cairo::LinearGradient::new(0.0, 0.0, w, 0.0);
+        g.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, 0.0);
+        g.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.25);
+        let _ = cr.set_source(&g);
+        cr.rectangle(0.0, 0.0, w, h);
+        let _ = cr.fill();
+        cr.set_source_rgb(1.0, 1.0, 1.0);
+        cr.rectangle(w - 10.0, h / 2.0 - 21.0, 10.0, 42.0);
+        let _ = cr.fill();
+        let max = (MODES.len() - 1) as f64;
+        let base = (max * pos).floor() as i64;
+        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
+        for i in -2i64..=2 {
+            let idx = base + i;
+            if idx < 0 || idx > max as i64 {
+                continue;
+            }
+            let th = 6f64.to_radians() * (idx as f64 - max * pos);
+            let y = Self::mode_item_y(pos, idx as usize, h);
+            // stock's perspective: the slot's exponent, and neighbours at 3/4 alpha
+            let k = if i == 0 { 26 } else { 52 / i.abs() as i32 };
+            let alpha = th.cos() * if i == 0 { 1.0 } else { 0.75 };
+            let label = MODES[idx as usize].label();
+            cr.set_font_size(55.0 * th.cos().powi(k));
+            let Ok(e) = cr.text_extents(label) else { continue };
+            cr.move_to(w - e.width() - 48.0 - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
+            cr.text_path(label);
+            cr.set_source_rgba(0.0, 0.0, 0.0, alpha);
+            cr.set_line_width(2.0);
+            let _ = cr.stroke_preserve();
+            cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
+            let _ = cr.fill();
+        }
     }
 
     // the driver restarts the ASICs' preview on the new module; the stream carries on
@@ -573,9 +722,16 @@ impl App {
     // focus on @at (preview coordinates), or the centre: a 200x200 window in the module's
     // 4160x3120 pixels, through the zoom's crop (the driver runs AF in the background)
     fn focus(self: &Rc<Self>, at: Option<(f64, f64)>) {
+        self.focus_run(at, true);
+    }
+
+    // @marks: show the focus marks (not for continuous focus's runs)
+    fn focus_run(self: &Rc<Self>, at: Option<(f64, f64)>, marks: bool) {
         if self.st.borrow().busy || self.focusing.swap(true, Ordering::SeqCst) {
             return;
         }
+        // continuous focus waits for the scene to change from here
+        self.st.borrow_mut().caf_ref = None;
         let (w, h) = (self.view.width() as f64, self.view.height() as f64);
         let z = self.view.zoom();
         let (px, py) = at.unwrap_or((w / 2.0, h / 2.0));
@@ -583,7 +739,7 @@ impl App {
         let sy = 1560.0 + (py - h / 2.0) / h * 3120.0 / z;
         let fx = ((sx - 100.0).round() as i32).clamp(0, 4160 - 200);
         let fy = ((sy - 100.0).round() as i32).clamp(0, 3120 - 200);
-        {
+        if marks {
             let mut st = self.st.borrow_mut();
             st.focus_until = Some(Instant::now() + Duration::from_millis(1500));
             st.focus_at = at;
@@ -604,6 +760,7 @@ impl App {
 
     fn shutter_pressed(self: &Rc<Self>) {
         self.settings_page.set_visible(false);
+        self.show_toolbar(false);
         let (busy, counting, t) = {
             let st = self.st.borrow();
             (st.busy, st.counting, TIMERS[st.timer])
@@ -785,10 +942,7 @@ impl App {
             let mut st = self.st.borrow_mut();
             st.burst_count = 1;
             st.burst_captured = false;
-            let secs = match st.mode {
-                Mode::Auto => st.live_secs,
-                Mode::Manual => secs_at(st.shutter),
-            };
+            let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
             Duration::from_secs_f64(secs.max(0.1))
         };
         self.burst_label.set_text("1");
@@ -940,7 +1094,7 @@ impl App {
     fn poll(self: &Rc<Self>) {
         // the metered exposure, which the driver mirrors into its controls
         if let Some(c) = &self.ccb {
-            if self.st.borrow().mode == Mode::Auto && !self.st.borrow().busy {
+            if self.st.borrow().mode != Mode::Manual && !self.st.borrow().busy {
                 let iso = c.get(ccb::AE_ISO).unwrap_or(0);
                 let us = c.get(ccb::AE_EXPOSURE_US).unwrap_or(0);
                 let mut st = self.st.borrow_mut();
@@ -948,7 +1102,31 @@ impl App {
                 st.live_secs = us as f64 / 1e6;
             }
         }
+        self.continuous_focus();
         self.refresh();
+    }
+
+    // AF-D as stock's app runs it (there is no ASIC mode): the centre is focused again once the
+    // scene has changed, judged by the metered exposure (2/3 EV) or the zoom
+    fn continuous_focus(self: &Rc<Self>) {
+        let (want, scene) = {
+            let st = self.st.borrow();
+            let settled = st.settle.is_none() && st.switching.is_none();
+            let want = st.caf && st.mode != Mode::Manual && !st.busy && settled && st.live_iso > 0;
+            (want, ((st.live_iso as f64 * st.live_secs).max(1e-9).ln(), st.zoom))
+        };
+        if !want || self.focusing.load(Ordering::SeqCst) {
+            return;
+        }
+        let r = self.st.borrow().caf_ref;
+        match r {
+            None => self.st.borrow_mut().caf_ref = Some(scene),
+            Some((ev, zoom)) => {
+                if (scene.0 - ev).abs() > 0.46 || (scene.1 - zoom).abs() > 1.0 {
+                    self.focus_run(None, false);
+                }
+            }
+        }
     }
 
     fn on_input(self: &Rc<Self>, ev: input::Ev) {
@@ -1041,6 +1219,7 @@ impl App {
                     fmt_secs(secs_at(st.shutter)),
                     SHUTTER.iter().map(|s| (secs_pos(shutter_secs(s)), s.to_string())).collect(),
                 ),
+                Dial::Ev => (st.ev, fmt_ev(ev_at(st.ev)), (-9..=9).map(|e| (ev_pos(e), fmt_ev(e))).collect()),
             };
             let r = 400.0;
             let (cx, cy) = (w - 340.0 + r, h / 2.0);
@@ -1104,13 +1283,15 @@ impl App {
 
     fn draw_dial(&self, cr: &cairo::Context, w: f64, h: f64, top: bool) {
         let st = self.st.borrow();
-        let manual = st.mode == Mode::Manual;
-        let (label, enabled, dial) = match (top, manual) {
-            (true, true) => ("ISO", true, Some(Dial::Iso)),
-            (false, true) => ("S", true, Some(Dial::Shutter)),
-            (true, false) => ("EV", false, None),
-            (false, false) => ("S", false, None),
+        // auto has no top dial
+        let (top_dial, bottom_dial) = st.mode.dials();
+        let Some(d) = (if top { top_dial } else { Some(bottom_dial) }) else { return };
+        let label = match d {
+            Dial::Iso => "ISO",
+            Dial::Shutter => "S",
+            Dial::Ev => "EV",
         };
+        let (enabled, dial) = (true, Some(d));
         let (cx, cy, r) = (w / 2.0, h / 2.0, w.min(h) / 2.0 - 2.0);
         if st.wheel.is_some() && st.wheel != dial {
             return;
@@ -1254,8 +1435,7 @@ fn build(gapp: &gtk::Application) {
     row.append(&frame);
     row.append(&right);
 
-    // the toolbar: mode, flash, timer, grid, burst, and the settings screen
-    let mode_btn = gtk::Button::with_label("auto");
+    // the toolbar: flash, timer, grid, burst, and the settings screen (the mode wheel beside it)
     let timer_btn = gtk::Button::with_label("timer off");
     let grid_btn = gtk::Button::with_label("grid off");
     let burst_btn = gtk::Button::with_label("burst off");
@@ -1264,7 +1444,6 @@ fn build(gapp: &gtk::Application) {
     let close_btn = gtk::Button::with_label("✕");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
-    bar.append(&mode_btn);
     bar.append(&flash_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
@@ -1318,6 +1497,11 @@ fn build(gapp: &gtk::Application) {
         .child(&bar)
         .valign(gtk::Align::End)
         .build();
+    let mode_wheel = gtk::DrawingArea::new();
+    mode_wheel.set_halign(gtk::Align::End);
+    mode_wheel.set_size_request(386, -1); // stock's 225 dp
+    mode_wheel.set_visible(false);
+    toolbar.set_margin_end(386);
 
     let wheels = gtk::DrawingArea::new();
     wheels.set_can_target(false);
@@ -1371,6 +1555,7 @@ fn build(gapp: &gtk::Application) {
     root.add_overlay(&status);
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
+    root.add_overlay(&mode_wheel);
     root.add_overlay(&burst_screen);
     root.add_overlay(&settings_page);
     window.set_child(Some(&root));
@@ -1389,7 +1574,10 @@ fn build(gapp: &gtk::Application) {
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
+            mode_pos: 0.0,
+            mode_start: 0.0,
             iso: 1.0,
+            ev: 0.5,
             shutter: secs_pos(1.0 / 60.0),
             zoom: ZOOM_MIN,
             module: 0,
@@ -1411,7 +1599,9 @@ fn build(gapp: &gtk::Application) {
             focus_until: None,
             focus_at: None,
             zoom_sent: Instant::now(),
-            touch_meter: false,
+            metering: 0,
+            caf: true,
+            caf_ref: None,
             stacked: true,
             exposure_info: true,
             inverse_wheel: false,
@@ -1452,7 +1642,8 @@ fn build(gapp: &gtk::Application) {
         burst_badge,
         mode_label,
         toolbar,
-        mode_btn,
+        right,
+        mode_wheel,
         timer_btn,
         grid_btn,
         burst_btn,
@@ -1506,7 +1697,7 @@ fn build(gapp: &gtk::Application) {
             return;
         }
         if a.toolbar.reveals_child() {
-            a.toolbar.set_reveal_child(false);
+            a.show_toolbar(false);
         } else {
             a.focus(Some((x, y)));
         }
@@ -1542,19 +1733,19 @@ fn build(gapp: &gtk::Application) {
     });
     app.view.add_controller(pinch);
 
-    // the dials: tag and drag (manual mode)
-    for (widget, dial) in [(app.top.clone(), Dial::Iso), (app.bottom.clone(), Dial::Shutter)] {
+    // the dials: tap and drag (which dial is which depends on the mode)
+    for (widget, top) in [(app.top.clone(), true), (app.bottom.clone(), false)] {
         let drag = gtk::GestureDrag::new();
         let a = app.clone();
         drag.connect_drag_begin(move |_, _, _| {
             let mut st = a.st.borrow_mut();
-            if st.mode != Mode::Manual {
-                return;
-            }
+            let (top_dial, bottom_dial) = st.mode.dials();
+            let Some(dial) = (if top { top_dial } else { Some(bottom_dial) }) else { return };
             st.wheel = Some(dial);
             st.wheel_start = match dial {
                 Dial::Iso => st.iso,
                 Dial::Shutter => st.shutter,
+                Dial::Ev => st.ev,
             };
             drop(st);
             a.refresh();
@@ -1562,11 +1753,11 @@ fn build(gapp: &gtk::Application) {
         });
         let a = app.clone();
         drag.connect_drag_update(move |_, _, dy| {
-            let (active, start, dir) = {
+            let (dial, start, dir) = {
                 let st = a.st.borrow();
-                (st.wheel == Some(dial), st.wheel_start, if st.inverse_wheel { -1.0 } else { 1.0 })
+                (st.wheel, st.wheel_start, if st.inverse_wheel { -1.0 } else { 1.0 })
             };
-            if active {
+            if let Some(dial) = dial {
                 a.set_dial(dial, start + dir * dy * 0.001);
             }
         });
@@ -1591,18 +1782,45 @@ fn build(gapp: &gtk::Application) {
     let a = app.clone();
     opener.connect_clicked(move |_| {
         let open = a.toolbar.reveals_child();
-        a.toolbar.set_reveal_child(!open);
+        a.show_toolbar(!open);
     });
     let a = app.clone();
-    close_btn.connect_clicked(move |_| a.toolbar.set_reveal_child(false));
+    close_btn.connect_clicked(move |_| a.show_toolbar(false));
+    // the mode wheel: drag it up and down (a mode per ~70 px, as stock's 0.002 of its pixels), or
+    // tap a mode; it settles on the mode when let go
     let a = app.clone();
-    app.mode_btn.connect_clicked(move |_| {
-        let mode = match a.st.borrow().mode {
-            Mode::Auto => Mode::Manual,
-            Mode::Manual => Mode::Auto,
-        };
-        a.set_mode(mode);
+    app.mode_wheel.set_draw_func(move |_, cr, w, h| a.draw_mode_wheel(cr, w as f64, h as f64));
+    let drag = gtk::GestureDrag::new();
+    let a = app.clone();
+    drag.connect_drag_begin(move |_, _, _| {
+        let mut st = a.st.borrow_mut();
+        st.mode_start = st.mode.index() as f64 / (MODES.len() - 1) as f64;
     });
+    let a = app.clone();
+    drag.connect_drag_update(move |_, _, dy| {
+        let start = a.st.borrow().mode_start;
+        a.set_mode_pos(start + dy * 0.0035);
+    });
+    let a = app.clone();
+    drag.connect_drag_end(move |_, _, _| {
+        let pos = a.st.borrow().mode.index() as f64 / (MODES.len() - 1) as f64;
+        a.set_mode_pos(pos);
+    });
+    app.mode_wheel.add_controller(drag);
+    let click = gtk::GestureClick::new();
+    let a = app.clone();
+    click.connect_released(move |_, _, _, y| {
+        let (pos, h) = (a.st.borrow().mode_pos, a.mode_wheel.height() as f64);
+        let near = (0..MODES.len())
+            .map(|i| (i, (App::mode_item_y(pos, i, h) - y).abs()))
+            .min_by(|p, q| p.1.total_cmp(&q.1));
+        if let Some((i, d)) = near {
+            if d < 30.0 {
+                a.set_mode_pos(i as f64 / (MODES.len() - 1) as f64);
+            }
+        }
+    });
+    app.mode_wheel.add_controller(click);
     let a = app.clone();
     app.timer_btn.connect_clicked(move |_| {
         {
@@ -1624,7 +1842,7 @@ fn build(gapp: &gtk::Application) {
     let a = app.clone();
     let ch = chooser.clone();
     settings_btn.connect_clicked(move |_| {
-        a.toolbar.set_reveal_child(false);
+        a.show_toolbar(false);
         ch.set_visible(false);
         a.settings_page.set_visible(true);
     });
@@ -1634,7 +1852,7 @@ fn build(gapp: &gtk::Application) {
     let changed = {
         let a = app.clone();
         move || {
-            let meter = a.st.borrow().touch_meter;
+            let meter = a.st.borrow().metering;
             let _ = a.ctl_tx.send((ccb::METERING, meter as i32));
             a.refresh();
         }
@@ -1785,7 +2003,7 @@ fn build(gapp: &gtk::Application) {
         let st = app.st.borrow();
         c.set(ccb::MODULE, 0);
         c.set(ccb::FLASH, st.flash as i32);
-        c.set(ccb::METERING, st.touch_meter as i32);
+        c.set(ccb::METERING, st.metering as i32);
         c.set(ccb::ZOOM, 1000);
     }
     app.start_preview();

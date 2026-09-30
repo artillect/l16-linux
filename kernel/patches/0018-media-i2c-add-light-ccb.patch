@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..c2792690c
+index 000000000..8b95b3595
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1446 @@
+@@ -0,0 +1,1509 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -165,12 +165,21 @@ index 000000000..c2792690c
 +#define V4L2_CID_LIGHT_ZOOM		(V4L2_CID_LIGHT_BASE + 9)
 +#define V4L2_CID_LIGHT_MIRRORS		(V4L2_CID_LIGHT_BASE + 10)
 +#define V4L2_CID_LIGHT_METERING		(V4L2_CID_LIGHT_BASE + 11)
++#define V4L2_CID_LIGHT_PRIORITY		(V4L2_CID_LIGHT_BASE + 12)
++#define V4L2_CID_LIGHT_EV		(V4L2_CID_LIGHT_BASE + 13)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
 +/* preview modules: stock previews on A1 (28 mm), B4 (70 mm) or C5 (150 mm) */
 +static const char * const ccb_flash_names[] = { "Off", "Auto", "On", NULL };
-+static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", NULL };
++static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", "Spot", NULL };
++static const char * const ccb_priority_names[] = { "Off", "ISO", "Shutter", NULL };
++
++/* EV compensation, -3 to +3 in thirds: 2^(ev/3) in 8.8 fixed point, rounded down (stock's) */
++static const u16 ccb_ev_mult[] = {
++	32, 40, 50, 64, 80, 101, 128, 161, 203,
++	256, 322, 406, 512, 645, 812, 1024, 1290, 1625, 2048,
++};
 +
 +static const char * const ccb_module_names[] = { "A1", "B4", "C5" };
 +static const u8 ccb_module_masks[][3] = {
@@ -219,7 +228,9 @@ index 000000000..c2792690c
 +	struct v4l2_ctrl *focus_y;
 +	struct v4l2_ctrl *flash;	/* 0 off, 1 auto, 2 on */
 +	struct v4l2_ctrl *zoom_ctrl;	/* the zoom factor x 1000 (1000: 28 mm) */
-+	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch (the focus window) */
++	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch, 2 spot (the focus window) */
++	struct v4l2_ctrl *priority;	/* in auto: 0 none, 1 ISO (exposure metered), 2 shutter */
++	struct v4l2_ctrl *ev;		/* EV compensation in thirds (auto and priority) */
 +};
 +
 +static inline struct ccb *to_ccb(struct v4l2_subdev *sd)
@@ -492,8 +503,9 @@ index 000000000..c2792690c
 +		put_unaligned_le16(200, b + 10);
 +		put_unaligned_le16(200, b + 12);
 +		put_unaligned_le16(1000, b + 14);
-+		b[16] = 0x40;
-+		b[17] = 0xcd;
++		/* the region's last bytes: touch 40 cd, spot 00 7f (as stock sends them) */
++		b[16] = c->metering->cur.val == 2 ? 0x00 : 0x40;
++		b[17] = c->metering->cur.val == 2 ? 0x7f : 0xcd;
 +		n = 18;
 +	}
 +	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, n);
@@ -516,14 +528,42 @@ index 000000000..c2792690c
 +		ccb_send(c, ccb_tid(c, kind), 0x0066, currents, sizeof(currents));
 +}
 +
++static void ccb_send_ev(struct ccb *c)
++{
++	u8 b[2];
++
++	put_unaligned_le16(ccb_ev_mult[c->ev->cur.val + 9], b);
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0062, b, sizeof(b));
++}
++
++/*
++ * Auto, and stock's priority modes: 0x0067 with the fixed half set and the other zero (the
++ * ASIC's choice). ISO priority: {gain, gain, 0, max exposure 15 s}; shutter priority:
++ * {0, 0, ns, ns}. Both without stacked capture (0x006a 00 01), as stock.
++ */
 +static int ccb_ae_auto(struct ccb *c)
 +{
-+	static const u8 stack[] = { 0x01, 0x01 };
-+	static const u8 zero[24] = { 0 };
++	static const u8 stack_on[] = { 0x01, 0x01 }, stack_off[] = { 0x00, 0x01 };
++	u64 ns = (u64)c->exp_us->cur.val * 1000;
++	u32 gain = ccb_f32(c->iso->cur.val, 100);
++	u8 b[24] = { 0 };
 +
++	switch (c->priority->cur.val) {
++	case 1:
++		put_unaligned_le32(gain, b);
++		put_unaligned_le32(gain, b + 4);
++		put_unaligned_le64(15000000000ULL, b + 16);
++		break;
++	case 2:
++		put_unaligned_le64(ns, b + 8);
++		put_unaligned_le64(ns, b + 16);
++		break;
++	}
 +	ccb_ae_mode(c);
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, zero, sizeof(zero));
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
++	ccb_send_ev(c);
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, b, sizeof(b));
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a,
++			c->priority->cur.val ? stack_off : stack_on, 2);
 +}
 +
 +static int ccb_apply_ae(struct ccb *c)
@@ -792,8 +832,8 @@ index 000000000..c2792690c
 +	switch (ctrl->id) {
 +	case V4L2_CID_LIGHT_EXPOSURE_US:
 +	case V4L2_CID_LIGHT_ISO:
-+		/* in auto mode the ASICs meter themselves; the value is kept for manual mode */
-+		if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
++		/* in auto the ASICs meter themselves; the value is kept for manual and priority */
++		if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL && !c->priority->cur.val)
 +			break;
 +		fallthrough;
 +	case V4L2_CID_EXPOSURE_AUTO:
@@ -805,6 +845,8 @@ index 000000000..c2792690c
 +		break;
 +	case V4L2_CID_LIGHT_FLASH:
 +	case V4L2_CID_LIGHT_METERING:
++	case V4L2_CID_LIGHT_PRIORITY:
++	case V4L2_CID_LIGHT_EV:
 +		/* the AE mode byte and region (sent once the change is in) */
 +		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
 +		break;
@@ -978,8 +1020,27 @@ index 000000000..c2792690c
 +	.id = V4L2_CID_LIGHT_METERING,
 +	.name = "Metering",
 +	.type = V4L2_CTRL_TYPE_MENU,
-+	.max = 1,
++	.max = 2,
 +	.qmenu = ccb_metering_names,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_priority = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_PRIORITY,
++	.name = "Exposure Priority",
++	.type = V4L2_CTRL_TYPE_MENU,
++	.max = 2,
++	.qmenu = ccb_priority_names,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_ev = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_EV,
++	.name = "EV Compensation (1/3 EV)",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.min = -9,
++	.max = 9,
++	.step = 1,
 +};
 +
 +static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
@@ -1373,6 +1434,8 @@ index 000000000..c2792690c
 +	c->zoom_ctrl = v4l2_ctrl_new_custom(h, &ccb_ctrl_zoom, NULL);
 +	v4l2_ctrl_new_custom(h, &ccb_ctrl_mirrors, NULL);
 +	c->metering = v4l2_ctrl_new_custom(h, &ccb_ctrl_metering, NULL);
++	c->priority = v4l2_ctrl_new_custom(h, &ccb_ctrl_priority, NULL);
++	c->ev = v4l2_ctrl_new_custom(h, &ccb_ctrl_ev, NULL);
 +	if (h->error)
 +		return h->error;
 +
