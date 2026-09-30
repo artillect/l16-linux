@@ -118,6 +118,33 @@ def length_field(num, data):
 	return varint(num << 3 | 2) + varint(len(data)) + data
 
 
+def taken(header):
+	"""What the modules took, from an ASIC's LightHeader (camera modules, field 12: analog gain
+	7, exposure ns 8, digital gain 14): the highest gain (the reference module runs a stop
+	under the others) and the median exposure (the modules differ by microseconds)."""
+	gains, times = [], []
+	for n, f in fields(header):
+		if n != 12:
+			continue
+		_, i = read_varint(f, 0)
+		_, i = read_varint(f, i)
+		ag = dg = 1.0
+		ns = None
+		for m, g in fields(f[i:]):
+			if m == 7:
+				ag = struct.unpack("<f", g[-4:])[0]
+			elif m == 14:
+				dg = struct.unpack("<f", g[-4:])[0]
+			elif m == 8:
+				ns, _ = read_varint(g, 1)
+		if ns:
+			gains.append(ag * dg)
+			times.append(ns)
+	if not times:
+		return None, None
+	return max(gains), sorted(times)[len(times) // 2]
+
+
 def with_view(blocks, gains, awb_mode, gain, exposure_ns):
 	"""The device blocks end with a LightHeader holding the view preferences (field 19).
 	Rewrite them with this photo's white balance (awb_mode 7, awb_gains 15) and exposure
@@ -186,6 +213,12 @@ for i in range(count):
 			for part in asic[i]:
 				o.write(part)
 		if device:
-			o.write(with_view(device, gains, awb_mode, iso and iso / 100,
-					  exposure_us and exposure_us * 1000))
+			# the exposure as taken (the ASICs choose it in auto and the priority modes);
+			# the gain too, but above the modules' 7.75 the rest is digital, recorded only
+			# here: the app's ISO then
+			gain, ns = taken(per_asic[0][i][-1])
+			if gain is None or (iso and gain >= 7.74 and iso / 100 > gain):
+				gain = iso and iso / 100
+			ns = ns or (exposure_us and exposure_us * 1000)
+			o.write(with_view(device, gains, awb_mode, gain, ns))
 	print("wrote", name)
