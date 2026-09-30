@@ -9,6 +9,7 @@
 
 mod ccb;
 mod input;
+mod settings;
 mod transfer;
 mod zoomview;
 
@@ -68,6 +69,12 @@ window.camera { background: #000; }
 .burst-saving { color: #fff; font-size: 24px; }
 .burst-badge { color: #fff; font-size: 13px; font-weight: 600; border: 1px solid #fff;
     border-radius: 3px; padding: 0 4px; }
+.settings { background: #000; }
+.settings list { background: #000; }
+.settings row { padding: 14px 32px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+.set-title { color: #fff; font-size: 18px; font-weight: 600; }
+.set-sub { color: rgba(255,255,255,0.6); font-size: 14px; }
+.set-value { color: #00B1ED; font-size: 17px; font-weight: 600; }
 ";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -113,7 +120,12 @@ struct State {
     focus_until: Option<Instant>,
     focus_at: Option<(f64, f64)>,
     zoom_sent: Instant,
+    // the settings screen's
     touch_meter: bool,
+    stacked: bool,
+    exposure_info: bool,
+    inverse_wheel: bool,
+    strip_zoom: bool,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -123,6 +135,97 @@ struct State {
     settle: Option<glib::SourceId>,
     switching: Option<mpsc::Receiver<usize>>,
 }
+
+impl State {
+    // what's kept between runs, as the settings file's lines
+    fn saved(&self) -> String {
+        let mode = match self.mode {
+            Mode::Auto => "auto",
+            Mode::Manual => "manual",
+        };
+        format!(
+            "mode={mode}\niso={}\nshutter={}\nflash={}\ntimer={}\ngrid={}\nburst={}\n\
+             metering={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nstrip_zoom={}\n",
+            self.iso,
+            self.shutter,
+            self.flash,
+            self.timer,
+            self.grid as u8,
+            self.burst,
+            self.touch_meter as u8,
+            self.stacked as u8,
+            self.exposure_info as u8,
+            self.inverse_wheel as u8,
+            self.strip_zoom as u8,
+        )
+    }
+
+    fn load(&mut self, m: &std::collections::HashMap<String, String>) {
+        let num = |k: &str| m.get(k).and_then(|v| v.parse::<f64>().ok());
+        let flag = |k: &str, d: bool| num(k).map_or(d, |v| v != 0.0);
+        if m.get("mode").map(String::as_str) == Some("manual") {
+            self.mode = Mode::Manual;
+        }
+        self.iso = num("iso").unwrap_or(self.iso).clamp(0.0, 1.0);
+        self.shutter = num("shutter").unwrap_or(self.shutter).clamp(0.0, 1.0);
+        self.flash = num("flash").map_or(self.flash, |v| (v as u8).min(2));
+        self.timer = num("timer").map_or(self.timer, |v| (v as usize).min(TIMERS.len() - 1));
+        self.grid = flag("grid", self.grid);
+        self.burst = num("burst").map_or(self.burst, |v| (v as usize).min(BURSTS.len() - 1));
+        self.touch_meter = flag("metering", self.touch_meter);
+        self.stacked = flag("stacked", self.stacked);
+        self.exposure_info = flag("exposure_info", self.exposure_info);
+        self.inverse_wheel = flag("inverse_wheel", self.inverse_wheel);
+        self.strip_zoom = flag("strip_zoom", self.strip_zoom);
+    }
+}
+
+// a row of the settings screen: tapping it steps through the options
+struct SettingRow {
+    title: &'static str,
+    sub: &'static str,
+    options: &'static [&'static str],
+    get: fn(&State) -> usize,
+    set: fn(&mut State, usize),
+}
+
+const SETTINGS: &[SettingRow] = &[
+    SettingRow {
+        title: "Metering",
+        sub: "Where auto exposure meters: the centre, or the spot you tap",
+        options: &["centre-weighted", "touch"],
+        get: |s| s.touch_meter as usize,
+        set: |s, v| s.touch_meter = v == 1,
+    },
+    SettingRow {
+        title: "Stacked capture",
+        sub: "In low light, several exposures per module for less noise",
+        options: &["on", "off"],
+        get: |s| !s.stacked as usize,
+        set: |s, v| s.stacked = v == 0,
+    },
+    SettingRow {
+        title: "Exposure info",
+        sub: "EV, ISO, shutter and focal length beside the preview",
+        options: &["on", "off"],
+        get: |s| !s.exposure_info as usize,
+        set: |s, v| s.exposure_info = v == 0,
+    },
+    SettingRow {
+        title: "Inverse wheel scroll",
+        sub: "Turn the exposure wheels the other way",
+        options: &["off", "on"],
+        get: |s| s.inverse_wheel as usize,
+        set: |s, v| s.inverse_wheel = v == 1,
+    },
+    SettingRow {
+        title: "Touch strip",
+        sub: "Zoom with the touch strip",
+        options: &["on", "off"],
+        get: |s| !s.strip_zoom as usize,
+        set: |s, v| s.strip_zoom = v == 0,
+    },
+];
 
 struct App {
     st: RefCell<State>,
@@ -158,7 +261,9 @@ struct App {
     grid_btn: gtk::Button,
     burst_btn: gtk::Button,
     flash_btn: gtk::Button,
-    meter_btn: gtk::Button,
+    hud_box: gtk::Box,
+    settings_page: gtk::Box,
+    last_saved: RefCell<String>,
     status: gtk::Label,
     countdown: gtk::Label,
 }
@@ -300,12 +405,7 @@ impl App {
         }
         self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
         self.flash_btn.set_label(["flash off", "flash auto", "flash on"][st.flash as usize]);
-        self.meter_btn.set_label(if st.touch_meter { "meter touch" } else { "meter centre" });
-        if st.touch_meter {
-            self.meter_btn.add_css_class("on");
-        } else {
-            self.meter_btn.remove_css_class("on");
-        }
+        self.hud_box.set_opacity(if st.exposure_info { 1.0 } else { 0.0 });
         if st.flash > 0 {
             self.flash_btn.add_css_class("on");
         } else {
@@ -325,7 +425,12 @@ impl App {
         } else {
             self.grid_btn.remove_css_class("on");
         }
+        let saved = st.saved();
         drop(st);
+        if *self.last_saved.borrow() != saved {
+            settings::save(&saved);
+            *self.last_saved.borrow_mut() = saved;
+        }
         self.top.queue_draw();
         self.bottom.queue_draw();
         self.shutter.queue_draw();
@@ -490,6 +595,7 @@ impl App {
     }
 
     fn shutter_pressed(self: &Rc<Self>) {
+        self.settings_page.set_visible(false);
         let (busy, counting, t) = {
             let st = self.st.borrow();
             (st.busy, st.counting, TIMERS[st.timer])
@@ -540,12 +646,12 @@ impl App {
     }
 
     fn capture(self: &Rc<Self>) {
-        let (zoom, burst, seq, dark) = {
+        let (zoom, burst, seq, dark, stacked) = {
             let mut st = self.st.borrow_mut();
             st.busy = true;
             st.saving += 1;
             st.seq += 1;
-            (st.zoom, BURSTS[st.burst], st.seq, st.mode == Mode::Auto && st.live_iso > 400)
+            (st.zoom, BURSTS[st.burst], st.seq, st.mode == Mode::Auto && st.live_iso > 400, st.stacked)
         };
         self.thumb.set_paintable(Some(&self.paintable.current_image()));
         if burst > 1 {
@@ -590,9 +696,13 @@ impl App {
         // Quick shots: no precapture metering (about half a second; the preview is metered)
         // and one frame per module. In the dark, as stock: the precapture metering, and the
         // ASICs stack several exposures per module when they judge it needed (slower, 4x
-        // the data, less noise). Bursts are always quick.
+        // the data, less noise; the settings can turn stacking off). Bursts are always quick.
         let flags = if dark && burst == 1 {
-            0
+            if stacked {
+                0
+            } else {
+                ccb::CAPTURE_NO_STACK
+            }
         } else {
             ccb::CAPTURE_NO_PRECAPTURE | ccb::CAPTURE_NO_STACK
         };
@@ -839,6 +949,7 @@ impl App {
             input::Ev::Key(input::KEY_CAMERA | input::KEY_VOLUMEUP, true) => self.shutter_pressed(),
             input::Ev::Key(..) => {}
             // the strip's position comes before its touch-down in each report
+            input::Ev::StripX(_) | input::Ev::StripTouch(_) if !self.st.borrow().strip_zoom => {}
             input::Ev::StripX(x) => {
                 let (down, last) = {
                     let st = self.st.borrow();
@@ -1082,9 +1193,11 @@ fn build(gapp: &gtk::Application) {
     let left = gtk::Box::new(gtk::Orientation::Vertical, 16);
     left.set_size_request(84, -1);
     left.set_valign(gtk::Align::Center);
+    let hud_box = gtk::Box::new(gtk::Orientation::Vertical, 16);
     for (l, unit) in hud.iter().zip(["ev", "iso", "s", "mm"]) {
-        left.append(&hud_item(l, unit));
+        hud_box.append(&hud_item(l, unit));
     }
+    left.append(&hud_box);
 
     // right: last photo, the dials around the shutter, the toolbar opener
     let thumb = gtk::Image::new();
@@ -1133,26 +1246,43 @@ fn build(gapp: &gtk::Application) {
     row.append(&frame);
     row.append(&right);
 
-    // the toolbar: mode, timer, grid
+    // the toolbar: mode, flash, timer, grid, burst, and the settings screen
     let mode_btn = gtk::Button::with_label("auto");
     let timer_btn = gtk::Button::with_label("timer off");
     let grid_btn = gtk::Button::with_label("grid off");
     let burst_btn = gtk::Button::with_label("burst off");
     let flash_btn = gtk::Button::with_label("flash off");
-    let meter_btn = gtk::Button::with_label("meter centre");
+    let settings_btn = gtk::Button::with_label("settings");
     let close_btn = gtk::Button::with_label("✕");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
     bar.append(&mode_btn);
     bar.append(&flash_btn);
-    bar.append(&meter_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
     bar.append(&burst_btn);
     let fill = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     fill.set_hexpand(true);
     bar.append(&fill);
+    bar.append(&settings_btn);
     bar.append(&close_btn);
+
+    // the settings screen (OpenLight's: a list of title, explanation and value)
+    let settings_list = gtk::ListBox::new();
+    settings_list.set_selection_mode(gtk::SelectionMode::None);
+    let settings_scroll = gtk::ScrolledWindow::new();
+    settings_scroll.set_child(Some(&settings_list));
+    settings_scroll.set_vexpand(true);
+    settings_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+    let settings_back = gtk::Button::with_label("‹  settings");
+    settings_back.add_css_class("flat-white");
+    settings_back.set_halign(gtk::Align::Start);
+    settings_back.set_margin_start(16);
+    let settings_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    settings_page.add_css_class("settings");
+    settings_page.append(&settings_back);
+    settings_page.append(&settings_scroll);
+    settings_page.set_visible(false);
     let toolbar = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::SlideUp)
         .child(&bar)
@@ -1212,6 +1342,7 @@ fn build(gapp: &gtk::Application) {
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
     root.add_overlay(&burst_screen);
+    root.add_overlay(&settings_page);
     window.set_child(Some(&root));
 
     let (stage_tx, stage_rx) = mpsc::channel();
@@ -1251,6 +1382,10 @@ fn build(gapp: &gtk::Application) {
             focus_at: None,
             zoom_sent: Instant::now(),
             touch_meter: false,
+            stacked: true,
+            exposure_info: true,
+            inverse_wheel: false,
+            strip_zoom: true,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -1292,10 +1427,17 @@ fn build(gapp: &gtk::Application) {
         grid_btn,
         burst_btn,
         flash_btn,
-        meter_btn,
+        hud_box,
+        settings_page,
+        last_saved: RefCell::new(String::new()),
         status,
         countdown,
     });
+    {
+        let mut st = app.st.borrow_mut();
+        st.load(&settings::load());
+        *app.last_saved.borrow_mut() = st.saved();
+    }
     if app.ccb.is_none() {
         app.show_status("no light-ccb camera driver", 0);
     }
@@ -1390,12 +1532,12 @@ fn build(gapp: &gtk::Application) {
         });
         let a = app.clone();
         drag.connect_drag_update(move |_, _, dy| {
-            let (active, start) = {
+            let (active, start, dir) = {
                 let st = a.st.borrow();
-                (st.wheel == Some(dial), st.wheel_start)
+                (st.wheel == Some(dial), st.wheel_start, if st.inverse_wheel { -1.0 } else { 1.0 })
             };
             if active {
-                a.set_dial(dial, start + dy * 0.001);
+                a.set_dial(dial, start + dir * dy * 0.001);
             }
         });
         let a = app.clone();
@@ -1450,15 +1592,45 @@ fn build(gapp: &gtk::Application) {
         a.refresh();
     });
     let a = app.clone();
-    app.meter_btn.connect_clicked(move |_| {
-        let t = {
-            let mut st = a.st.borrow_mut();
-            st.touch_meter = !st.touch_meter;
-            st.touch_meter
-        };
-        let _ = a.ctl_tx.send((ccb::METERING, t as i32));
-        a.refresh();
+    settings_btn.connect_clicked(move |_| {
+        a.toolbar.set_reveal_child(false);
+        a.settings_page.set_visible(true);
     });
+    let a = app.clone();
+    settings_back.connect_clicked(move |_| a.settings_page.set_visible(false));
+    for row in SETTINGS {
+        let title = gtk::Label::new(Some(row.title));
+        title.add_css_class("set-title");
+        title.set_halign(gtk::Align::Start);
+        let sub = gtk::Label::new(Some(row.sub));
+        sub.add_css_class("set-sub");
+        sub.set_halign(gtk::Align::Start);
+        let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        text.append(&title);
+        text.append(&sub);
+        text.set_hexpand(true);
+        let value = gtk::Label::new(Some(row.options[(row.get)(&app.st.borrow())]));
+        value.add_css_class("set-value");
+        let line = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        line.append(&text);
+        line.append(&value);
+        let click = gtk::GestureClick::new();
+        let a = app.clone();
+        click.connect_released(move |_, _, _, _| {
+            let v = {
+                let mut st = a.st.borrow_mut();
+                let v = ((row.get)(&st) + 1) % row.options.len();
+                (row.set)(&mut st, v);
+                v
+            };
+            value.set_text(row.options[v]);
+            let meter = a.st.borrow().touch_meter;
+            let _ = a.ctl_tx.send((ccb::METERING, meter as i32));
+            a.refresh();
+        });
+        line.add_controller(click);
+        settings_list.append(&line);
+    }
     let a = app.clone();
     app.burst_btn.connect_clicked(move |_| {
         {
@@ -1506,9 +1678,10 @@ fn build(gapp: &gtk::Application) {
     });
 
     if let Some(c) = &app.ccb {
+        let st = app.st.borrow();
         c.set(ccb::MODULE, 0);
-        c.set(ccb::FLASH, 0);
-        c.set(ccb::METERING, 0);
+        c.set(ccb::FLASH, st.flash as i32);
+        c.set(ccb::METERING, st.touch_meter as i32);
         c.set(ccb::ZOOM, 1000);
     }
     app.start_preview();
