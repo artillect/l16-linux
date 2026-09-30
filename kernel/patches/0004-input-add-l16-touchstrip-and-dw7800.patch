@@ -234,10 +234,10 @@ index 000000000..6121b608c
 +MODULE_LICENSE("GPL");
 diff --git a/drivers/input/misc/l16-touchstrip.c b/drivers/input/misc/l16-touchstrip.c
 new file mode 100755
-index 000000000..6ba1a464d
+index 000000000..bc9b386b4
 --- /dev/null
 +++ b/drivers/input/misc/l16-touchstrip.c
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,158 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Touch strip of the Light L16: an Elan eKTF controller reporting one finger on a
@@ -252,6 +252,10 @@ index 000000000..6ba1a464d
 + * Info queries (53 60 00 00 -> 52 60 00 31) give an X resolution of 768 and a
 + * Y resolution of 1. Other packets (hello, recalibration) are read and ignored;
 + * every interrupt reads one packet, which releases the level-low IRQ line.
++ *
++ * The controller can lose its baseline and report a phantom touch that never lifts (no
++ * release, and real touches averaged with it, so positions slide back after a lift). A
++ * reset recalibrates it, so a touch held longer than STRIP_STUCK_MS gets one.
 + */
 +#include <linux/delay.h>
 +#include <linux/gpio/consumer.h>
@@ -267,13 +271,23 @@ index 000000000..6ba1a464d
 +#define STRIP_X_MAX		767
 +/* give up on the IRQ after this many failed reads in a row, instead of spinning */
 +#define STRIP_MAX_ERRORS	20
++#define STRIP_STUCK_MS		20000
 +
 +struct l16_strip {
 +	struct i2c_client *client;
 +	struct input_dev *input;
 +	struct gpio_desc *reset_gpio;
 +	unsigned int errors;
++	bool down;
++	unsigned long down_since;
 +};
++
++static void l16_strip_reset(struct l16_strip *strip)
++{
++	gpiod_set_value_cansleep(strip->reset_gpio, 1);
++	msleep(10);
++	gpiod_set_value_cansleep(strip->reset_gpio, 0);
++}
 +
 +static irqreturn_t l16_strip_irq(int irq, void *data)
 +{
@@ -297,9 +311,23 @@ index 000000000..6ba1a464d
 +		return IRQ_HANDLED;
 +
 +	if (buf[7] & 0x01) {
++		if (!strip->down) {
++			strip->down = true;
++			strip->down_since = jiffies;
++		} else if (strip->reset_gpio &&
++			   time_after(jiffies, strip->down_since +
++					       msecs_to_jiffies(STRIP_STUCK_MS))) {
++			dev_info(&strip->client->dev, "touch stuck, recalibrating\n");
++			strip->down = false;
++			input_report_key(strip->input, BTN_TOUCH, 0);
++			input_sync(strip->input);
++			l16_strip_reset(strip);
++			return IRQ_HANDLED;
++		}
 +		input_report_abs(strip->input, ABS_X, ((buf[1] & 0xf0) << 4) | buf[2]);
 +		input_report_key(strip->input, BTN_TOUCH, 1);
 +	} else {
++		strip->down = false;
 +		input_report_key(strip->input, BTN_TOUCH, 0);
 +	}
 +	input_sync(strip->input);
