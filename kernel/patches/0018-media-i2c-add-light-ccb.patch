@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..ec6fe090d
+index 000000000..b22845c62
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1555 @@
+@@ -0,0 +1,1600 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -211,6 +211,13 @@ index 000000000..ec6fe090d
 +	struct work_struct af;		/* a focus run (seconds; not under the control lock) */
 +	struct delayed_work ae;		/* exposure settings, sent once a burst of changes ends */
 +	struct work_struct wake;	/* after a system resume: the preview back, if streaming */
++	/* the exposure settings last sent (0x0060, 0x0062, 0x0067, 0x006a), sent again only
++	 * when they change, as stock's camera library does */
++	struct {
++		bool valid;
++		u8 len;
++		u8 data[24];
++	} ae_sent[4];
 +
 +	/*
 +	 * Exposure: libcamera writes the standard exposure and gain controls with every
@@ -368,6 +375,8 @@ index 000000000..ec6fe090d
 +{
 +	int i;
 +
++	memset(c->ae_sent, 0, sizeof(c->ae_sent));
++
 +	for (i = c->enable->ndescs - 1; i >= 0; i--)
 +		gpiod_set_value_cansleep(c->enable->desc[i], 0);
 +	c->booted = false;
@@ -463,6 +472,42 @@ index 000000000..ec6fe090d
 +}
 +
 +/*
++ * An exposure setting, unless the ASICs already have it: stock sends only what a change
++ * of mode or dial changed (a swipe across the mode wheel is one or two messages a mode);
++ * resending the whole set for every change, a quick swipe's worth stalled ASIC1.
++ */
++static int ccb_cfg(struct ccb *c, u16 cmd, const u8 *b, int n)
++{
++	int i, ret;
++
++	switch (cmd) {
++	case 0x0060: i = 0; break;
++	case 0x0062: i = 1; break;
++	case 0x0067: i = 2; break;
++	case 0x006a: i = 3; break;
++	default: return -EINVAL;
++	}
++	if (n > sizeof(c->ae_sent[i].data))
++		return -EINVAL;
++	if (c->ae_sent[i].valid && c->ae_sent[i].len == n && !memcmp(c->ae_sent[i].data, b, n))
++		return 0;
++	ret = ccb_send(c, ccb_tid(c, CCB_KIND_CFG), cmd, b, n);
++	c->ae_sent[i].valid = !ret;
++	c->ae_sent[i].len = n;
++	memcpy(c->ae_sent[i].data, b, n);
++	return ret;
++}
++
++/* stacked capture: on in auto, off in manual and the priority modes (stock's) */
++static int ccb_cfg_stack(struct ccb *c)
++{
++	static const u8 on[] = { 0x01, 0x01 }, off[] = { 0x00, 0x01 };
++	bool stack = c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL && !c->priority->cur.val;
++
++	return ccb_cfg(c, 0x006a, stack ? on : off, 2);
++}
++
++/*
 + * Exposure as stock's camera app sets it (I2C trace of its manual and priority modes):
 + * 0x0060 the AE mode (2 auto, 1 manual, then 00 00 3c 00), and 0x0067 the exposure
 + * {f32 gain, f32 gain, u64 exposure ns, u64 exposure ns}, gain in ISO/100, a zero meaning
@@ -480,9 +525,9 @@ index 000000000..ec6fe090d
 +	put_unaligned_le32(gain, b + 4);
 +	put_unaligned_le64(ns, b + 8);
 +	put_unaligned_le64(ns, b + 16);
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, mode, sizeof(mode));
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, b, sizeof(b));
++	ccb_cfg(c, 0x0060, mode, sizeof(mode));
++	ccb_cfg(c, 0x0067, b, sizeof(b));
++	return ccb_cfg(c, 0x006a, stack, sizeof(stack));
 +}
 +
 +/*
@@ -508,7 +553,7 @@ index 000000000..ec6fe090d
 +		b[17] = 0xcd;
 +		n = 18;
 +	}
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, n);
++	return ccb_cfg(c, 0x0060, b, n);
 +}
 +
 +/*
@@ -533,7 +578,7 @@ index 000000000..ec6fe090d
 +	u8 b[2];
 +
 +	put_unaligned_le16(ccb_ev_mult[c->ev->cur.val + 9], b);
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0062, b, sizeof(b));
++	ccb_cfg(c, 0x0062, b, sizeof(b));
 +}
 +
 +/*
@@ -543,7 +588,6 @@ index 000000000..ec6fe090d
 + */
 +static int ccb_ae_auto(struct ccb *c)
 +{
-+	static const u8 stack_on[] = { 0x01, 0x01 }, stack_off[] = { 0x00, 0x01 };
 +	u64 ns = (u64)c->exp_us->cur.val * 1000;
 +	u32 gain = ccb_f32(c->iso->cur.val, 100);
 +	u8 b[24] = { 0 };
@@ -561,9 +605,8 @@ index 000000000..ec6fe090d
 +	}
 +	ccb_ae_mode(c);
 +	ccb_send_ev(c);
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, b, sizeof(b));
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a,
-+			c->priority->cur.val ? stack_off : stack_on, 2);
++	ccb_cfg(c, 0x0067, b, sizeof(b));
++	return ccb_cfg_stack(c);
 +}
 +
 +static int ccb_apply_ae(struct ccb *c)
@@ -702,9 +745,10 @@ index 000000000..ec6fe090d
 +	if (ret < 0)
 +		return ret;
 +
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0062, evcomp, sizeof(evcomp));
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, zero67, sizeof(zero67));
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
++	memset(c->ae_sent, 0, sizeof(c->ae_sent));
++	ccb_cfg(c, 0x0062, evcomp, sizeof(evcomp));
++	ccb_cfg(c, 0x0067, zero67, sizeof(zero67));
++	ccb_cfg(c, 0x006a, stack, sizeof(stack));
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae3b, sizeof(ae3b));
 +	c->previewing = true;
 +	c->ae_seen = false;
@@ -841,9 +885,10 @@ index 000000000..ec6fe090d
 +		/*
 +		 * a dial being dragged sets these many times a second, and a burst of AE
 +		 * messages stops ASIC1 answering: send the latest settings at most every
-+		 * 60 ms, so the preview follows the dial (the work reads them when it runs)
++		 * 50 ms, as stock does, so the preview follows the dial (the work reads them
++		 * when it runs)
 +		 */
-+		schedule_delayed_work(&c->ae, msecs_to_jiffies(60));
++		schedule_delayed_work(&c->ae, msecs_to_jiffies(50));
 +		break;
 +	case V4L2_CID_LIGHT_FLASH:
 +	case V4L2_CID_LIGHT_METERING:
@@ -1102,7 +1147,7 @@ index 000000000..ec6fe090d
 +	u8 burst[] = { 0x05, 0x00, 0x01 };
 +	u8 fps[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00 };
 +	static const u8 unlock[] = { 0x00 };
-+	static const u8 stack_off[] = { 0x00, 0x01 }, stack_on[] = { 0x01, 0x01 };
++	static const u8 stack_off[] = { 0x00, 0x01 };
 +	bool restack = false;
 +	u8 body[3 + 3 * 16], prev[6], m[CCB_MSG_MAX];
 +	unsigned long end;
@@ -1134,8 +1179,8 @@ index 000000000..ec6fe090d
 +		return ret;
 +	c->previewing = false;
 +	if (cap->flags & LIGHT_CCB_CAPTURE_NO_STACK) {
-+		ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack_off, sizeof(stack_off));
-+		restack = c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL;
++		ccb_cfg(c, 0x006a, stack_off, sizeof(stack_off));
++		restack = true;
 +	}
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x002e, crop5, sizeof(crop5));
 +	ret = ccb_command(c, CCB_KIND_CAPTURE, 0x9000, ucid5, sizeof(ucid5));
@@ -1207,7 +1252,7 @@ index 000000000..ec6fe090d
 +		c->previewing = true;
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, unlock, sizeof(unlock));
 +	if (restack)
-+		ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack_on, sizeof(stack_on));
++		ccb_cfg_stack(c);
 +	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	return ret;
 +}

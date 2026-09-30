@@ -156,6 +156,7 @@ struct State {
     mode: Mode,
     mode_pos: f64, // the mode wheel's position, 0 (auto) to 1 (manual)
     mode_start: f64,
+    mode_swiped: bool,
     iso: f64,     // position, see iso_at
     shutter: f64, // position, see secs_at
     ev: f64,      // position, see ev_at
@@ -677,14 +678,19 @@ impl App {
     }
 
     // the mode wheel's positions: 0 for auto to 1 for manual, a mode per 1/3
-    fn set_mode_pos(&self, pos: f64) {
+    // @apply: send the mode to the camera as the wheel passes it, as stock does (the driver
+    // sends only what changed: one or two messages a mode); false only re-snaps the wheel
+    fn set_mode_pos(&self, pos: f64, apply: bool) {
         let pos = pos.clamp(0.0, 1.0);
         let max = (MODES.len() - 1) as f64;
         let mode = MODES[(pos * max).round() as usize];
         self.st.borrow_mut().mode_pos = pos;
         // the mode changes as the wheel passes half way to it, as stock's
-        if mode != self.st.borrow().mode {
+        if apply {
             self.set_mode(mode);
+        } else if mode != self.st.borrow().mode {
+            self.st.borrow_mut().mode = mode;
+            self.refresh();
         }
         self.mode_wheel.queue_draw();
     }
@@ -1922,6 +1928,7 @@ fn build(gapp: &gtk::Application) {
             mode: Mode::Auto,
             mode_pos: 0.0,
             mode_start: 0.0,
+            mode_swiped: false,
             iso: 1.0,
             ev: 0.5,
             shutter: secs_pos(1.0 / 60.0),
@@ -2170,21 +2177,30 @@ fn build(gapp: &gtk::Application) {
     drag.connect_drag_begin(move |_, _, _| {
         let mut st = a.st.borrow_mut();
         st.mode_start = st.mode.index() as f64 / (MODES.len() - 1) as f64;
+        st.mode_swiped = false;
     });
     let a = app.clone();
     drag.connect_drag_update(move |_, _, dy| {
+        if dy.abs() > 8.0 {
+            a.st.borrow_mut().mode_swiped = true;
+        }
         let start = a.st.borrow().mode_start;
-        a.set_mode_pos(start + dy * 0.0035);
+        a.set_mode_pos(start + dy * 0.0035, true);
     });
     let a = app.clone();
     drag.connect_drag_end(move |_, _, _| {
+        // settle on the chosen mode (already applied as the wheel passed it)
         let pos = a.st.borrow().mode.index() as f64 / (MODES.len() - 1) as f64;
-        a.set_mode_pos(pos);
+        a.set_mode_pos(pos, false);
     });
     app.mode_touch.add_controller(drag);
     let click = gtk::GestureClick::new();
     let a = app.clone();
     click.connect_released(move |_, _, _, y| {
+        // the end of a swipe is not a tap on the label under the finger
+        if a.st.borrow().mode_swiped {
+            return;
+        }
         let (pos, h) = (a.st.borrow().mode_pos, a.mode_wheel.height() as f64);
         // the touch band sits centred on the wheel
         let y = y + (h - MODE_TOUCH_H as f64) / 2.0;
@@ -2193,7 +2209,7 @@ fn build(gapp: &gtk::Application) {
             .min_by(|p, q| p.1.total_cmp(&q.1));
         if let Some((i, d)) = near {
             if d < 30.0 {
-                a.set_mode_pos(i as f64 / (MODES.len() - 1) as f64);
+                a.set_mode_pos(i as f64 / (MODES.len() - 1) as f64, true);
             }
         }
     });
