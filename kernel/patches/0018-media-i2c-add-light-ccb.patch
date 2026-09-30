@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..737db3e64
+index 000000000..65bbcf645
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1612 @@
+@@ -0,0 +1,1665 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -167,6 +167,8 @@ index 000000000..737db3e64
 +#define V4L2_CID_LIGHT_METERING		(V4L2_CID_LIGHT_BASE + 11)
 +#define V4L2_CID_LIGHT_PRIORITY		(V4L2_CID_LIGHT_BASE + 12)
 +#define V4L2_CID_LIGHT_EV		(V4L2_CID_LIGHT_BASE + 13)
++#define V4L2_CID_LIGHT_PREVIEW_BOOST	(V4L2_CID_LIGHT_BASE + 14)
++#define V4L2_CID_LIGHT_TRIPOD		(V4L2_CID_LIGHT_BASE + 15)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
@@ -211,13 +213,13 @@ index 000000000..737db3e64
 +	struct work_struct af;		/* a focus run (seconds; not under the control lock) */
 +	struct delayed_work ae;		/* exposure settings, sent once a burst of changes ends */
 +	struct work_struct wake;	/* after a system resume: the preview back, if streaming */
-+	/* the exposure settings last sent (0x0060, 0x0062, 0x0067, 0x006a), sent again only
-+	 * when they change, as stock's camera library does */
++	/* the exposure settings last sent (0x0060, 0x0062, 0x0067, 0x006a, 0x0065), sent again
++	 * only when they change, as stock's camera library does */
 +	struct {
 +		bool valid;
 +		u8 len;
 +		u8 data[24];
-+	} ae_sent[4];
++	} ae_sent[5];
 +
 +	/*
 +	 * Exposure: libcamera writes the standard exposure and gain controls with every
@@ -228,8 +230,10 @@ index 000000000..737db3e64
 +	struct v4l2_ctrl *exp_auto;
 +	struct v4l2_ctrl *exp_us;	/* manual exposure time */
 +	struct v4l2_ctrl *iso;		/* manual ISO (the ASIC's gain x 100) */
-+	struct v4l2_ctrl *ae_us;	/* read-only: the ASICs' current exposure time */
++	struct v4l2_ctrl *ae_us;	/* read-only: the photo's exposure time, as the ASICs have it */
 +	struct v4l2_ctrl *ae_iso;	/* read-only: and ISO */
++	struct v4l2_ctrl *boost;	/* read-only: the preview's digital boost x 100 */
++	struct v4l2_ctrl *tripod;	/* the camera is still: auto photos may take longer */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
 +	struct v4l2_ctrl *focus_x;	/* the AF window's top left, sensor pixels */
@@ -485,6 +489,7 @@ index 000000000..737db3e64
 +	case 0x0062: i = 1; break;
 +	case 0x0067: i = 2; break;
 +	case 0x006a: i = 3; break;
++	case 0x0065: i = 4; break;
 +	default: return -EINVAL;
 +	}
 +	if (n > sizeof(c->ae_sent[i].data))
@@ -612,10 +617,23 @@ index 000000000..737db3e64
 +	return ccb_cfg_stack(c);
 +}
 +
++/*
++ * Tripod mode, 0x0065 {u8} (liblight_ccb's ccb_set_tripod_mode): with it, an auto photo may
++ * take up to 100 ms rather than the handheld 42 ms (the ASICs' own logs, from stock). Stock
++ * turns it on while the camera is still; here the app says when.
++ */
++static int ccb_cfg_tripod(struct ccb *c)
++{
++	u8 on = c->tripod->cur.val;
++
++	return ccb_cfg(c, 0x0065, &on, 1);
++}
++
 +static int ccb_apply_ae(struct ccb *c)
 +{
 +	if (!c->previewing)
 +		return 0;
++	ccb_cfg_tripod(c);
 +	return c->exp_auto->cur.val == V4L2_EXPOSURE_MANUAL ? ccb_ae_manual(c) : ccb_ae_auto(c);
 +}
 +
@@ -634,7 +652,7 @@ index 000000000..737db3e64
 +	struct ccb *c = container_of(to_delayed_work(work), struct ccb, drain);
 +	u8 m[CCB_MSG_MAX];
 +	u64 ns = 0;
-+	u32 sens, boost, iso = 0;
++	u32 sens, boost = 0, iso = 0, boost100 = 100;
 +	bool ae = false;
 +	int i, t;
 +
@@ -649,22 +667,32 @@ index 000000000..737db3e64
 +			break;
 +		if (t == CCB_TYPE_AE && get_unaligned_le16(m + 2) >= 16) {
 +			/*
-+			 * {u64 exposure ns, f32 sensitivity, f32 boost} (liblight_ccb's names):
-+			 * the sensors' gain, at most 7.75, and a digital boost on top; the ISO
-+			 * running is their product x 100
++			 * {u64 exposure ns, f32 sensitivity, f32 boost, u64 hud_exposure ns,
++			 * f32 hud_gain, f32 luma, flags} (liblight_ccb's names): the preview's
++			 * exposure, the sensors' gain (at most 7.75) and a digital boost on top,
++			 * then the exposure stock's display shows, the photo's (in shutter
++			 * priority at 15 s, the preview runs 42 ms with all the boost it has while
++			 * the photo is 15 s at ISO ~350)
 +			 */
 +			ns = get_unaligned_le64(m + 4);
 +			sens = get_unaligned_le32(m + 12);
 +			boost = get_unaligned_le32(m + 16);
 +			iso = ccb_f32_mul(boost, ccb_f32_mul(sens, 100));
-+			if (get_unaligned_le16(m + 2) >= 33)
-+				c->flash_needed = m[4 + 32] & 1;
-+			ae = true;
++			boost100 = ccb_f32_mul(boost, 100);
 +			if (debug)
 +				dev_info(&c->client->dev,
 +					 "AE push %llu us, sensitivity %u, boost %u/100, ISO %u\n",
-+					 div_u64(ns, 1000), ccb_f32_mul(sens, 100),
-+					 ccb_f32_mul(boost, 100), iso);
++					 div_u64(ns, 1000), ccb_f32_mul(sens, 100), boost100, iso);
++			if (get_unaligned_le16(m + 2) >= 28) {
++				ns = get_unaligned_le64(m + 20);
++				iso = ccb_f32_mul(get_unaligned_le32(m + 28), 100);
++				if (debug)
++					dev_info(&c->client->dev, "AE push HUD %llu us, ISO %u\n",
++						 div_u64(ns, 1000), iso);
++			}
++			if (get_unaligned_le16(m + 2) >= 33)
++				c->flash_needed = m[4 + 32] & 1;
++			ae = true;
 +			if (!c->ae_seen)
 +				dev_info(&c->client->dev, "AE running: %llu us, ISO %u\n",
 +					 div_u64(ns, 1000), iso);
@@ -688,6 +716,7 @@ index 000000000..737db3e64
 +	if (ae) {
 +		v4l2_ctrl_s_ctrl(c->ae_us, clamp_t(u64, div_u64(ns, 1000), 0, c->ae_us->maximum));
 +		v4l2_ctrl_s_ctrl(c->ae_iso, clamp_t(u32, iso, 0, c->ae_iso->maximum));
++		v4l2_ctrl_s_ctrl(c->boost, clamp_t(u32, boost100, 100, c->boost->maximum));
 +	}
 +}
 +
@@ -902,6 +931,7 @@ index 000000000..737db3e64
 +		 */
 +		schedule_delayed_work(&c->ae, msecs_to_jiffies(50));
 +		break;
++	case V4L2_CID_LIGHT_TRIPOD:
 +	case V4L2_CID_LIGHT_FLASH:
 +	case V4L2_CID_LIGHT_METERING:
 +	case V4L2_CID_LIGHT_PRIORITY:
@@ -1090,6 +1120,27 @@ index 000000000..737db3e64
 +	.type = V4L2_CTRL_TYPE_MENU,
 +	.max = 2,
 +	.qmenu = ccb_priority_names,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_boost = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_PREVIEW_BOOST,
++	.name = "Preview Boost (x100)",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.min = 100,
++	.max = 10000,
++	.step = 1,
++	.def = 100,
++	.flags = V4L2_CTRL_FLAG_READ_ONLY,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_tripod = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_TRIPOD,
++	.name = "Tripod Mode",
++	.type = V4L2_CTRL_TYPE_BOOLEAN,
++	.max = 1,
++	.step = 1,
 +};
 +
 +static const struct v4l2_ctrl_config ccb_ctrl_ev = {
@@ -1495,6 +1546,8 @@ index 000000000..737db3e64
 +	c->metering = v4l2_ctrl_new_custom(h, &ccb_ctrl_metering, NULL);
 +	c->priority = v4l2_ctrl_new_custom(h, &ccb_ctrl_priority, NULL);
 +	c->ev = v4l2_ctrl_new_custom(h, &ccb_ctrl_ev, NULL);
++	c->boost = v4l2_ctrl_new_custom(h, &ccb_ctrl_boost, NULL);
++	c->tripod = v4l2_ctrl_new_custom(h, &ccb_ctrl_tripod, NULL);
 +	if (h->error)
 +		return h->error;
 +
