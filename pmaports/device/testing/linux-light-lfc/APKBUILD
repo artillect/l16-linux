@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=63
+pkgrel=64
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -49,6 +49,7 @@ source="
 	0019-slimbus-qcom-ngd-base-before-add.patch
 	0020-tty-serial-msm-fourth-port.patch
 	0021-media-qcom-camss-l16-capture.patch
+	0022-drm-msm-a5xx-a530-no-preemption.patch
 	"
 builddir="$srcdir/linux-$_tag"
 
@@ -101,4 +102,5 @@ e3ed7b18db4bae18e05e549fd6ea654ee7fd74118f5a5cf826aabb5a9cdcc33c64d72a17c7b0b1da
 044f43d58b9b35be4332f8e857c13ee50e8e9e3c57320f5e11b6ba2ec1ef956c4b5ed9647010f6c125ec6efd6df7a166fcd20a51332efe516cbbaf895421f403  0019-slimbus-qcom-ngd-base-before-add.patch
 772c2c3989297c736c2780816aae40c2c987f9130184ff306d3d6403c8b4e801c089969755ee0f11595d37f7ccf83a4825107982f1e9334cf761631780ccf529  0020-tty-serial-msm-fourth-port.patch
 8e5f66863ea1b7906e50d0cca14a617b522d9313cb4563ac1d8753fd04dda6f1afd40caa472f3ad43f21b04dafe4e09f760dc3b7b02f8716c4b2c322f1bfc877  0021-media-qcom-camss-l16-capture.patch
+c1a8ca7f21e94425fa24276e8e49a086b25f4569a227f75f88255f1bdfaaea1380bbfb0aa56e46f3d731e77b729dd71562406d7a88a8c0dae2f974695e40a8b4  0022-drm-msm-a5xx-a530-no-preemption.patch
 "

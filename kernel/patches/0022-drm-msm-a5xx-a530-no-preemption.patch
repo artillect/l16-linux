@@ -1,0 +1,21 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] drm/msm/a5xx: no preemption on the A530
+
+---
+diff --git a/drivers/gpu/drm/msm/adreno/a5xx_gpu.c b/drivers/gpu/drm/msm/adreno/a5xx_gpu.c
+index 56eaff2ee..b057c1659 100644
+--- a/drivers/gpu/drm/msm/adreno/a5xx_gpu.c
++++ b/drivers/gpu/drm/msm/adreno/a5xx_gpu.c
+@@ -1750,7 +1750,11 @@ static struct msm_gpu *a5xx_gpu_init(struct drm_device *dev)
+ 
+ 	nr_rings = 4;
+ 
+-	if (config->info->revn == 510)
++	/*
++	 * One ring (no preemption) on the A530 too: preemption there locked the GPU up
++	 * (a preemption that never completes, the UI stuck on a fence; Light L16)
++	 */
++	if (config->info->revn == 510 || config->info->revn == 530)
+ 		nr_rings = 1;
+ 
+ 	ret = adreno_gpu_init(dev, pdev, adreno_gpu, config->info->funcs, nr_rings);
