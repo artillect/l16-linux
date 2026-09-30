@@ -1,0 +1,21 @@
+[package]
+name = "glycin-lri"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "glycin loader for Light L16 LRI files: a quick look at the reference module's frame"
+
+[dependencies]
+# glycin 2.1's loader interface ("2+")
+glycin-utils = { version = "=4.1.0", features = ["async-io", "loader-utils"] }
+
+[[bin]]
+name = "glycin-lri"
+path = "src/main.rs"
+
+[[bin]]
+name = "lri-quick-ppm"
+path = "src/bin/lri-quick-ppm.rs"
+
+[profile.release]
+opt-level = 3

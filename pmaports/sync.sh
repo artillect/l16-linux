@@ -18,28 +18,35 @@ cp "$REPO"/kernel/patches/*.patch "$REPO/kernel/config-light-lfc.aarch64" \
 	"$DST/linux-light-lfc/"
 
 # other packages (not device-specific) go to main/
-for pkg in chiaro l16-camera; do
+for pkg in chiaro l16-camera glycin-lri; do
 	rm -rf "${PMAPORTS:?}/main/$pkg"
 	mkdir -p "$PMAPORTS/main/$pkg"
 	cp -r "$REPO/pmaports/main/$pkg/." "$PMAPORTS/main/$pkg/"
 	find "$PMAPORTS/main/$pkg" -type f -exec sed -i 's/\r$//' {} +
 done
 
-# l16-camera builds from this repository: its sources and the photo tools it runs, packed
-# reproducibly (fixed times, owners and modes; LF line ends), so the APKBUILD's checksum
-# holds until they change (then: pmbootstrap checksum l16-camera, and copy it back)
-S=$(mktemp -d)
-mkdir -p "$S/l16-camera/tools"
-cp -r "$REPO/l16-camera/." "$S/l16-camera/"
-rm -rf "$S/l16-camera/target"
-cp "$REPO/tools/l16-shoot" "$REPO/tools/l16-lri-assemble" "$S/l16-camera/tools/"
-find "$S" -type f -exec sed -i 's/\r$//' {} +
-find "$S" -type d -exec chmod 755 {} +
-find "$S" -type f -exec chmod 644 {} +
-chmod 755 "$S"/l16-camera/tools/*
-tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$S" -cf - l16-camera |
-	gzip -n > "$PMAPORTS/main/l16-camera/l16-camera-src.tar.gz"
-rm -rf "$S"
+# our own programs build from this repository: pack(PKG DIR [FILE...]) packs DIR (and the
+# files, into tools/) as main/PKG/PKG-src.tar.gz, reproducibly (fixed times, owners and
+# modes; LF line ends), so the APKBUILD's checksum holds until they change (then:
+# pmbootstrap checksum PKG, and copy it back)
+pack() {
+	local pkg=$1 dir=$2 S
+	shift 2
+	S=$(mktemp -d)
+	mkdir -p "$S/$pkg/tools"
+	cp -r "$REPO/$dir/." "$S/$pkg/"
+	rm -rf "$S/$pkg/target"
+	for f in "$@"; do cp "$REPO/$f" "$S/$pkg/tools/"; done
+	find "$S" -type f -exec sed -i 's/\r$//' {} +
+	find "$S" -type d -exec chmod 755 {} +
+	find "$S" -type f -exec chmod 644 {} +
+	chmod 755 "$S/$pkg/tools" "$S/$pkg"/tools/* 2>/dev/null || true
+	tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$S" -cf - "$pkg" |
+		gzip -n > "$PMAPORTS/main/$pkg/$pkg-src.tar.gz"
+	rm -rf "$S"
+}
+pack l16-camera l16-camera tools/l16-shoot tools/l16-lri-assemble
+pack glycin-lri glycin-lri
 
 # our patched copies of pmaports' own packages go back to temp/
 for pkg in libcamera; do

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="image/x-light-lri">
+    <comment>Light L16 photo</comment>
+    <acronym>LRI</acronym>
+    <expanded-acronym>Light Raw Image</expanded-acronym>
+    <sub-class-of type="image/x-dcraw"/>
+    <generic-icon name="image-x-generic"/>
+    <magic priority="80">
+      <match type="string" offset="0" value="LELR"/>
+    </magic>
+    <glob pattern="*.lri"/>
+  </mime-type>
+</mime-info>

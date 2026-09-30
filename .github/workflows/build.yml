@@ -50,7 +50,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build packages
-        run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera l16-camera
+        run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera l16-camera glycin-lri
 
       - name: Publish packages
         env:

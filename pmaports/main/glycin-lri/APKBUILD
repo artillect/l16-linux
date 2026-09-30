@@ -1,0 +1,37 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# LRI files (Light L16 photos) as images everywhere: a glycin loader (Loupe, thumbnails in
+# file managers and choosers), the file type, and Loupe as their default viewer. From this
+# repository (pmaports/sync.sh packs glycin-lri/ into $pkgname-src.tar.gz here).
+pkgname=glycin-lri
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Light L16 LRI photos in image viewers and file managers"
+url="https://github.com/artillect/l16-linux"
+arch="aarch64"
+license="MIT"
+depends="glycin-thumbnailer shared-mime-info"
+makedepends="cargo cargo-auditable"
+options="net !check"	# net: cargo fetches the crates in prepare()
+source="$pkgname-src.tar.gz"
+builddir="$srcdir/$pkgname"
+
+# pmbootstrap sets RUSTC_WRAPPER=/usr/bin/sccache on native builds without installing it
+unset RUSTC_WRAPPER
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release --bin glycin-lri
+}
+
+package() {
+	install -Dm755 target/release/glycin-lri "$pkgdir"/usr/libexec/glycin-loaders/2+/glycin-lri
+	install -Dm644 data/glycin-lri.conf "$pkgdir"/usr/share/glycin-loaders/2+/conf.d/glycin-lri.conf
+	install -Dm644 data/glycin-lri.thumbnailer "$pkgdir"/usr/share/thumbnailers/glycin-lri.thumbnailer
+	install -Dm644 data/light-lri.xml "$pkgdir"/usr/share/mime/packages/light-lri.xml
+	# Loupe opens them (its own entry lists only the types it knows)
+	install -Dm644 data/phosh-mimeapps.list "$pkgdir"/usr/share/applications/phosh-mimeapps.list
+}

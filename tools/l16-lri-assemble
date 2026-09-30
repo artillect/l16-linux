@@ -56,9 +56,10 @@ def blocks(path):
 	return out
 
 
-def awb_gains(frame):
-	"""Gray-world gains (red, blue) from the first image of a block: the reference module,
-	GRBG (A1), sampled every 40 pixels, as a little-endian 10-bit bitstream."""
+def awb_gains(frame, red=(1, 0)):
+	"""Gray-world gains (red, blue) from the first image of a block, sampled every 40 pixels,
+	as a little-endian 10-bit bitstream; @red: where red is in its 2x2 quad (x, y): A1 GRBG
+	(1, 0), B2 at 70 mm BGGR (1, 1)."""
 	W, H, STRIDE, BLACK = 4160, 3120, 5200, 42
 	def px(row, col):
 		o = 32 + row * STRIDE + col * 10 // 8
@@ -67,7 +68,9 @@ def awb_gains(frame):
 	r = g = b = 0
 	for row in range(200, H - 200, 40):
 		for col in range(200, W - 200, 40):
-			g1, rr, bb, g2 = px(row, col), px(row, col + 1), px(row + 1, col), px(row + 1, col + 1)
+			rx, ry = red
+			rr, bb = px(row + ry, col + rx), px(row + 1 - ry, col + 1 - rx)
+			g1, g2 = px(row + ry, col + 1 - rx), px(row + 1 - ry, col + rx)
 			if min(g1, rr, bb, g2) > 8 and max(g1, rr, bb, g2) < 940:
 				r += rr; g += (g1 + g2) / 2; b += bb
 	return (g / r, g / b) if r and b else (1.0, 1.0)
@@ -116,6 +119,32 @@ def fields(msg):
 
 def length_field(num, data):
 	return varint(num << 3 | 2) + varint(len(data)) + data
+
+
+def first_red(header):
+	"""Where red is in the 2x2 quad of a block's first image (x, y), from its LightHeader
+	(camera modules, field 12: sensor data surface 9 with its data offset 5, Bayer red
+	override 13 {x 1, y 2}); A1's by default."""
+	best = None
+	for n, f in fields(header):
+		if n != 12:
+			continue
+		_, i = read_varint(f, 0)
+		_, i = read_varint(f, i)
+		off, red = None, None
+		for m, g in fields(f[i:]):
+			if m in (9, 13):
+				_, j = read_varint(g, 0)
+				_, j = read_varint(g, j)
+				sub = {k: v for k, v in fields(g[j:])}
+				if m == 9 and 5 in sub:
+					off, _ = read_varint(sub[5], 1)
+				if m == 13:
+					xy = [read_varint(sub[k], 1)[0] if k in sub else 0 for k in (1, 2)]
+					red = tuple(xy) if all(v < 2 for v in xy) else None
+		if off is not None and red and (best is None or off < best[0]):
+			best = (off, red)
+	return best[1] if best else (1, 0)
 
 
 def taken(header):
@@ -206,7 +235,7 @@ except FileNotFoundError:
 # a burst: one LRI per frame, OUT_1.lri, OUT_2.lri, ...
 for i in range(count):
 	name = out if count == 1 else "%s_%d%s" % (out[:-4], i + 1, out[-4:]) if out.endswith(".lri") else "%s_%d" % (out, i + 1)
-	gains = wb or awb_gains(per_asic[0][i][0])
+	gains = wb or awb_gains(per_asic[0][i][0], first_red(per_asic[0][i][-1]))
 	print("white balance: red %.3f blue %.3f" % gains)
 	with open(name, "wb") as o:
 		for asic in per_asic:
