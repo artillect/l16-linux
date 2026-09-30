@@ -28,3 +28,7 @@ SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Light L16 touch strip", GROU
 # l16-capture (group video): CAMSS's virtual channel and data type parameters, set for the
 # ASICs' capture transfers
 ACTION=="add", SUBSYSTEM=="module", KERNEL=="qcom_camss", RUN+="/bin/chgrp video /sys/module/qcom_camss/parameters/vc /sys/module/qcom_camss/parameters/dt", RUN+="/bin/chmod g+w /sys/module/qcom_camss/parameters/vc /sys/module/qcom_camss/parameters/dt"
+
+# l16-camera (group video): the SLPI gyroscope (BMI160 via qcom_smgr), read while the preview
+# runs to tell when the camera is still (tripod mode); its buffer and scan settings too
+SUBSYSTEM=="iio", KERNEL=="iio:device*", ATTR{name}=="qcom-smgr-gyro", GROUP="video", MODE="0660", RUN+="/bin/sh -c 'chgrp video /sys%p/buffer/enable /sys%p/buffer/length /sys%p/scan_elements/*_en && chmod g+w /sys%p/buffer/enable /sys%p/buffer/length /sys%p/scan_elements/*_en'"
