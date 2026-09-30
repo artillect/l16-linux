@@ -19,6 +19,8 @@ pub const MIRRORS: u32 = 0x0098_1d0a; // button: the mirrors for the zoom (once 
 pub const METERING: u32 = 0x0098_1d0b; // 0 centre-weighted, 1 touch
 pub const PRIORITY: u32 = 0x0098_1d0c; // in auto: 0 none, 1 ISO, 2 shutter
 pub const EV: u32 = 0x0098_1d0d; // EV compensation in thirds, -9 .. 9
+pub const PREVIEW_BOOST: u32 = 0x0098_1d0e; // the preview's digital boost x 100 (read-only)
+pub const TRIPOD: u32 = 0x0098_1d0f; // the camera is still: auto photos up to 100 ms
 
 #[repr(C)]
 struct Control {

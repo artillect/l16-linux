@@ -8,6 +8,7 @@
 // preview stops and l16-capture takes an LRI with the modules for the zoom.
 
 mod ccb;
+mod gyro;
 mod haptics;
 mod icons;
 mod input;
@@ -203,6 +204,7 @@ struct State {
     unseen_since: Option<Instant>,
     screen_off: bool,
     fast_loop_on: bool,
+    tripod: bool, // tripod mode as last sent
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -421,8 +423,12 @@ struct App {
     focusing: Arc<AtomicBool>,
     stage_tx: mpsc::Sender<Stage>,
     ctl_tx: mpsc::Sender<(u32, i32)>,
-    // the driver's metered ISO and exposure (us), read by a thread of their own
-    metered: Arc<[std::sync::atomic::AtomicI32; 2]>,
+    // the driver's metered ISO and exposure (us), the photo's as the ASICs have it, and the
+    // preview's digital boost x 100, read by a thread of their own
+    metered: Arc<[std::sync::atomic::AtomicI32; 3]>,
+    // tripod mode: the gyro read while the preview runs, and whether the camera is still
+    gyro_on: Arc<AtomicBool>,
+    still: Arc<AtomicBool>,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -662,9 +668,15 @@ impl App {
         let iso = if st.mode.fixes_iso() { iso_at(st.iso) } else { st.live_iso };
         let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
         // stock keeps the sensors' analog gain at most 7.75 (ISO 775) and has its ISP apply
-        // the rest as digital gain, up to 4.13x (ISO 3200), before its tone map and gamma:
-        // the software ISP does the same here (libcamera's DigitalGain, our patch)
-        let gain = (iso as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX) as f32;
+        // the ASICs' digital boost on top, before its gamma: the software ISP does the same
+        // here (libcamera's DigitalGain, our patch). With the ISO set (ISO priority, manual)
+        // the rest of that ISO; otherwise the boost the ASICs report, which in shutter
+        // priority brightens the preview towards a long exposure the preview can't take.
+        let gain = if st.mode.fixes_iso() {
+            (iso as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX) as f32
+        } else {
+            (self.metered[2].load(Ordering::Relaxed) as f32 / 100.0).clamp(1.0, 32.0)
+        };
         if (gain - self.preview_gain.get()).abs() > 0.005 {
             self.preview_gain.set(gain);
             if let Some(src) = self.pipeline.by_name("src") {
@@ -1774,6 +1786,11 @@ impl App {
         }
         self.continuous_focus();
         self.follow_screen();
+        let still = self.still.load(Ordering::Relaxed);
+        if still != self.st.borrow().tripod {
+            self.st.borrow_mut().tripod = still;
+            let _ = self.ctl_tx.send((ccb::TRIPOD, still as i32));
+        }
         let (show, asleep) = {
             let st = self.st.borrow();
             (st.histogram, st.asleep)
@@ -1860,12 +1877,14 @@ impl App {
         };
         if !on && !asleep && !busy {
             self.st.borrow_mut().asleep = true;
+            self.gyro_on.store(false, Ordering::Relaxed);
             if let Some(mut t) = self.transfers.borrow_mut().take() {
                 t.stop();
             }
             self.stop_preview();
         } else if on && asleep {
             self.st.borrow_mut().asleep = false;
+            self.gyro_on.store(true, Ordering::Relaxed);
             let _ = self.pipeline.set_state(gst::State::Playing);
             self.apply_exposure();
             self.apply_wb();
@@ -2460,16 +2479,19 @@ fn build(gapp: &gtk::Application) {
     input::spawn(input_tx);
     // the metered exposure, off the UI thread (reading a control waits for the driver, which
     // a focus run holds for seconds: the UI stalled and drags were dropped)
-    let metered: Arc<[std::sync::atomic::AtomicI32; 2]> = Arc::new(Default::default());
+    let metered: Arc<[std::sync::atomic::AtomicI32; 3]> = Arc::new(Default::default());
     let m = metered.clone();
     thread::spawn(move || {
         let Some(c) = ccb::Ccb::open() else { return };
         loop {
             m[0].store(c.get(ccb::AE_ISO).unwrap_or(0), Ordering::Relaxed);
             m[1].store(c.get(ccb::AE_EXPOSURE_US).unwrap_or(0), Ordering::Relaxed);
+            m[2].store(c.get(ccb::PREVIEW_BOOST).unwrap_or(100), Ordering::Relaxed);
             thread::sleep(Duration::from_millis(300));
         }
     });
+    let (gyro_on, still) = (Arc::new(AtomicBool::new(true)), Arc::new(AtomicBool::new(false)));
+    gyro::spawn(gyro_on.clone(), still.clone());
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -2517,6 +2539,7 @@ fn build(gapp: &gtk::Application) {
             unseen_since: None,
             screen_off: false,
             fast_loop_on: false,
+            tripod: false,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -2533,6 +2556,8 @@ fn build(gapp: &gtk::Application) {
         input_rx,
         ctl_tx,
         metered: metered.clone(),
+        gyro_on: gyro_on.clone(),
+        still: still.clone(),
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
