@@ -13,16 +13,19 @@
 # to the record size, gives the block, and the blocks one after another give the LRI file.
 #
 # Stock LRIs also carry this camera's factory calibration (hw_info, module and device
-# calibration, sensor data) and view preferences in their last blocks, which renderers like
-# lri-rs need. If DEVICE_BLOCKS exists (those blocks cut from one of this camera's own stock
-# LRIs; it holds the camera's unique ID, so it is kept on the device only), it is appended.
+# calibration, sensor data) and view preferences in their last blocks, which renderers (Light's
+# own, lri-rs, chiaro) need. The calibration comes from lightcal's calibration.lri (gathered at
+# boot by light-lfc-android-libs; it's the camera's own, kept on the device); the view
+# preferences are written for each photo.
 import re
 import struct
 import sys
 
 RECORD = 16228352		# 3962 pages of 4 KiB
 FRAME = 1760 * 9219		# what CAMSS stores per record
-DEVICE_BLOCKS = "/var/lib/l16/lri-device-blocks.bin"
+# the camera's factory calibration (lightcal's calibration.lri, gathered at boot by
+# light-lfc-android-libs), or blocks cut from one of its stock LRIs by hand (older installs)
+CALIBRATION = ("/var/lib/l16/calibration.lri", "/var/lib/l16/lri-device-blocks.bin")
 
 
 def blocks(path):
@@ -184,20 +187,32 @@ def with_view(blocks, gains, awb_mode, gain, exposure_ns):
 		if sig != b"LELR" or length < 32:
 			return blocks
 		last, o = o, o + length
-	sig, length, msg_off, msg_len, _ = struct.unpack_from("<4sQQIB", blocks, last)
-	header = fields(blocks[last + msg_off:last + msg_off + msg_len])
-	vp = [f for n, f in header if n == 19]
-	if not vp:
-		return blocks
-	_, i = read_varint(vp[0], 0)
-	_, i = read_varint(vp[0], i)
-	keep = [f for n, f in fields(vp[0][i:]) if n not in (7, 10, 11, 15, 18, 19)]
+	header, vp = [], []
+	if blocks:
+		sig, length, msg_off, msg_len, _ = struct.unpack_from("<4sQQIB", blocks, last)
+		header = fields(blocks[last + msg_off:last + msg_off + msg_len])
+		vp = [f for n, f in header if n == 19]
+	keep = []
+	if vp:
+		_, i = read_varint(vp[0], 0)
+		_, i = read_varint(vp[0], i)
+		keep = [f for n, f in fields(vp[0][i:]) if n not in (7, 10, 11, 15, 18, 19)]
 	chan = struct.pack("<BfBfBfBf", 0x0d, gains[0], 0x15, 1.0, 0x1d, 1.0, 0x25, gains[1])
 	new = b"".join(keep) + varint(7 << 3) + varint(awb_mode) + length_field(15, chan)
 	if gain:
 		new += varint(10 << 3 | 5) + struct.pack("<f", gain) + varint(18 << 3 | 5) + struct.pack("<f", gain)
 	if exposure_ns:
 		new += varint(11 << 3) + varint(exposure_ns) + varint(19 << 3) + varint(exposure_ns)
+	if not vp:
+		# no view preferences yet (lightcal's calibration.lri): a LightHeader block of its
+		# own for them, as the last block, with the whole frame as the crop (14: {start
+		# Point2F 1, size Point2F 2}; without one, Light's renderer crops in)
+		point = lambda x, y: struct.pack("<BfBf", 0x0d, x, 0x15, y)
+		new = length_field(14, length_field(1, point(0.0, 0.0)) + length_field(2, point(1.0, 1.0))) + new
+		msg = length_field(19, new)
+		size = (32 + len(msg) + 1023) // 1024 * 1024
+		block = struct.pack("<4sQQIB", b"LELR", size, 32, len(msg), 0) + bytes(7)
+		return blocks + block + msg + bytes(size - 32 - len(msg))
 	msg = b"".join(f for n, f in header if n != 19) + length_field(19, new)
 	size = max(length, msg_off + len(msg))
 	block = blocks[last:last + msg_off]
@@ -226,12 +241,17 @@ per_asic = [blocks(path) for path in args[1:]]
 count = len(per_asic[0])
 if any(len(b) != count for b in per_asic):
 	sys.exit("the ASICs sent different numbers of blocks: %s" % [len(b) for b in per_asic])
-try:
-	with open(DEVICE_BLOCKS, "rb") as f:
-		device = f.read()
-except FileNotFoundError:
-	device = None
-	print("no", DEVICE_BLOCKS, "(calibration); renderers may need it")
+device = None
+for path in CALIBRATION:
+	try:
+		with open(path, "rb") as f:
+			device = f.read()
+		break
+	except FileNotFoundError:
+		pass
+if device is None:
+	device = b""
+	print("no camera calibration (%s); renderers need it" % CALIBRATION[0])
 # a burst: one LRI per frame, OUT_1.lri, OUT_2.lri, ...
 for i in range(count):
 	name = out if count == 1 else "%s_%d%s" % (out[:-4], i + 1, out[-4:]) if out.endswith(".lri") else "%s_%d" % (out, i + 1)
@@ -241,13 +261,12 @@ for i in range(count):
 		for asic in per_asic:
 			for part in asic[i]:
 				o.write(part)
-		if device:
-			# the exposure as taken (the ASICs choose it in auto and the priority modes);
-			# the gain too, but above the modules' 7.75 the rest is digital, recorded only
-			# here: the app's ISO then
-			gain, ns = taken(per_asic[0][i][-1])
-			if gain is None or (iso and gain >= 7.74 and iso / 100 > gain):
-				gain = iso and iso / 100
-			ns = ns or (exposure_us and exposure_us * 1000)
-			o.write(with_view(device, gains, awb_mode, gain, ns))
+		# the exposure as taken (the ASICs choose it in auto and the priority modes);
+		# the gain too, but above the modules' 7.75 the rest is digital, recorded only
+		# here: the app's ISO then
+		gain, ns = taken(per_asic[0][i][-1])
+		if gain is None or (iso and gain >= 7.74 and iso / 100 > gain):
+			gain = iso and iso / 100
+		ns = ns or (exposure_us and exposure_us * 1000)
+		o.write(with_view(device, gains, awb_mode, gain, ns))
 	print("wrote", name)

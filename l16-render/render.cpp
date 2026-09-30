@@ -2,7 +2,8 @@
 // from the camera's stock system), the way the stock gallery's native code does
 // (libnative-lib: CIAPI::Renderer::Create, input stream with the hot-pixel map, tuning,
 // writeImage). An Android (bionic) program: built with the NDK, run through the stock
-// linker64 and libraries copied to /var/lib/l16/android. SIZE: the long side in pixels
+// linker64 and libraries copied to /var/lib/l16/android (light-lfc-android-libs), with the
+// camera's hot-pixel map from there too. Run it through the l16-render script. SIZE: the long side in pixels
 // (default: the renderer's full size).
 #include <cstdio>
 #include <cstring>
@@ -144,7 +145,9 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	parts.push_back(lri);
-	auto hp = std::make_shared<FileStream<std::istream>>("/lightcal/hotpixel.rec", "rb");
+	const char *hotpixel = std::getenv("L16_HOTPIXEL");
+	auto hp = std::make_shared<FileStream<std::istream>>(
+		hotpixel ? hotpixel : "/var/lib/l16/android/hotpixel.rec", "rb");
 	if (hp->fb.ok())
 		parts.push_back(hp);
 	std::shared_ptr<std::streambuf> buf = CreateMultiStream(parts);

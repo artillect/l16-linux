@@ -1,0 +1,78 @@
+#!/bin/sh
+# light-lfc-android-libs: gather what the camera software needs from the camera's own stock
+# partitions (nothing of Light's or Android's ships with this port):
+#  - /var/lib/l16/android: Android's linker and base libraries (system partition), Light's
+#    renderer libcp and its libraries (system, and the stock gallery app), for l16-render,
+#    and the camera's hot-pixel map (lightcal);
+#  - /var/lib/l16/calibration.lri: the camera's factory calibration (lightcal), which
+#    l16-lri-assemble adds to every photo, as stock does.
+# The system partition is the one msm-firmware-loader mounts (read-only). lightcal is only
+# ever mounted read-only, with its block device set read-only first and no journal replay:
+# it holds the factory calibration and must never be written. Copies are only redone when
+# the source differs.
+SYSTEM=/run/msm-firmware-loader/mnt/system
+LIGHTCAL=/dev/disk/by-partlabel/lightcal
+OUT=/var/lib/l16
+LIBS=$OUT/android
+
+log() { echo "light-lfc-android-libs: $*"; }
+
+# copy $1 to $2 unless they're the same already
+put() {
+	cmp -s "$1" "$2" 2>/dev/null && return 0
+	cp "$1" "$2.new" && mv "$2.new" "$2"
+}
+
+mkdir -p "$LIBS"
+ok=1
+
+if [ -d "$SYSTEM/lib64" ]; then
+	put "$SYSTEM/bin/linker64" "$LIBS/linker64" && chmod 755 "$LIBS/linker64" || ok=0
+	for lib in libc.so libm.so libdl.so liblog.so libc++.so libcp.so libceres.so; do
+		put "$SYSTEM/lib64/$lib" "$LIBS/$lib" || ok=0
+	done
+	# bionic's time zones (its logging looks them up)
+	mkdir -p "$LIBS/usr/share/zoneinfo"
+	put "$SYSTEM/usr/share/zoneinfo/tzdata" "$LIBS/usr/share/zoneinfo/tzdata" || ok=0
+	# the NDK C++ runtime libcp was built with: only in the stock gallery app
+	apk="$SYSTEM/priv-app/light_gallery/light_gallery.apk"
+	tmp=$(mktemp -d)
+	if unzip -q -o -j "$apk" lib/arm64-v8a/libc++_shared.so -d "$tmp" 2>/dev/null; then
+		put "$tmp/libc++_shared.so" "$LIBS/libc++_shared.so" || ok=0
+	else
+		log "no libc++_shared.so in $apk"
+		ok=0
+	fi
+	rm -rf "$tmp"
+else
+	log "stock system partition not mounted at $SYSTEM"
+	ok=0
+fi
+
+# lightcal: the hot-pixel map and the factory calibration
+if [ -e "$LIGHTCAL" ]; then
+	blockdev --setro "$LIGHTCAL"
+	mnt=$(mktemp -d)
+	if mount -t ext4 -o ro,noload,noexec,nosuid,nodev "$LIGHTCAL" "$mnt"; then
+		for f in hotpixel.rec calibration.lri; do
+			if [ -e "$mnt/$f" ] && [ -e "$mnt/$f.md5" ] &&
+			   [ "$(md5sum < "$mnt/$f" | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$mnt/$f.md5")" ]; then
+				[ $f = hotpixel.rec ] && dest=$LIBS/$f || dest=$OUT/$f
+				put "$mnt/$f" "$dest" || ok=0
+			else
+				log "lightcal: $f missing or not matching its md5"
+			fi
+		done
+		umount "$mnt"
+	else
+		log "can't mount lightcal read-only"
+		ok=0
+	fi
+	rmdir "$mnt"
+else
+	log "no lightcal partition"
+fi
+
+chmod 644 "$LIBS"/*.so "$LIBS"/hotpixel.rec "$LIBS"/usr/share/zoneinfo/tzdata "$OUT"/calibration.lri 2>/dev/null
+[ $ok = 1 ] && log "ready" || log "incomplete: l16-render won't be able to run"
+[ $ok = 1 ]

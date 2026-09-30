@@ -50,6 +50,8 @@ source="
 	light-lfc-firmware.sh
 	light-lfc-led
 	light-lfc-led.initd
+	light-lfc-android-libs
+	light-lfc-android-libs.initd
 	light-lfc-strip-volume
 	light-lfc-strip-volume.initd
 	libcamera-light-ccb.yaml
@@ -105,6 +107,9 @@ package() {
 	# the status LED: charging and low battery, as stock
 	install -Dm755 "$srcdir"/light-lfc-led \
 		"$pkgdir"/usr/libexec/light-lfc-led
+	# Light's renderer, Android's runtime and the calibration, from the stock partitions
+	install -Dm755 "$srcdir"/light-lfc-android-libs \
+		"$pkgdir"/usr/libexec/light-lfc-android-libs
 
 	# the touch strip as volume keys outside the camera app (a uinput device)
 	install -Dm755 "$srcdir"/light-lfc-strip-volume \
@@ -153,6 +158,8 @@ openrc() {
 		"$subpkgdir"/etc/init.d/light-lfc-bootmode
 	install -Dm755 "$srcdir"/light-lfc-led.initd \
 		"$subpkgdir"/etc/init.d/light-lfc-led
+	install -Dm755 "$srcdir"/light-lfc-android-libs.initd \
+		"$subpkgdir"/etc/init.d/light-lfc-android-libs
 	install -Dm755 "$srcdir"/light-lfc-strip-volume.initd \
 		"$subpkgdir"/etc/init.d/light-lfc-strip-volume
 }
