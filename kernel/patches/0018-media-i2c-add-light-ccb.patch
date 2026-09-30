@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..c8ba6c1f1
+index 000000000..ec6fe090d
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1554 @@
+@@ -0,0 +1,1555 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -840,16 +840,17 @@ index 000000000..c8ba6c1f1
 +	case V4L2_CID_EXPOSURE_AUTO:
 +		/*
 +		 * a dial being dragged sets these many times a second, and a burst of AE
-+		 * messages stops ASIC1 answering: send the settings once the changes pause
++		 * messages stops ASIC1 answering: send the latest settings at most every
++		 * 60 ms, so the preview follows the dial (the work reads them when it runs)
 +		 */
-+		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
++		schedule_delayed_work(&c->ae, msecs_to_jiffies(60));
 +		break;
 +	case V4L2_CID_LIGHT_FLASH:
 +	case V4L2_CID_LIGHT_METERING:
 +	case V4L2_CID_LIGHT_PRIORITY:
 +	case V4L2_CID_LIGHT_EV:
 +		/* the AE mode byte and region (sent once the change is in) */
-+		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
++		schedule_delayed_work(&c->ae, msecs_to_jiffies(60));
 +		break;
 +	case V4L2_CID_LIGHT_ZOOM:
 +		/* stock sends the zoom factor as it changes, every 30-50 ms */
