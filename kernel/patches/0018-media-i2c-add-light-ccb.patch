@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..700343227
+index 000000000..59b2f1c68
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1336 @@
+@@ -0,0 +1,1338 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -674,7 +674,7 @@ index 000000000..700343227
 +}
 +
 +/*
-+ * Stock's autofocus: lock AE, AF on one 200x200 window {01, reason, u16 x, y, w, h, weight 1000}
++ * Stock's autofocus: lock AE, AF on one 200x200 window {01, reason 1, u16 x, y, w, h, weight 1000}
 + * in the module's 4160x3120 pixels (stock's centre window is at 1958,1482), unlock.
 + */
 +static int ccb_autofocus(struct ccb *c)
@@ -685,9 +685,10 @@ index 000000000..700343227
 +
 +	put_unaligned_le16(c->focus_x->cur.val, roi + 2);
 +	put_unaligned_le16(c->focus_y->cur.val, roi + 4);
-+	/* the reason byte: stock sends 3 for the centre window, 2 for a touch elsewhere */
-+	roi[1] = c->focus_x->cur.val == c->focus_x->default_value &&
-+		 c->focus_y->cur.val == c->focus_y->default_value ? 3 : 2;
++	/*
++	 * the reason byte stays 1: stock sends 3 for its routine centre focus and 2 or 5 for
++	 * touches, but with those A1 (the 28-70 mm preview) stopped focusing
++	 */
 +
 +	if (!c->previewing)
 +		return -EBUSY;
@@ -699,8 +700,9 @@ index 000000000..700343227
 +		return ret;
 +	}
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, unlock, sizeof(unlock));
-+	if (ret >= 0)
-+		dev_dbg(&c->client->dev, "autofocus status %d\n", ret);
++	if (debug)
++		dev_info(&c->client->dev, "autofocus at %d,%d: %d (1 focused, 2 failed)\n",
++			 c->focus_x->cur.val, c->focus_y->cur.val, ret);
 +	return ret < 0 ? ret : 0;
 +}
 +
