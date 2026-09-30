@@ -39,5 +39,5 @@ package() {
 	install -Dm644 l16-camera.desktop "$pkgdir"/usr/share/applications/l16-camera.desktop
 }
 sha512sums="
-fb78308964fd2dcf99b35961df3ba8caedbde2472135286d711c0eb8332e9372ac692e194795b90e2888ec66db73883a97850579c2ea761e098e9cc30537a092  l16-camera-src.tar.gz
+72c6b87686815c66225524eb2a251bd5ed1813e7764751c4bf9b89a7f3aabc692562aa5fe7073cacb08dede21a35c385d8bb5ce706ba585bd4da75fb40cfd263  l16-camera-src.tar.gz
 "

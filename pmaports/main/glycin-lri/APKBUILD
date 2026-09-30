@@ -35,3 +35,6 @@ package() {
 	# Loupe opens them (its own entry lists only the types it knows)
 	install -Dm644 data/phosh-mimeapps.list "$pkgdir"/usr/share/applications/phosh-mimeapps.list
 }
+sha512sums="
+9747cdfbd73e3ecfb0c6dcf987456f12ad86a3a9403b97f277720995fd86125a3798971c2b46d0cc713fb72e509bf50a5d61f2eeae279c650407719a578ac683  glycin-lri-src.tar.gz
+"
