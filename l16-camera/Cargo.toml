@@ -2,7 +2,7 @@
 name = "l16-camera"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 description = "Camera app for the Light L16 on Linux, after OpenLight's layout"
 
 [dependencies]
