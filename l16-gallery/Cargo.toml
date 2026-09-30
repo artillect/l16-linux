@@ -1,0 +1,13 @@
+[package]
+name = "l16-gallery"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Gallery for Light L16 photos: quick looks, and full renders by Light's own renderer"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.10", features = ["v4_12"] }
+md-5 = "0.10"
+
+[profile.release]
+opt-level = 3

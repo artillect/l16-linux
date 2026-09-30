@@ -1,0 +1,40 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# The L16's gallery: its photos by day, a quick look at each, and Light's own processing
+# (l16-render). From this repository (pmaports/sync.sh packs l16-gallery/, with the icons
+# and LRI reader it shares with l16-camera and glycin-lri, into $pkgname-src.tar.gz here).
+pkgname=l16-gallery
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Gallery for the Light L16's photos"
+url="https://github.com/artillect/l16-linux"
+arch="aarch64"
+license="MIT"
+depends="
+	font-nerd-fonts-symbols
+	glycin-lri
+	l16-render
+	"
+makedepends="cargo cargo-auditable gtk4.0-dev"
+options="net !check"	# net: cargo fetches the crates in prepare()
+source="$pkgname-src.tar.gz"
+builddir="$srcdir/$pkgname"
+
+# pmbootstrap sets RUSTC_WRAPPER=/usr/bin/sccache on native builds without installing it
+unset RUSTC_WRAPPER
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+package() {
+	install -Dm755 target/release/l16-gallery "$pkgdir"/usr/bin/l16-gallery
+	install -Dm644 l16-gallery.desktop "$pkgdir"/usr/share/applications/l16-gallery.desktop
+}
+sha512sums="
+d8fd341f042515ca3547800f973632e80cc26650f9c42b5c6c6548b2f0bf704f9244bcc147ec1e0a424c75cdf58298092a31f50345fbaf07ebc74d964511870c  l16-gallery-src.tar.gz
+"
