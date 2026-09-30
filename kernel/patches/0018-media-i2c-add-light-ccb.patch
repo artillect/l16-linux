@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..f8662a8ee
+index 000000000..737db3e64
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1609 @@
+@@ -0,0 +1,1612 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -172,7 +172,7 @@ index 000000000..f8662a8ee
 +
 +/* preview modules: stock previews on A1 (28 mm), B4 (70 mm) or C5 (150 mm) */
 +static const char * const ccb_flash_names[] = { "Off", "Auto", "On", NULL };
-+static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", NULL };
++static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", "Whole frame", NULL };
 +static const char * const ccb_priority_names[] = { "Off", "ISO", "Shutter", NULL };
 +
 +/* EV compensation, -3 to +3 in thirds: 2^(ev/3) in 8.8 fixed point, rounded down (stock's) */
@@ -236,7 +236,7 @@ index 000000000..f8662a8ee
 +	struct v4l2_ctrl *focus_y;
 +	struct v4l2_ctrl *flash;	/* 0 off, 1 auto, 2 on */
 +	struct v4l2_ctrl *zoom_ctrl;	/* the zoom factor x 1000 (1000: 28 mm) */
-+	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch (the focus window) */
++	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch (the focus window), 2 whole frame */
 +	struct v4l2_ctrl *priority;	/* in auto: 0 none, 1 ISO (exposure metered), 2 shutter */
 +	struct v4l2_ctrl *ev;		/* EV compensation in thirds (auto and priority) */
 +};
@@ -534,7 +534,8 @@ index 000000000..f8662a8ee
 + * 0x0060 in auto (stock's trace of its flash and metering settings): {AE mode, 00, regions?,
 + * 00 3c, count, regions}: the AE mode is Android's (1 on, 2 with auto flash, 3 with the
 + * flash always), and touch metering sends one region, the focus window: {u16 x, y, w, h,
-+ * weight 1000, 40 cd}.
++ * weight 1000, 40 cd}. Whole-frame metering (not stock's) sends one region, the whole
++ * 4160 x 3120 frame, the same way.
 + */
 +static int ccb_ae_mode(struct ccb *c)
 +{
@@ -542,12 +543,14 @@ index 000000000..f8662a8ee
 +	int n = 6;
 +
 +	if (c->metering->cur.val) {
++		bool whole = c->metering->cur.val == 2;
++
 +		b[2] = 1;
 +		b[5] = 1;
-+		put_unaligned_le16(c->focus_x->cur.val, b + 6);
-+		put_unaligned_le16(c->focus_y->cur.val, b + 8);
-+		put_unaligned_le16(200, b + 10);
-+		put_unaligned_le16(200, b + 12);
++		put_unaligned_le16(whole ? 0 : c->focus_x->cur.val, b + 6);
++		put_unaligned_le16(whole ? 0 : c->focus_y->cur.val, b + 8);
++		put_unaligned_le16(whole ? 4160 : 200, b + 10);
++		put_unaligned_le16(whole ? 3120 : 200, b + 12);
 +		put_unaligned_le16(1000, b + 14);
 +		b[16] = 0x40;
 +		b[17] = 0xcd;
@@ -837,7 +840,7 @@ index 000000000..f8662a8ee
 +
 +	if (!c->previewing)
 +		return -EBUSY;
-+	if (c->metering->cur.val && c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
++	if (c->metering->cur.val == 1 && c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
 +		ccb_ae_mode(c);
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, lock, sizeof(lock));
 +	ccb_preflash(c, CCB_KIND_AF);
@@ -1076,7 +1079,7 @@ index 000000000..f8662a8ee
 +	.id = V4L2_CID_LIGHT_METERING,
 +	.name = "Metering",
 +	.type = V4L2_CTRL_TYPE_MENU,
-+	.max = 1,
++	.max = 2,
 +	.qmenu = ccb_metering_names,
 +};
 +
