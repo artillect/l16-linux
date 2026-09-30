@@ -2129,12 +2129,21 @@ fn build(gapp: &gtk::Application) {
     });
 
     let a = app.clone();
-    window.connect_close_request(move |_| {
-        if let Some(t) = a.transfers.borrow_mut().as_mut() {
-            t.stop();
-        }
-        a.stop_preview();
-        glib::Propagation::Proceed
+    // closing: the window goes at once (the shell's close animation doesn't wait for the
+    // camera), then the transfer streams and the preview stop in their order and the app ends
+    window.connect_close_request(move |w| {
+        w.set_visible(false);
+        let (a, w) = (a.clone(), w.clone());
+        glib::idle_add_local_once(move || {
+            let t = Instant::now();
+            if let Some(t) = a.transfers.borrow_mut().as_mut() {
+                t.stop();
+            }
+            a.stop_preview();
+            eprintln!("l16-camera: closed in {:.2} s", t.elapsed().as_secs_f64());
+            w.destroy();
+        });
+        glib::Propagation::Stop
     });
     // a kill (TERM, INT, HUP) closes the window as the user would, so the transfer streams
     // and the preview stop in their order (killed under a running preview, the streams leave
