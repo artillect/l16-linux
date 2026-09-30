@@ -2141,7 +2141,13 @@ fn build(gapp: &gtk::Application) {
             }
             a.stop_preview();
             eprintln!("l16-camera: closed in {:.2} s", t.elapsed().as_secs_f64());
+            // quit outright: started from the app grid, the application is registered on the
+            // session bus and stayed running (hidden) once its window was gone
+            let gapp = w.application();
             w.destroy();
+            if let Some(gapp) = gapp {
+                gapp.quit();
+            }
         });
         glib::Propagation::Stop
     });
