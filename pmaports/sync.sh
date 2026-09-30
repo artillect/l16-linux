@@ -18,19 +18,35 @@ cp "$REPO"/kernel/patches/*.patch "$REPO/kernel/config-light-lfc.aarch64" \
 	"$DST/linux-light-lfc/"
 
 # other packages (not device-specific) go to main/
-for pkg in chiaro; do
+for pkg in chiaro l16-camera; do
 	rm -rf "${PMAPORTS:?}/main/$pkg"
 	mkdir -p "$PMAPORTS/main/$pkg"
 	cp -r "$REPO/pmaports/main/$pkg/." "$PMAPORTS/main/$pkg/"
 	find "$PMAPORTS/main/$pkg" -type f -exec sed -i 's/\r$//' {} +
 done
 
+# l16-camera builds from this repository: its sources and the photo tools it runs, packed
+# reproducibly (fixed times, owners and modes; LF line ends), so the APKBUILD's checksum
+# holds until they change (then: pmbootstrap checksum l16-camera, and copy it back)
+S=$(mktemp -d)
+mkdir -p "$S/l16-camera/tools"
+cp -r "$REPO/l16-camera/." "$S/l16-camera/"
+rm -rf "$S/l16-camera/target"
+cp "$REPO/tools/l16-shoot" "$REPO/tools/l16-lri-assemble" "$S/l16-camera/tools/"
+find "$S" -type f -exec sed -i 's/\r$//' {} +
+find "$S" -type d -exec chmod 755 {} +
+find "$S" -type f -exec chmod 644 {} +
+chmod 755 "$S"/l16-camera/tools/*
+tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$S" -cf - l16-camera |
+	gzip -n > "$PMAPORTS/main/l16-camera/l16-camera-src.tar.gz"
+rm -rf "$S"
+
 # our patched copies of pmaports' own packages go back to temp/
 for pkg in libcamera; do
 	rm -rf "${PMAPORTS:?}/temp/$pkg"
 	mkdir -p "$PMAPORTS/temp/$pkg"
 	cp -r "$REPO/pmaports/temp/$pkg/." "$PMAPORTS/temp/$pkg/"
-	find "$PMAPORTS/temp/$pkg" -type f -exec sed -i 's/$//' {} +
+	find "$PMAPORTS/temp/$pkg" -type f -exec sed -i 's/\r$//' {} +
 done
 
 # strip CR in case a file was edited on Windows

@@ -5,6 +5,12 @@
 # turns the screen on once). A press within the grace period just unblanks.
 # Not while on external power, so charging and USB networking are left alone.
 #
+# Every 30 s it also checks: blank and on battery means suspend. That covers the screen
+# blanking on power and the cable coming out afterwards, and wakes that leave the screen
+# off (an alarm, the charger); either used to keep the camera awake until the battery ran
+# out. Programs that must finish first (the camera app saving photos) hold a logind
+# inhibitor, and the next check tries again.
+#
 # Presses while the suspend is under way:
 #  - after we asked logind but before the kernel froze userspace, Phosh unblanks but
 #    logind still suspends: arm the RTC to wake straight back up;
@@ -41,10 +47,22 @@ suspend_now() {
 		-m org.freedesktop.login1.Manager.Suspend false
 }
 
-rm -f "$INFLIGHT"
+# suspend, marking it under way; refused (an inhibitor), the mark goes again so the next
+# check can try. @1: also mark it as the periodic check's (no screen on after the wake)
+try_suspend() {
+	touch "$INFLIGHT"
+	[ -n "$1" ] && touch "$INFLIGHT.check"
+	if ! out=$(suspend_now 2>&1); then
+		log "not suspending: $out"
+		rm -f "$INFLIGHT" "$INFLIGHT.check"
+	fi
+}
+
+rm -f "$INFLIGHT" "$INFLIGHT.check"
 {
 	gdbus monitor --session -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver &
 	gdbus monitor --system -d org.freedesktop.login1 -o /org/freedesktop/login1 &
+	while sleep 30; do echo TICK; done &
 	wait
 } | while read -r line; do
 	case "$line" in
@@ -56,8 +74,13 @@ rm -f "$INFLIGHT"
 			log "on external power, not suspending"
 		else
 			log "screen blank for ${GRACE}s, suspending"
-			touch "$INFLIGHT"
-			suspend_now 2>&1 | logger -t light-lfc-suspend-on-blank
+			try_suspend
+		fi
+		;;
+	TICK)
+		if [ ! -e "$INFLIGHT" ] && blanked && ! on_power; then
+			log "still blank on battery, suspending"
+			try_suspend check
 		fi
 		;;
 	*ScreenSaver.ActiveChanged*false*)
@@ -68,7 +91,11 @@ rm -f "$INFLIGHT"
 		fi
 		;;
 	*PrepareForSleep*false*)
-		if [ -e "$INFLIGHT" ]; then
+		if [ -e "$INFLIGHT.check" ]; then
+			# the periodic check's suspend: a wake that leaves the screen off (an
+			# alarm, the charger) just gets the next check
+			rm -f "$INFLIGHT" "$INFLIGHT.check"
+		elif [ -e "$INFLIGHT" ]; then
 			rm -f "$INFLIGHT"
 			sleep 1
 			if blanked; then

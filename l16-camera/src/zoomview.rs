@@ -100,6 +100,10 @@ impl ZoomView {
         }
     }
 
+    pub fn gain(&self) -> f64 {
+        self.imp().gain.get()
+    }
+
     pub fn zoom(&self) -> f64 {
         self.imp().zoom.get().max(1.0)
     }

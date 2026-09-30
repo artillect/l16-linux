@@ -1,0 +1,43 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# The L16 camera app and the photo tools it runs, from this repository (pmaports/sync.sh
+# packs l16-camera/ and the tools into $pkgname-src.tar.gz here).
+pkgname=l16-camera
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Camera app for the Light L16, after OpenLight's layout"
+url="https://github.com/artillect/l16-linux"
+arch="aarch64"
+license="MIT"
+depends="
+	gst-plugins-base
+	gst-plugins-rs-gtk4
+	libcamera-gstreamer
+	python3
+	v4l-utils
+	"
+makedepends="cargo cargo-auditable gtk4.0-dev gstreamer-dev"
+options="net !check"	# net: cargo fetches the crates in prepare()
+source="$pkgname-src.tar.gz"
+builddir="$srcdir/$pkgname"
+
+# pmbootstrap sets RUSTC_WRAPPER=/usr/bin/sccache on native builds without installing it
+unset RUSTC_WRAPPER
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+package() {
+	install -Dm755 target/release/l16-camera "$pkgdir"/usr/bin/l16-camera
+	install -Dm755 tools/l16-shoot "$pkgdir"/usr/bin/l16-shoot
+	install -Dm755 tools/l16-lri-assemble "$pkgdir"/usr/bin/l16-lri-assemble
+	install -Dm644 l16-camera.desktop "$pkgdir"/usr/share/applications/l16-camera.desktop
+}
+sha512sums="
+fb78308964fd2dcf99b35961df3ba8caedbde2472135286d711c0eb8332e9372ac692e194795b90e2888ec66db73883a97850579c2ea761e098e9cc30537a092  l16-camera-src.tar.gz
+"

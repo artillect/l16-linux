@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..8b95b3595
+index 000000000..c8ba6c1f1
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1509 @@
+@@ -0,0 +1,1554 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -172,7 +172,7 @@ index 000000000..8b95b3595
 +
 +/* preview modules: stock previews on A1 (28 mm), B4 (70 mm) or C5 (150 mm) */
 +static const char * const ccb_flash_names[] = { "Off", "Auto", "On", NULL };
-+static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", "Spot", NULL };
++static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", NULL };
 +static const char * const ccb_priority_names[] = { "Off", "ISO", "Shutter", NULL };
 +
 +/* EV compensation, -3 to +3 in thirds: 2^(ev/3) in 8.8 fixed point, rounded down (stock's) */
@@ -210,6 +210,7 @@ index 000000000..8b95b3595
 +	struct delayed_work drain;	/* reads the queue while previewing */
 +	struct work_struct af;		/* a focus run (seconds; not under the control lock) */
 +	struct delayed_work ae;		/* exposure settings, sent once a burst of changes ends */
++	struct work_struct wake;	/* after a system resume: the preview back, if streaming */
 +
 +	/*
 +	 * Exposure: libcamera writes the standard exposure and gain controls with every
@@ -228,7 +229,7 @@ index 000000000..8b95b3595
 +	struct v4l2_ctrl *focus_y;
 +	struct v4l2_ctrl *flash;	/* 0 off, 1 auto, 2 on */
 +	struct v4l2_ctrl *zoom_ctrl;	/* the zoom factor x 1000 (1000: 28 mm) */
-+	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch, 2 spot (the focus window) */
++	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch (the focus window) */
 +	struct v4l2_ctrl *priority;	/* in auto: 0 none, 1 ISO (exposure metered), 2 shutter */
 +	struct v4l2_ctrl *ev;		/* EV compensation in thirds (auto and priority) */
 +};
@@ -503,9 +504,8 @@ index 000000000..8b95b3595
 +		put_unaligned_le16(200, b + 10);
 +		put_unaligned_le16(200, b + 12);
 +		put_unaligned_le16(1000, b + 14);
-+		/* the region's last bytes: touch 40 cd, spot 00 7f (as stock sends them) */
-+		b[16] = c->metering->cur.val == 2 ? 0x00 : 0x40;
-+		b[17] = c->metering->cur.val == 2 ? 0x7f : 0xcd;
++		b[16] = 0x40;
++		b[17] = 0xcd;
 +		n = 18;
 +	}
 +	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, n);
@@ -581,6 +581,7 @@ index 000000000..8b95b3595
 + * AE push: u64 exposure ns, f32 (max gain), f32 gain in ASIC units (2x analog), ...
 + */
 +static int ccb_restart_preview(struct ccb *c);
++static void ccb_wake_work(struct work_struct *work);
 +
 +static void ccb_drain_work(struct work_struct *work)
 +{
@@ -1020,7 +1021,7 @@ index 000000000..8b95b3595
 +	.id = V4L2_CID_LIGHT_METERING,
 +	.name = "Metering",
 +	.type = V4L2_CTRL_TYPE_MENU,
-+	.max = 2,
++	.max = 1,
 +	.qmenu = ccb_metering_names,
 +};
 +
@@ -1458,6 +1459,7 @@ index 000000000..8b95b3595
 +	INIT_DELAYED_WORK(&c->drain, ccb_drain_work);
 +	INIT_WORK(&c->af, ccb_af_work);
 +	INIT_DELAYED_WORK(&c->ae, ccb_ae_work);
++	INIT_WORK(&c->wake, ccb_wake_work);
 +
 +	/* boot straps low = boot from the ASICs' own flash; never driven high */
 +	c->straps = devm_gpiod_get_array(dev, "strap", GPIOD_OUT_LOW);
@@ -1518,13 +1520,56 @@ index 000000000..8b95b3595
 +	v4l2_ctrl_handler_free(&c->ctrls);
 +	media_entity_cleanup(&sd->entity);
 +	pm_runtime_disable(&client->dev);
++	cancel_work_sync(&c->wake);
 +	cancel_delayed_work_sync(&c->drain);
 +	cancel_work_sync(&c->af);
 +	cancel_delayed_work_sync(&c->ae);
 +	ccb_power_off(c);
 +}
 +
++/*
++ * System sleep: the ASICs are powered off whatever they are doing. Runtime PM's minute of
++ * idle doesn't run across a suspend, and the phone suspends seconds after the screen
++ * blanks: powered ASICs emptied the battery overnight. A preview still streaming comes
++ * back after the resume, from a work item (booting takes seconds; the resume doesn't wait).
++ */
++static int ccb_suspend(struct device *dev)
++{
++	struct ccb *c = to_ccb(i2c_get_clientdata(to_i2c_client(dev)));
++
++	cancel_work_sync(&c->wake);
++	cancel_delayed_work_sync(&c->drain);
++	cancel_work_sync(&c->af);
++	cancel_delayed_work_sync(&c->ae);
++	mutex_lock(&c->lock);
++	if (c->booted)
++		dev_info(dev, "powering the ASICs off for suspend\n");
++	ccb_power_off(c);
++	mutex_unlock(&c->lock);
++	return 0;
++}
++
++static void ccb_wake_work(struct work_struct *work)
++{
++	struct ccb *c = container_of(work, struct ccb, wake);
++
++	mutex_lock(&c->lock);
++	if (c->stream_count && !c->raw_transfer->val && !c->previewing && !ccb_ready(c))
++		ccb_preview_start(c);
++	mutex_unlock(&c->lock);
++}
++
++static int ccb_resume(struct device *dev)
++{
++	struct ccb *c = to_ccb(i2c_get_clientdata(to_i2c_client(dev)));
++
++	if (c->stream_count)
++		schedule_work(&c->wake);
++	return 0;
++}
++
 +static const struct dev_pm_ops ccb_pm_ops = {
++	SYSTEM_SLEEP_PM_OPS(ccb_suspend, ccb_resume)
 +	RUNTIME_PM_OPS(ccb_runtime_suspend, ccb_runtime_resume, NULL)
 +};
 +

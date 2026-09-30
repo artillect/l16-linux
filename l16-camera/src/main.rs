@@ -8,6 +8,7 @@
 // preview stops and l16-capture takes an LRI with the modules for the zoom.
 
 mod ccb;
+mod haptics;
 mod input;
 mod settings;
 mod transfer;
@@ -50,6 +51,8 @@ const ZOOM_MAX: f64 = 150.0;
 // the preview modules' focal lengths: A1, and B4 from 70 mm on (stock never previews on
 // the 150 mm modules; it crops B4)
 const MODULE_MM: [f64; 2] = [28.0, 70.0];
+// the mode wheel's touch band: its labels (two either side of the chosen one)
+const MODE_TOUCH_H: i32 = 320;
 const ACCENT: (f64, f64, f64) = (0.0, 0.694, 0.929); // #00B1ED
 const STRIP_LEN: f64 = 768.0;
 
@@ -159,7 +162,8 @@ struct State {
     zoom: f64,
     module: usize,
     timer: usize,
-    grid: bool,
+    grid: u8, // 0 off, 1 3x3, 2 golden ratio
+    histogram: bool,
     busy: bool,
     counting: bool,
     saving: u32,
@@ -172,6 +176,9 @@ struct State {
     dragged: bool,
     wheel: Option<Dial>,
     wheel_start: f64,
+    // closes the exposure wheel after a drag; a new drag cancels it
+    wheel_close: Option<glib::SourceId>,
+    haptics: u8, // 0 off, 1 normal, 2 strong (stock's)
     zoom_start: f64,
     zoom_wheel_until: Option<Instant>,
     focus_until: Option<Instant>,
@@ -202,14 +209,15 @@ impl State {
     fn saved(&self) -> String {
         let mode = self.mode.short();
         format!(
-            "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nstrip_zoom={}\n",
+            "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\nstrip_zoom={}\n",
             self.iso,
             self.shutter,
             self.ev,
             self.flash,
             self.timer,
-            self.grid as u8,
+            self.grid,
+            self.histogram as u8,
             self.burst,
             self.wb,
             self.metering,
@@ -217,6 +225,7 @@ impl State {
             self.stacked as u8,
             self.exposure_info as u8,
             self.inverse_wheel as u8,
+            self.haptics,
             self.strip_zoom as u8,
         )
     }
@@ -232,7 +241,8 @@ impl State {
         self.shutter = num("shutter").unwrap_or(self.shutter).clamp(0.0, 1.0);
         self.flash = num("flash").map_or(self.flash, |v| (v as u8).min(2));
         self.timer = num("timer").map_or(self.timer, |v| (v as usize).min(TIMERS.len() - 1));
-        self.grid = flag("grid", self.grid);
+        self.grid = num("grid").map_or(self.grid, |v| (v as u8).min(2));
+        self.histogram = flag("histogram", self.histogram);
         self.burst = num("burst").map_or(self.burst, |v| (v as usize).min(BURSTS.len() - 1));
         self.metering = num("metering").map_or(self.metering, |v| (v as u8).min(1));
         self.caf = flag("caf", self.caf);
@@ -240,6 +250,7 @@ impl State {
         self.stacked = flag("stacked", self.stacked);
         self.exposure_info = flag("exposure_info", self.exposure_info);
         self.inverse_wheel = flag("inverse_wheel", self.inverse_wheel);
+        self.haptics = num("haptics").map_or(self.haptics, |v| (v as u8).min(2));
         self.strip_zoom = flag("strip_zoom", self.strip_zoom);
     }
 }
@@ -282,6 +293,15 @@ const SETTINGS: &[SettingRow] = &[
         kind: SettingKind::Switch(|s| s.exposure_info, |s, v| s.exposure_info = v),
     },
     SettingRow {
+        title: "Haptics",
+        sub: "Vibration as the dials and the zoom turn",
+        kind: SettingKind::Choice(
+            &["Off", "Normal", "Strong"],
+            |s| s.haptics as usize,
+            |s, v| s.haptics = v as u8,
+        ),
+    },
+    SettingRow {
         title: "Inverse wheel scroll",
         sub: "Turn the exposure wheels the other way",
         kind: SettingKind::Switch(|s| s.inverse_wheel, |s, v| s.inverse_wheel = v),
@@ -299,6 +319,8 @@ struct App {
     focusing: Arc<AtomicBool>,
     stage_tx: mpsc::Sender<Stage>,
     ctl_tx: mpsc::Sender<(u32, i32)>,
+    // the driver's metered ISO and exposure (us), read by a thread of their own
+    metered: Arc<[std::sync::atomic::AtomicI32; 2]>,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -325,17 +347,23 @@ struct App {
     toolbar: gtk::Revealer,
     right: gtk::Box,
     mode_wheel: gtk::DrawingArea,
+    mode_touch: gtk::Box,
     timer_btn: gtk::Button,
     grid_btn: gtk::Button,
+    hist_btn: gtk::Button,
+    hist: RefCell<Vec<u32>>,
     burst_btn: gtk::Button,
     flash_btn: gtk::Button,
     wb_btn: gtk::Button,
     cal: wb::Calibration,
+    motor: haptics::Haptics,
     // a photo's view preferences for the LRI (white balance, exposure), by its directory
     photo_args: RefCell<HashMap<PathBuf, Vec<String>>>,
     hud_box: gtk::Box,
     settings_page: gtk::Overlay,
     last_saved: RefCell<String>,
+    // logind's sleep inhibitor while photos are on their way (dropped: released)
+    sleep_inhibitor: RefCell<Option<std::os::fd::OwnedFd>>,
     status: gtk::Label,
     countdown: gtk::Label,
 }
@@ -400,6 +428,27 @@ fn fmt_secs(t: f64) -> String {
     }
 }
 
+// the list value nearest @pos on a dial (its tick marks)
+fn dial_tick(dial: Dial, pos: f64) -> usize {
+    let ticks: Vec<f64> = match dial {
+        Dial::Iso => ISO.iter().map(|&i| iso_pos(i as f64)).collect(),
+        Dial::Shutter => SHUTTER.iter().map(|s| secs_pos(shutter_secs(s))).collect(),
+        Dial::Ev => (-9..=9).map(ev_pos).collect(),
+    };
+    let mut best = 0;
+    for (i, t) in ticks.iter().enumerate() {
+        if (t - pos).abs() < (ticks[best] - pos).abs() {
+            best = i;
+        }
+    }
+    best
+}
+
+// the zoom wheel's dot nearest @zoom (31 dots, 28 to 150 mm, even in log)
+fn zoom_dot(zoom: f64) -> i64 {
+    (30.0 * (zoom / ZOOM_MIN).ln() / (ZOOM_MAX / ZOOM_MIN).ln()).round() as i64
+}
+
 fn preview_module(zoom: f64) -> usize {
     usize::from(zoom >= 70.0)
 }
@@ -456,25 +505,24 @@ impl App {
     // auto: the ASICs meter; the priority modes: they meter the other half; manual: the chosen
     // ISO and shutter (the preview slows down for long shutters, as stock's)
     fn apply_exposure(&self) {
-        let Some(c) = &self.ccb else { return };
         let (mode, iso, ev) = {
             let st = self.st.borrow();
             (st.mode, iso_at(st.iso), ev_at(st.ev))
         };
-        c.set(ccb::EV, ev);
+        let _ = self.ctl_tx.send((ccb::EV, ev));
         if mode.fixes_iso() {
-            c.set(ccb::ISO, iso);
+            let _ = self.ctl_tx.send((ccb::ISO, iso));
         }
         if mode.fixes_shutter() {
-            c.set(ccb::EXPOSURE_US, self.exposure_us());
+            let _ = self.ctl_tx.send((ccb::EXPOSURE_US, self.exposure_us()));
         }
         let priority = match mode {
             Mode::Iso => 1,
             Mode::Shutter => 2,
             _ => 0,
         };
-        c.set(ccb::PRIORITY, priority);
-        c.set(ccb::EXPOSURE_AUTO, (mode == Mode::Manual) as i32);
+        let _ = self.ctl_tx.send((ccb::PRIORITY, priority));
+        let _ = self.ctl_tx.send((ccb::EXPOSURE_AUTO, (mode == Mode::Manual) as i32));
     }
 
     fn refresh(&self) {
@@ -497,7 +545,13 @@ impl App {
         } else {
             self.timer_btn.add_css_class("on");
         }
-        self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
+        self.grid_btn.set_label(["grid off", "grid 3×3", "grid golden"][st.grid as usize]);
+        self.hist_btn.set_label(if st.histogram { "histogram on" } else { "histogram off" });
+        if st.histogram {
+            self.hist_btn.add_css_class("on");
+        } else {
+            self.hist_btn.remove_css_class("on");
+        }
         self.flash_btn.set_label(["flash off", "flash auto", "flash on"][st.flash as usize]);
         self.wb_btn.set_label(&format!("wb {}", wb::PRESETS[st.wb]));
         if st.wb > 0 {
@@ -520,7 +574,7 @@ impl App {
         } else {
             self.burst_btn.remove_css_class("on");
         }
-        if st.grid {
+        if st.grid > 0 {
             self.grid_btn.add_css_class("on");
         } else {
             self.grid_btn.remove_css_class("on");
@@ -552,6 +606,17 @@ impl App {
     }
 
     fn set_dial(&self, dial: Dial, pos: f64) {
+        let before = {
+            let st = self.st.borrow();
+            match dial {
+                Dial::Iso => st.iso,
+                Dial::Shutter => st.shutter,
+                Dial::Ev => st.ev,
+            }
+        };
+        if dial_tick(dial, before) != dial_tick(dial, pos.clamp(0.0, 1.0)) {
+            self.buzz(6);
+        }
         {
             let mut st = self.st.borrow_mut();
             match dial {
@@ -560,19 +625,13 @@ impl App {
                 Dial::Ev => st.ev = pos.clamp(0.0, 1.0),
             }
         }
-        if let Some(c) = &self.ccb {
-            match dial {
-                Dial::Iso => {
-                    c.set(ccb::ISO, iso_at(self.st.borrow().iso));
-                }
-                Dial::Shutter => {
-                    c.set(ccb::EXPOSURE_US, self.exposure_us());
-                }
-                Dial::Ev => {
-                    c.set(ccb::EV, ev_at(self.st.borrow().ev));
-                }
-            }
-        }
+        // through the control thread: a focus run holds the driver for seconds
+        let ctl = match dial {
+            Dial::Iso => (ccb::ISO, iso_at(self.st.borrow().iso)),
+            Dial::Shutter => (ccb::EXPOSURE_US, self.exposure_us()),
+            Dial::Ev => (ccb::EV, ev_at(self.st.borrow().ev)),
+        };
+        let _ = self.ctl_tx.send(ctl);
         self.refresh();
         self.wheels.queue_draw();
     }
@@ -611,6 +670,7 @@ impl App {
         self.right.set_opacity(if open { 0.0 } else { 1.0 });
         self.right.set_can_target(!open);
         self.mode_wheel.set_visible(open);
+        self.mode_touch.set_visible(open);
         let pos = self.st.borrow().mode.index() as f64 / (MODES.len() - 1) as f64;
         self.st.borrow_mut().mode_pos = pos;
         self.mode_wheel.queue_draw();
@@ -652,6 +712,14 @@ impl App {
         let max = (MODES.len() - 1) as f64;
         let base = (max * pos).floor() as i64;
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
+        // stock's size, unless the longest label wouldn't fit (our font is wider than stock's)
+        cr.set_font_size(55.0);
+        let widest = MODES
+            .iter()
+            .filter_map(|m| cr.text_extents(m.label()).ok())
+            .map(|e| e.width())
+            .fold(0.0, f64::max);
+        let size = 55.0 * ((w - 48.0 - 16.0) / widest).min(1.0);
         for i in -2i64..=2 {
             let idx = base + i;
             if idx < 0 || idx > max as i64 {
@@ -663,7 +731,7 @@ impl App {
             let k = if i == 0 { 26 } else { 52 / i.abs() as i32 };
             let alpha = th.cos() * if i == 0 { 1.0 } else { 0.75 };
             let label = MODES[idx as usize].label();
-            cr.set_font_size(55.0 * th.cos().powi(k));
+            cr.set_font_size(size * th.cos().powi(k));
             let Ok(e) = cr.text_extents(label) else { continue };
             cr.move_to(w - e.width() - 48.0 - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
             cr.text_path(label);
@@ -712,6 +780,13 @@ impl App {
 
     fn set_zoom(self: &Rc<Self>, zoom: f64) {
         let zoom = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+        let before = self.st.borrow().zoom;
+        let (lo, hi) = (before.min(zoom), before.max(zoom));
+        if PRIMES.iter().any(|&p| p > lo + 0.01 && p <= hi + 0.01 && (p - before).abs() > 0.01) {
+            self.buzz(15);
+        } else if zoom_dot(before) != zoom_dot(zoom) {
+            self.buzz(5);
+        }
         {
             let mut st = self.st.borrow_mut();
             st.zoom = zoom;
@@ -851,6 +926,8 @@ impl App {
     }
 
     fn capture(self: &Rc<Self>) {
+        self.hold_sleep();
+        self.feedback("camera-shutter");
         let (zoom, burst, seq, dark, stacked) = {
             let mut st = self.st.borrow_mut();
             st.busy = true;
@@ -1060,6 +1137,66 @@ impl App {
         });
     }
 
+    // No suspend while photos are on their way: the ASICs lose them when powered off, and
+    // the phone suspends seconds after the screen blanks. A logind block inhibitor, held
+    // until the last photo is saved.
+    fn hold_sleep(&self) {
+        if self.sleep_inhibitor.borrow().is_some() {
+            return;
+        }
+        let r = gtk::gio::bus_get_sync(gtk::gio::BusType::System, None::<&gtk::gio::Cancellable>)
+            .and_then(|bus| {
+                bus.call_with_unix_fd_list_sync(
+                    Some("org.freedesktop.login1"),
+                    "/org/freedesktop/login1",
+                    "org.freedesktop.login1.Manager",
+                    "Inhibit",
+                    Some(&("sleep", "Camera", "Saving photos", "block").to_variant()),
+                    Some(glib::VariantTy::new("(h)").unwrap()),
+                    gtk::gio::DBusCallFlags::NONE,
+                    -1,
+                    None::<&gtk::gio::UnixFDList>,
+                    None::<&gtk::gio::Cancellable>,
+                )
+            });
+        match r {
+            Ok((_, Some(fds))) => match fds.get(0) {
+                Ok(fd) => *self.sleep_inhibitor.borrow_mut() = Some(fd),
+                Err(e) => eprintln!("l16-camera: sleep inhibitor: {e}"),
+            },
+            Ok((_, None)) => eprintln!("l16-camera: sleep inhibitor: no fd"),
+            Err(e) => eprintln!("l16-camera: sleep inhibitor: {e}"),
+        }
+    }
+
+    // a feedbackd event (camera-shutter, camera-focus): the sound and vibration Phosh's
+    // feedback profile gives it, or none in silent mode
+    // a pulse of the vibration motor, at the haptics setting's strength
+    fn buzz(&self, ms: u16) {
+        let strength = [0, 30000, 60000][self.st.borrow().haptics as usize];
+        self.motor.play(ms, strength);
+    }
+
+    fn feedback(&self, event: &str) {
+        let Ok(bus) = gtk::gio::bus_get_sync(gtk::gio::BusType::Session, None::<&gtk::gio::Cancellable>)
+        else {
+            return;
+        };
+        let hints = glib::VariantDict::new(None).end();
+        bus.call(
+            Some("org.sigxcpu.Feedback"),
+            "/org/sigxcpu/Feedback",
+            "org.sigxcpu.Feedback",
+            "TriggerEvent",
+            Some(&("org.l16linux.Camera", event, hints, -1i32).to_variant()),
+            None,
+            gtk::gio::DBusCallFlags::NONE,
+            -1,
+            None::<&gtk::gio::Cancellable>,
+            |_| {},
+        );
+    }
+
     fn saved(&self) {
         let left = {
             let mut st = self.st.borrow_mut();
@@ -1068,6 +1205,8 @@ impl App {
         };
         if left == 0 {
             self.thumb.set_opacity(1.0);
+            // the photos are safe: the camera may sleep again
+            self.sleep_inhibitor.borrow_mut().take();
         }
         self.thumb_spin.queue_draw();
     }
@@ -1153,17 +1292,23 @@ impl App {
 
     fn poll(self: &Rc<Self>) {
         // the metered exposure, which the driver mirrors into its controls
-        if let Some(c) = &self.ccb {
-            if self.st.borrow().mode != Mode::Manual && !self.st.borrow().busy {
-                let iso = c.get(ccb::AE_ISO).unwrap_or(0);
-                let us = c.get(ccb::AE_EXPOSURE_US).unwrap_or(0);
-                let mut st = self.st.borrow_mut();
-                st.live_iso = iso;
-                st.live_secs = us as f64 / 1e6;
-            }
+        if self.st.borrow().mode != Mode::Manual && !self.st.borrow().busy {
+            let iso = self.metered[0].load(Ordering::Relaxed);
+            let us = self.metered[1].load(Ordering::Relaxed);
+            let mut st = self.st.borrow_mut();
+            st.live_iso = iso;
+            st.live_secs = us as f64 / 1e6;
         }
         self.continuous_focus();
         self.follow_screen();
+        let (show, asleep) = {
+            let st = self.st.borrow();
+            (st.histogram, st.asleep)
+        };
+        if show && !asleep {
+            self.update_histogram();
+            self.marks.queue_draw();
+        }
         self.refresh();
     }
 
@@ -1303,20 +1448,65 @@ impl App {
         }
     }
 
+    // the preview's brightness (Rec. 601 luma, 64 bins) from its current frame, sampled; with
+    // the preview's digital gain, as shown
+    fn update_histogram(&self) {
+        // the frame as drawn, small: the sink's current image isn't always a plain texture,
+        // and 160x120 is plenty for 64 bins
+        let Some(renderer) = self.view.native().and_then(|n| n.renderer()) else { return };
+        let (w, h) = (160.0f32, 120.0f32);
+        let snap = gtk::Snapshot::new();
+        self.paintable.snapshot(&snap, w as f64, h as f64);
+        let Some(node) = snap.to_node() else { return };
+        let tex = renderer.render_texture(&node, Some(&gtk::graphene::Rect::new(0.0, 0.0, w, h)));
+        let (tw, th) = (tex.width() as usize, tex.height() as usize);
+        let mut buf = vec![0u8; tw * th * 4];
+        tex.download(&mut buf, tw * 4);
+        let gain = self.view.gain();
+        let mut bins = vec![0u32; 64];
+        for p in buf.chunks_exact(4) {
+            // GDK's download format is B8G8R8A8 (premultiplied; the preview is opaque)
+            let luma = (p[2] as f64 * 0.299 + p[1] as f64 * 0.587 + p[0] as f64 * 0.114) * gain;
+            bins[((luma / 256.0 * 64.0) as usize).min(63)] += 1;
+        }
+        *self.hist.borrow_mut() = bins;
+    }
+
+    fn draw_histogram(&self, cr: &cairo::Context) {
+        let bins = self.hist.borrow();
+        let max = bins.iter().copied().max().unwrap_or(0).max(1) as f64;
+        let (x0, y0, bw, bh) = (16.0, 16.0, 192.0, 72.0);
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.45);
+        cr.rectangle(x0, y0, bw, bh);
+        let _ = cr.fill();
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.85);
+        let step = bw / bins.len() as f64;
+        for (i, &n) in bins.iter().enumerate() {
+            let hgt = (n as f64 / max).sqrt() * (bh - 4.0);
+            cr.rectangle(x0 + i as f64 * step, y0 + bh - hgt, step, hgt);
+        }
+        let _ = cr.fill();
+    }
+
     fn draw_marks(&self, cr: &cairo::Context, w: f64, h: f64) {
         let st = self.st.borrow();
-        if st.grid {
+        if st.grid > 0 {
+            // thirds, or the golden ratio's lines (0.382 and 0.618 of the way across)
+            let at = if st.grid == 1 { [1.0 / 3.0, 2.0 / 3.0] } else { [0.382, 0.618] };
             cr.set_source_rgba(1.0, 1.0, 1.0, 0.4);
             cr.set_line_width(1.0);
-            for i in 1..3 {
-                let x = (w * i as f64 / 3.0).round() + 0.5;
-                let y = (h * i as f64 / 3.0).round() + 0.5;
+            for f in at {
+                let x = (w * f).round() + 0.5;
+                let y = (h * f).round() + 0.5;
                 cr.move_to(x, 0.0);
                 cr.line_to(x, h);
                 cr.move_to(0.0, y);
                 cr.line_to(w, y);
             }
             let _ = cr.stroke();
+        }
+        if st.histogram {
+            self.draw_histogram(cr);
         }
         if st.focus_until.is_some_and(|t| Instant::now() < t) {
             let (cx, cy) = st.focus_at.unwrap_or((w / 2.0, h / 2.0));
@@ -1568,6 +1758,7 @@ fn build(gapp: &gtk::Application) {
     // the toolbar: flash, timer, grid, burst, and the settings screen (the mode wheel beside it)
     let timer_btn = gtk::Button::with_label("timer off");
     let grid_btn = gtk::Button::with_label("grid off");
+    let hist_btn = gtk::Button::with_label("histogram off");
     let burst_btn = gtk::Button::with_label("burst off");
     let flash_btn = gtk::Button::with_label("flash off");
     let wb_btn = gtk::Button::with_label("wb auto");
@@ -1579,6 +1770,7 @@ fn build(gapp: &gtk::Application) {
     bar.append(&wb_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
+    bar.append(&hist_btn);
     bar.append(&burst_btn);
     let fill = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     fill.set_hexpand(true);
@@ -1629,11 +1821,18 @@ fn build(gapp: &gtk::Application) {
         .child(&bar)
         .valign(gtk::Align::End)
         .build();
+    // the mode wheel: drawn down the whole right edge, but touched only around its labels, so
+    // taps elsewhere (the toolbar) pass through
     let mode_wheel = gtk::DrawingArea::new();
     mode_wheel.set_halign(gtk::Align::End);
     mode_wheel.set_size_request(386, -1); // stock's 225 dp
+    mode_wheel.set_can_target(false);
     mode_wheel.set_visible(false);
-    toolbar.set_margin_end(386);
+    let mode_touch = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    mode_touch.set_halign(gtk::Align::End);
+    mode_touch.set_valign(gtk::Align::Center);
+    mode_touch.set_size_request(386, MODE_TOUCH_H);
+    mode_touch.set_visible(false);
 
     let wheels = gtk::DrawingArea::new();
     wheels.set_can_target(false);
@@ -1688,6 +1887,7 @@ fn build(gapp: &gtk::Application) {
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
     root.add_overlay(&mode_wheel);
+    root.add_overlay(&mode_touch);
     root.add_overlay(&burst_screen);
     root.add_overlay(&settings_page);
     window.set_child(Some(&root));
@@ -1705,6 +1905,18 @@ fn build(gapp: &gtk::Application) {
     });
     let (input_tx, input_rx) = mpsc::channel();
     input::spawn(input_tx);
+    // the metered exposure, off the UI thread (reading a control waits for the driver, which
+    // a focus run holds for seconds: the UI stalled and drags were dropped)
+    let metered: Arc<[std::sync::atomic::AtomicI32; 2]> = Arc::new(Default::default());
+    let m = metered.clone();
+    thread::spawn(move || {
+        let Some(c) = ccb::Ccb::open() else { return };
+        loop {
+            m[0].store(c.get(ccb::AE_ISO).unwrap_or(0), Ordering::Relaxed);
+            m[1].store(c.get(ccb::AE_EXPOSURE_US).unwrap_or(0), Ordering::Relaxed);
+            thread::sleep(Duration::from_millis(300));
+        }
+    });
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -1716,7 +1928,8 @@ fn build(gapp: &gtk::Application) {
             zoom: ZOOM_MIN,
             module: 0,
             timer: 0,
-            grid: false,
+            grid: 0,
+            histogram: false,
             busy: false,
             counting: false,
             saving: 0,
@@ -1729,12 +1942,14 @@ fn build(gapp: &gtk::Application) {
             dragged: false,
             wheel: None,
             wheel_start: 0.0,
+            wheel_close: None,
+            haptics: 1,
             zoom_start: ZOOM_MIN,
             zoom_wheel_until: None,
             focus_until: None,
             focus_at: None,
             zoom_sent: Instant::now(),
-            metering: 0,
+            metering: 1, // stock's default: touch-weighted
             caf: true,
             caf_ref: None,
             stacked: true,
@@ -1757,6 +1972,7 @@ fn build(gapp: &gtk::Application) {
         stage_rx,
         input_rx,
         ctl_tx,
+        metered: metered.clone(),
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
@@ -1781,16 +1997,21 @@ fn build(gapp: &gtk::Application) {
         toolbar,
         right,
         mode_wheel,
+        mode_touch,
         timer_btn,
         grid_btn,
+        hist_btn,
+        hist: RefCell::new(vec![0; 64]),
         burst_btn,
         flash_btn,
         wb_btn,
         cal: wb::Calibration::load(),
+        motor: haptics::Haptics::open(),
         photo_args: RefCell::new(HashMap::new()),
         hud_box,
         settings_page,
         last_saved: RefCell::new(String::new()),
+        sleep_inhibitor: RefCell::new(None),
         status,
         countdown,
     });
@@ -1881,6 +2102,9 @@ fn build(gapp: &gtk::Application) {
             let mut st = a.st.borrow_mut();
             let (top_dial, bottom_dial) = st.mode.dials();
             let Some(dial) = (if top { top_dial } else { Some(bottom_dial) }) else { return };
+            if let Some(id) = st.wheel_close.take() {
+                id.remove();
+            }
             st.wheel = Some(dial);
             st.wheel_start = match dial {
                 Dial::Iso => st.iso,
@@ -1888,6 +2112,7 @@ fn build(gapp: &gtk::Application) {
                 Dial::Ev => st.ev,
             };
             drop(st);
+            a.buzz(15);
             a.refresh();
             a.wheels.queue_draw();
         });
@@ -1903,12 +2128,22 @@ fn build(gapp: &gtk::Application) {
         });
         let a = app.clone();
         drag.connect_drag_end(move |_, _, _| {
-            let a = a.clone();
-            glib::timeout_add_local_once(Duration::from_millis(600), move || {
-                a.st.borrow_mut().wheel = None;
-                a.refresh();
-                a.wheels.queue_draw();
+            if a.st.borrow().wheel.is_none() {
+                return;
+            }
+            a.buzz(10);
+            let b = a.clone();
+            let id = glib::timeout_add_local_once(Duration::from_millis(600), move || {
+                let mut st = b.st.borrow_mut();
+                st.wheel_close = None;
+                st.wheel = None;
+                drop(st);
+                b.refresh();
+                b.wheels.queue_draw();
             });
+            if let Some(old) = a.st.borrow_mut().wheel_close.replace(id) {
+                old.remove();
+            }
         });
         widget.add_controller(drag);
     }
@@ -1946,11 +2181,13 @@ fn build(gapp: &gtk::Application) {
         let pos = a.st.borrow().mode.index() as f64 / (MODES.len() - 1) as f64;
         a.set_mode_pos(pos);
     });
-    app.mode_wheel.add_controller(drag);
+    app.mode_touch.add_controller(drag);
     let click = gtk::GestureClick::new();
     let a = app.clone();
     click.connect_released(move |_, _, _, y| {
         let (pos, h) = (a.st.borrow().mode_pos, a.mode_wheel.height() as f64);
+        // the touch band sits centred on the wheel
+        let y = y + (h - MODE_TOUCH_H as f64) / 2.0;
         let near = (0..MODES.len())
             .map(|i| (i, (App::mode_item_y(pos, i, h) - y).abs()))
             .min_by(|p, q| p.1.total_cmp(&q.1));
@@ -1960,7 +2197,7 @@ fn build(gapp: &gtk::Application) {
             }
         }
     });
-    app.mode_wheel.add_controller(click);
+    app.mode_touch.add_controller(click);
     let a = app.clone();
     app.wb_btn.connect_clicked(move |_| {
         {
@@ -2111,10 +2348,18 @@ fn build(gapp: &gtk::Application) {
         a.refresh();
     });
     let a = app.clone();
+    app.hist_btn.connect_clicked(move |_| {
+        {
+            let mut st = a.st.borrow_mut();
+            st.histogram = !st.histogram;
+        }
+        a.refresh();
+    });
+    let a = app.clone();
     app.grid_btn.connect_clicked(move |_| {
         {
             let mut st = a.st.borrow_mut();
-            st.grid = !st.grid;
+            st.grid = (st.grid + 1) % 3;
         }
         a.refresh();
     });
