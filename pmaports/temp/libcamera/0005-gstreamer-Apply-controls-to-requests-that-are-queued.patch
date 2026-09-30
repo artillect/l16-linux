@@ -1,0 +1,39 @@
+From: l16-linux
+Subject: [PATCH] gstreamer: Apply controls to requests that are queued
+
+The pending controls were applied (and cleared) before the request got its
+buffers; when the pool had none free, the request was dropped and the controls
+with it, so most controls set while streaming were lost. Apply them once the
+buffers are attached, under the object lock set_property() changes them under.
+---
+diff -ruN a2/src/gstreamer/gstlibcamerasrc.cpp b2/src/gstreamer/gstlibcamerasrc.cpp
+--- a/src/gstreamer/gstlibcamerasrc.cpp	2026-09-29 23:29:03.265857649 -0700
++++ b/src/gstreamer/gstlibcamerasrc.cpp	2026-09-29 23:35:23.522893684 -0700
+@@ -185,9 +185,6 @@
+ 	if (!request)
+ 		return -ENOMEM;
+ 
+-	/* Apply controls */
+-	controls_.applyControls(request);
+-
+ 	std::unique_ptr<RequestWrap> wrap =
+ 		std::make_unique<RequestWrap>(std::move(request));
+ 
+@@ -209,6 +206,17 @@
+ 		wrap->attachBuffer(srcpad, buffer);
+ 	}
+ 
++	/*
++	 * Apply controls, now that the request will be queued: applied before
++	 * the buffers were found, they were cleared and then dropped with the
++	 * request whenever the pool had no free buffer. set_property() changes
++	 * them under the object lock, from the application thread.
++	 */
++	{
++		GLibLocker locker(GST_OBJECT(src_));
++		controls_.applyControls(wrap->request_);
++	}
++
+ 	GST_TRACE_OBJECT(src_, "Requesting buffers");
+ 
+ 	{
