@@ -33,13 +33,35 @@ installs get updates from the [package repository](https://artillect.github.io/l
 
 | Works | Not yet |
 |---|---|
-| Display, touchscreen, GPU (Adreno 530) | The cameras |
-| Touch strip, haptics | 3.5 mm microphone jack |
-| Speaker, front and rear microphones | GPS |
-| Battery and charging | USB OTG, DisplayPort (ANX7688) |
-| Accelerometer, gyroscope, magnetometer, light sensor (sensor DSP) | Proximity sensor |
+| Display, touchscreen, GPU (Adreno 530) | Video recording |
+| Cameras: live preview and full 16-module photos (see below) | 3.5 mm microphone jack |
+| Touch strip (volume outside the camera app), haptics | GPS |
+| Speaker, front and rear microphones | USB OTG, DisplayPort (ANX7688) |
+| Battery and charging, charging light | Proximity sensor |
+| Accelerometer, gyroscope, magnetometer, light sensor (sensor DSP) | |
 | Wi-Fi, Bluetooth, USB networking | |
 | Suspend, screen rotation (including the lock screen) | |
+
+## Camera
+
+The `light-ccb` kernel driver talks to Light's camera ASICs the way the stock camera
+does. The preview comes from one module at a time: 28 mm, then 70 mm, with the zoom
+cropped in between up to 150 mm. It works in any libcamera app (Snapshot, Megapixels).
+Photos capture every module for the zoom and are saved as LRI files, like stock. They
+can be rendered with [chiaro](pmaports/main/chiaro) (packaged here) or Light's Lumen.
+
+[l16-camera](l16-camera) is a camera app laid out after OpenLight:
+- auto, ISO priority, shutter priority and manual modes, with EV, all on stock's mode
+  wheel;
+- flash, touch or centre metering, tap focus and continuous focus;
+- timer, burst, and zoom on the touch strip;
+- white balance presets taken from each camera's own factory calibration.
+
+It isn't packaged yet: build it from its folder with `cargo build --release`, and put
+`l16-shoot` and `l16-lri-assemble` from [tools](tools) on the PATH (it runs them).
+
+The package repository carries a patched libcamera. Its software ISP takes manual white
+balance, and `libcamerasrc` no longer drops controls set while streaming.
 
 ## Community
 
