@@ -1,0 +1,80 @@
+From: l16-linux
+Subject: [PATCH] ipa: simple: awb: Manual colour gains
+
+Let the application turn AWB off (AwbEnable) and set the red and blue gains itself
+(ColourGains), for white balance presets.
+---
+diff -ruN a/src/ipa/simple/algorithms/awb.cpp b/src/ipa/simple/algorithms/awb.cpp
+--- a/src/ipa/simple/algorithms/awb.cpp	2026-09-29 22:27:53.345986754 -0700
++++ b/src/ipa/simple/algorithms/awb.cpp	2026-09-29 22:27:53.345986754 -0700
+@@ -23,6 +23,29 @@
+ 
+ namespace ipa::soft::algorithms {
+ 
++int Awb::init(IPAContext &context, [[maybe_unused]] const ValueNode &tuningData)
++{
++	context.ctrlMap[&controls::AwbEnable] = ControlInfo(false, true, true);
++	context.ctrlMap[&controls::ColourGains] = ControlInfo(0.0f, 8.0f, 1.0f);
++	return 0;
++}
++
++void Awb::queueRequest([[maybe_unused]] typename Module::Context &context,
++		       [[maybe_unused]] const uint32_t frame,
++		       [[maybe_unused]] typename Module::FrameContext &frameContext,
++		       const ControlList &controls)
++{
++	const auto &enable = controls.get(controls::AwbEnable);
++	if (enable.has_value())
++		manual_ = !enable.value();
++
++	const auto &colourGains = controls.get(controls::ColourGains);
++	if (colourGains.has_value()) {
++		manualRed_ = (*colourGains)[0];
++		manualBlue_ = (*colourGains)[1];
++	}
++}
++
+ int Awb::configure(IPAContext &context,
+ 		   [[maybe_unused]] const IPAConfigInfo &configInfo)
+ {
+@@ -65,6 +88,12 @@
+ 	};
+ 	metadata.set(controls::ColourGains, mdGains);
+ 
++	/* AWB off: the colour gains set by the application */
++	if (manual_) {
++		context.activeState.awb.gains = { { manualRed_, 1.0f, manualBlue_ } };
++		return;
++	}
++
+ 	if (!stats->valid)
+ 		return;
+ 
+diff -ruN a/src/ipa/simple/algorithms/awb.h b/src/ipa/simple/algorithms/awb.h
+--- a/src/ipa/simple/algorithms/awb.h	2026-09-29 22:27:53.345986754 -0700
++++ b/src/ipa/simple/algorithms/awb.h	2026-09-29 22:27:53.345986754 -0700
+@@ -19,7 +19,12 @@
+ 	Awb() = default;
+ 	~Awb() = default;
+ 
++	int init(IPAContext &context, const ValueNode &tuningData) override;
+ 	int configure(IPAContext &context, const IPAConfigInfo &configInfo) override;
++	void queueRequest(typename Module::Context &context,
++			  const uint32_t frame,
++			  typename Module::FrameContext &frameContext,
++			  const ControlList &controls) override;
+ 	void prepare(IPAContext &context,
+ 		     const uint32_t frame,
+ 		     IPAFrameContext &frameContext,
+@@ -29,6 +34,11 @@
+ 		     IPAFrameContext &frameContext,
+ 		     const SwIspStats *stats,
+ 		     ControlList &metadata) override;
++
++private:
++	bool manual_ = false;
++	float manualRed_ = 1.0f;
++	float manualBlue_ = 1.0f;
+ };
+ 
+ } /* namespace ipa::soft::algorithms */

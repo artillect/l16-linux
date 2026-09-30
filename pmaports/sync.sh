@@ -25,6 +25,14 @@ for pkg in chiaro; do
 	find "$PMAPORTS/main/$pkg" -type f -exec sed -i 's/\r$//' {} +
 done
 
+# our patched copies of pmaports' own packages go back to temp/
+for pkg in libcamera; do
+	rm -rf "${PMAPORTS:?}/temp/$pkg"
+	mkdir -p "$PMAPORTS/temp/$pkg"
+	cp -r "$REPO/pmaports/temp/$pkg/." "$PMAPORTS/temp/$pkg/"
+	find "$PMAPORTS/temp/$pkg" -type f -exec sed -i 's/$//' {} +
+done
+
 # strip CR in case a file was edited on Windows
 find "$DST/device-light-lfc" "$DST/linux-light-lfc" -type f -exec sed -i 's/\r$//' {} +
 echo "synced to $DST"

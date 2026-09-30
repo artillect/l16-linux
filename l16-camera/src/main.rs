@@ -11,12 +11,14 @@ mod ccb;
 mod input;
 mod settings;
 mod transfer;
+mod wb;
 mod zoomview;
 
 use gst::prelude::*;
 use gtk::prelude::*;
 use gtk::{cairo, gdk, glib};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::PathBuf;
 use std::process::Command;
@@ -166,6 +168,7 @@ struct State {
     burst_captured: bool,
     burst: usize,
     flash: u8, // 0 off, 1 auto, 2 on
+    wb: usize,  // wb::PRESETS
     dragged: bool,
     wheel: Option<Dial>,
     wheel_start: f64,
@@ -199,7 +202,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nburst={}\n\
-             metering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nstrip_zoom={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nstrip_zoom={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -207,6 +210,7 @@ impl State {
             self.timer,
             self.grid as u8,
             self.burst,
+            self.wb,
             self.metering,
             self.caf as u8,
             self.stacked as u8,
@@ -231,6 +235,7 @@ impl State {
         self.burst = num("burst").map_or(self.burst, |v| (v as usize).min(BURSTS.len() - 1));
         self.metering = num("metering").map_or(self.metering, |v| (v as u8).min(1));
         self.caf = flag("caf", self.caf);
+        self.wb = num("wb").map_or(self.wb, |v| (v as usize).min(wb::PRESETS.len() - 1));
         self.stacked = flag("stacked", self.stacked);
         self.exposure_info = flag("exposure_info", self.exposure_info);
         self.inverse_wheel = flag("inverse_wheel", self.inverse_wheel);
@@ -322,6 +327,10 @@ struct App {
     grid_btn: gtk::Button,
     burst_btn: gtk::Button,
     flash_btn: gtk::Button,
+    wb_btn: gtk::Button,
+    cal: wb::Calibration,
+    // a photo's view preferences for the LRI (white balance, exposure), by its directory
+    photo_args: RefCell<HashMap<PathBuf, Vec<String>>>,
     hud_box: gtk::Box,
     settings_page: gtk::Overlay,
     last_saved: RefCell<String>,
@@ -330,6 +339,7 @@ struct App {
 }
 
 const ISO_MAX: f64 = 3200.0;
+const ISO_ANALOG_MAX: f64 = 775.0; // stock's analog ceiling: 7.75x
 const ISO_MIN: f64 = 100.0;
 const SECS_MAX: f64 = 15.0;
 const SECS_MIN: f64 = 1.0 / 8000.0;
@@ -415,7 +425,7 @@ fn make_pipeline() -> (gst::Pipeline, gdk::Paintable) {
     // the frames are converted into buffers of our own: the sink shows libcamera's buffers
     // in place, and stopping the camera (for a capture) freed them under the display
     let pipeline = gst::parse::launch(
-        "libcamerasrc ! video/x-raw,width=1040,height=780,format=BGRx \
+        "libcamerasrc name=src ! video/x-raw,width=1040,height=780,format=BGRx \
          ! queue max-size-buffers=1 leaky=downstream ! videoconvert \
          ! video/x-raw,format=RGBx ! gtk4paintablesink name=sink",
     )
@@ -470,6 +480,9 @@ impl App {
         let ev = if st.mode == Mode::Manual { "–".to_string() } else { fmt_ev(ev_at(st.ev)) };
         let iso = if st.mode.fixes_iso() { iso_at(st.iso) } else { st.live_iso };
         let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
+        // stock keeps the sensors' analog gain at most 7.75 (ISO 775) and has its ISP apply
+        // the rest as digital gain, up to 4.13x (ISO 3200): the preview does the same here
+        self.view.set_gain((iso as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX));
         self.hud[0].set_text(&ev);
         self.hud[1].set_text(&if iso > 0 { iso.to_string() } else { "–".into() });
         self.hud[2].set_text(&if secs > 0.0 { fmt_secs(secs) } else { "–".into() });
@@ -484,6 +497,12 @@ impl App {
         }
         self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
         self.flash_btn.set_label(["flash off", "flash auto", "flash on"][st.flash as usize]);
+        self.wb_btn.set_label(&format!("wb {}", wb::PRESETS[st.wb]));
+        if st.wb > 0 {
+            self.wb_btn.add_css_class("on");
+        } else {
+            self.wb_btn.remove_css_class("on");
+        }
         self.hud_box.set_opacity(if st.exposure_info { 1.0 } else { 0.0 });
         if st.flash > 0 {
             self.flash_btn.add_css_class("on");
@@ -554,6 +573,22 @@ impl App {
         }
         self.refresh();
         self.wheels.queue_draw();
+    }
+
+    // white balance: libcamera's AWB (auto), or a preset's gains for the preview module
+    fn apply_wb(&self) {
+        let Some(src) = self.pipeline.by_name("src") else { return };
+        let (preset, module) = {
+            let st = self.st.borrow();
+            (st.wb, st.module)
+        };
+        match self.cal.gains(preset, module) {
+            None => src.set_property("awb-enable", true),
+            Some((r, b)) => {
+                src.set_property("colour-gains", gst::Array::new([r, b]));
+                src.set_property("awb-enable", false);
+            }
+        }
     }
 
     fn set_mode(&self, mode: Mode) {
@@ -665,6 +700,7 @@ impl App {
             (st.zoom, preview_module(st.zoom))
         };
         self.view.set_zoom_next_frame(zoom / MODULE_MM[module]);
+        self.apply_wb();
         if want != module {
             self.switch_module(want);
         }
@@ -850,6 +886,25 @@ impl App {
             .map(|s| s.to_string())
             .unwrap_or_else(|| "photo".into());
         let dir = PathBuf::from(format!("/tmp/l16-shot-{stamp}-{seq}"));
+        let view = {
+            let st = self.st.borrow();
+            let iso = if st.mode.fixes_iso() { iso_at(st.iso) } else { st.live_iso };
+            let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
+            let mut v = vec![
+                "--iso".to_string(),
+                iso.to_string(),
+                "--exposure-us".into(),
+                ((secs * 1e6).round() as u64).to_string(),
+                "--awb-mode".into(),
+                wb::AWB_MODE[st.wb].to_string(),
+            ];
+            if let Some((r, b)) = self.cal.gains(st.wb, st.module) {
+                v.push("--wb".into());
+                v.push(format!("{r},{b}"));
+            }
+            v
+        };
+        self.photo_args.borrow_mut().insert(dir.clone(), view);
         let tx = self.stage_tx.clone();
         let turn = self.transfer_turn.clone();
         let Some(queue) = self.transfers.borrow().as_ref().map(|t| t.queue.clone()) else {
@@ -1058,13 +1113,14 @@ impl App {
                         let stamp = name.unwrap_or_default().replace("l16-shot-", "");
                         let out = out.join(format!("L16_{stamp}.lri"));
                         let tx = self.stage_tx.clone();
+                        let view = self.photo_args.borrow_mut().remove(&dir).unwrap_or_default();
                         thread::spawn(move || {
                             let mut raws: Vec<PathBuf> = (1..=3)
                                 .map(|a| dir.join(format!("asic{a}.raw")))
                                 .filter(|p| p.exists())
                                 .collect();
                             raws.sort();
-                            let r = App::run(Command::new("l16-lri-assemble").arg(&out).args(&raws));
+                            let r = App::run(Command::new("l16-lri-assemble").args(&view).arg(&out).args(&raws));
                             let _ = std::fs::remove_dir_all(&dir);
                             let _ = tx.send(Stage::Saved(r.map(|_| out)));
                         });
@@ -1440,11 +1496,13 @@ fn build(gapp: &gtk::Application) {
     let grid_btn = gtk::Button::with_label("grid off");
     let burst_btn = gtk::Button::with_label("burst off");
     let flash_btn = gtk::Button::with_label("flash off");
+    let wb_btn = gtk::Button::with_label("wb auto");
     let settings_btn = gtk::Button::with_label("settings");
     let close_btn = gtk::Button::with_label("✕");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
     bar.append(&flash_btn);
+    bar.append(&wb_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
     bar.append(&burst_btn);
@@ -1591,6 +1649,7 @@ fn build(gapp: &gtk::Application) {
             burst_captured: false,
             burst: 0,
             flash: 0,
+            wb: 0,
             dragged: false,
             wheel: None,
             wheel_start: 0.0,
@@ -1648,6 +1707,9 @@ fn build(gapp: &gtk::Application) {
         grid_btn,
         burst_btn,
         flash_btn,
+        wb_btn,
+        cal: wb::Calibration::load(),
+        photo_args: RefCell::new(HashMap::new()),
         hud_box,
         settings_page,
         last_saved: RefCell::new(String::new()),
@@ -1821,6 +1883,15 @@ fn build(gapp: &gtk::Application) {
         }
     });
     app.mode_wheel.add_controller(click);
+    let a = app.clone();
+    app.wb_btn.connect_clicked(move |_| {
+        {
+            let mut st = a.st.borrow_mut();
+            st.wb = (st.wb + 1) % wb::PRESETS.len();
+        }
+        a.apply_wb();
+        a.refresh();
+    });
     let a = app.clone();
     app.timer_btn.connect_clicked(move |_| {
         {
@@ -2008,6 +2079,7 @@ fn build(gapp: &gtk::Application) {
     }
     app.start_preview();
     app.apply_exposure();
+    app.apply_wb();
     // the photo transfer streams, beside the preview (done: Stage::Transferred)
     let (done_tx, done_rx) = mpsc::channel();
     match transfer::Transfers::start(done_tx) {

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-# l16-lri-assemble OUT.lri RAW...: build an LRI file from l16-capture's per-ASIC transfers
-# (a burst: one per frame, OUT_1.lri ...).
+# l16-lri-assemble [--wb R,B] [--awb-mode N] [--iso ISO] [--exposure-us US] OUT.lri RAW...:
+# build an LRI file from l16-capture's per-ASIC transfers (a burst: one per frame, OUT_1.lri ...).
+# --wb: white balance gains (red, blue) instead of gray-world ones; --awb-mode: ViewPreferences'
+# AWBMode (0 auto, 1 daylight, 3 cloudy, 4 tungsten, 5 fluorescent); --iso and --exposure-us: the
+# photo's exposure, recorded as the view preferences' image gain (ISO/100: above ISO 775 it is
+# only here, the modules' analog gain stops at 7.75) and integration time, as stock's.
 #
 # Each ASIC sends its capture as one LRI block, cut into 16 228 352-byte records (the last one
 # holds the block's LightHeader protobuf). CAMSS receives every record as a 1408 x 9219 RAW10
@@ -69,19 +73,100 @@ def awb_gains(frame):
 	return (g / r, g / b) if r and b else (1.0, 1.0)
 
 
-def with_awb(blocks, gains):
-	"""The view preferences' awb_gains (a ChannelGain: four fixed32 floats, fields 1-4) are the
-	last ChannelGain in the device blocks; set them to this photo's gains, same size."""
-	pat = b"".join(bytes([tag]) + b"(....)" for tag in (0x0d, 0x15, 0x1d, 0x25))
-	m = list(re.finditer(pat, blocks, re.S))
-	if not m:
+def varint(v):
+	out = b""
+	while True:
+		out += bytes([v & 0x7f | (0x80 if v > 0x7f else 0)])
+		v >>= 7
+		if not v:
+			return out
+
+
+def read_varint(b, i):
+	v = sh = 0
+	while True:
+		v |= (b[i] & 0x7f) << sh
+		sh += 7
+		i += 1
+		if b[i - 1] < 0x80:
+			return v, i
+
+
+def fields(msg):
+	"""A protobuf message's top-level fields: (number, raw bytes of the whole field)."""
+	out, i = [], 0
+	while i < len(msg):
+		start = i
+		key, i = read_varint(msg, i)
+		wt = key & 7
+		if wt == 0:
+			_, i = read_varint(msg, i)
+		elif wt == 1:
+			i += 8
+		elif wt == 2:
+			n, i = read_varint(msg, i)
+			i += n
+		elif wt == 5:
+			i += 4
+		else:
+			raise ValueError("wire type %d" % wt)
+		out.append((key >> 3, msg[start:i]))
+	return out
+
+
+def length_field(num, data):
+	return varint(num << 3 | 2) + varint(len(data)) + data
+
+
+def with_view(blocks, gains, awb_mode, gain, exposure_ns):
+	"""The device blocks end with a LightHeader holding the view preferences (field 19).
+	Rewrite them with this photo's white balance (awb_mode 7, awb_gains 15) and exposure
+	(image_gain 10 / display_gain 18, integration time 11 / 19), keeping the other fields."""
+	o = last = 0
+	while o + 32 <= len(blocks):
+		sig, length = struct.unpack_from("<4sQ", blocks, o)
+		if sig != b"LELR" or length < 32:
+			return blocks
+		last, o = o, o + length
+	sig, length, msg_off, msg_len, _ = struct.unpack_from("<4sQQIB", blocks, last)
+	header = fields(blocks[last + msg_off:last + msg_off + msg_len])
+	vp = [f for n, f in header if n == 19]
+	if not vp:
 		return blocks
-	new = struct.pack("<BfBfBfBf", 0x0d, gains[0], 0x15, 1.0, 0x1d, 1.0, 0x25, gains[1])
-	return blocks[:m[-1].start()] + new + blocks[m[-1].end():]
+	_, i = read_varint(vp[0], 0)
+	_, i = read_varint(vp[0], i)
+	keep = [f for n, f in fields(vp[0][i:]) if n not in (7, 10, 11, 15, 18, 19)]
+	chan = struct.pack("<BfBfBfBf", 0x0d, gains[0], 0x15, 1.0, 0x1d, 1.0, 0x25, gains[1])
+	new = b"".join(keep) + varint(7 << 3) + varint(awb_mode) + length_field(15, chan)
+	if gain:
+		new += varint(10 << 3 | 5) + struct.pack("<f", gain) + varint(18 << 3 | 5) + struct.pack("<f", gain)
+	if exposure_ns:
+		new += varint(11 << 3) + varint(exposure_ns) + varint(19 << 3) + varint(exposure_ns)
+	msg = b"".join(f for n, f in header if n != 19) + length_field(19, new)
+	size = max(length, msg_off + len(msg))
+	block = blocks[last:last + msg_off]
+	block = struct.pack("<4sQQIB", b"LELR", size, msg_off, len(msg), block[24]) + block[25:]
+	block += msg + bytes(size - msg_off - len(msg))
+	return blocks[:last] + block
 
 
-out = sys.argv[1]
-per_asic = [blocks(path) for path in sys.argv[2:]]
+args = sys.argv[1:]
+wb, awb_mode, iso, exposure_us = None, 0, None, None
+while args and args[0].startswith("--"):
+	opt, val = args[0], args[1]
+	args = args[2:]
+	if opt == "--wb":
+		wb = tuple(float(x) for x in val.split(","))
+	elif opt == "--awb-mode":
+		awb_mode = int(val)
+	elif opt == "--iso":
+		iso = float(val)
+	elif opt == "--exposure-us":
+		exposure_us = int(val)
+	else:
+		sys.exit("unknown option " + opt)
+out = args[0]
+per_asic = [blocks(path) for path in args[1:]]
 count = len(per_asic[0])
 if any(len(b) != count for b in per_asic):
 	sys.exit("the ASICs sent different numbers of blocks: %s" % [len(b) for b in per_asic])
@@ -94,12 +179,13 @@ except FileNotFoundError:
 # a burst: one LRI per frame, OUT_1.lri, OUT_2.lri, ...
 for i in range(count):
 	name = out if count == 1 else "%s_%d%s" % (out[:-4], i + 1, out[-4:]) if out.endswith(".lri") else "%s_%d" % (out, i + 1)
-	gains = awb_gains(per_asic[0][i][0])
+	gains = wb or awb_gains(per_asic[0][i][0])
 	print("white balance: red %.3f blue %.3f" % gains)
 	with open(name, "wb") as o:
 		for asic in per_asic:
 			for part in asic[i]:
 				o.write(part)
 		if device:
-			o.write(with_awb(device, gains))
+			o.write(with_view(device, gains, awb_mode, iso and iso / 100,
+					  exposure_us and exposure_us * 1000))
 	print("wrote", name)

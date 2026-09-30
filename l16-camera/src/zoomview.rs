@@ -1,5 +1,5 @@
 // The preview: the camera's paintable, filling the widget, cropped in by a zoom factor
-// (digital zoom between the modules' focal lengths).
+// (digital zoom between the modules' focal lengths), brightened by a digital gain.
 
 use gtk::gdk;
 use gtk::glib;
@@ -16,6 +16,7 @@ mod imp {
         pub paintable: RefCell<Option<gdk::Paintable>>,
         pub zoom: Cell<f64>,
         pub next_zoom: Cell<Option<f64>>,
+        pub gain: Cell<f64>,
     }
 
     #[glib::object_subclass]
@@ -47,7 +48,14 @@ mod imp {
             snapshot.push_clip(&graphene::Rect::new(0.0, 0.0, w as f32, h as f32));
             snapshot.save();
             snapshot.translate(&graphene::Point::new(((w - pw) / 2.0) as f32, ((h - ph) / 2.0) as f32));
+            let g = self.gain.get() as f32;
+            if g > 1.0 {
+                snapshot.push_color_matrix(&graphene::Matrix::new_scale(g, g, g), &graphene::Vec4::zero());
+            }
             p.snapshot(snapshot, pw, ph);
+            if g > 1.0 {
+                snapshot.pop();
+            }
             snapshot.restore();
             snapshot.pop();
         }
@@ -64,6 +72,7 @@ impl ZoomView {
     pub fn new(paintable: &gdk::Paintable) -> Self {
         let view: ZoomView = glib::Object::new();
         view.imp().zoom.set(1.0);
+        view.imp().gain.set(1.0);
         view.imp().paintable.replace(Some(paintable.clone()));
         let weak = view.downgrade();
         paintable.connect_invalidate_contents(move |_| {
@@ -81,6 +90,14 @@ impl ZoomView {
         self.imp().next_zoom.set(None);
         self.imp().zoom.set(zoom);
         self.queue_draw();
+    }
+
+    // the preview's digital gain (1: none)
+    pub fn set_gain(&self, gain: f64) {
+        if (self.imp().gain.get() - gain).abs() > 1e-3 {
+            self.imp().gain.set(gain);
+            self.queue_draw();
+        }
     }
 
     pub fn zoom(&self) -> f64 {
