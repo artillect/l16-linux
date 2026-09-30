@@ -107,6 +107,9 @@ impl Calibration {
             }
             o += len;
         }
+        for (name, id) in [("A1", 0), ("B4", 8)] {
+            eprintln!("l16-camera: colour calibration {name}: {:?}", cal.modules.get(&id));
+        }
         cal
     }
 
@@ -128,7 +131,8 @@ impl Calibration {
             })
             .collect();
         if let (Some(id), false) = (id, cals.is_empty()) {
-            self.modules.insert(id, cals);
+            // one entry per illuminant, each naming the module again
+            self.modules.entry(id).or_default().extend(cals);
             return;
         }
         for (_, v) in &fs {

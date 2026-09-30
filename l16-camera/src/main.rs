@@ -186,6 +186,7 @@ struct State {
     exposure_info: bool,
     inverse_wheel: bool,
     strip_zoom: bool,
+    asleep: bool, // the preview stopped while the screen is off
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -301,6 +302,7 @@ struct App {
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
+    input_rx: mpsc::Receiver<input::Ev>,
     pipeline: gst::Pipeline,
     paintable: gdk::Paintable,
     _bus: gst::bus::BusWatchGuard,
@@ -582,7 +584,9 @@ impl App {
             let st = self.st.borrow();
             (st.wb, st.module)
         };
-        match self.cal.gains(preset, module) {
+        let gains = self.cal.gains(preset, module);
+        eprintln!("l16-camera: white balance {} (module {module}): {gains:?}", wb::PRESETS[preset]);
+        match gains {
             None => src.set_property("awb-enable", true),
             Some((r, b)) => {
                 src.set_property("colour-gains", gst::Array::new([r, b]));
@@ -1159,7 +1163,77 @@ impl App {
             }
         }
         self.continuous_focus();
+        self.follow_screen();
         self.refresh();
+    }
+
+    // the photo transfer streams, beside the preview (done: Stage::Transferred); started after it
+    fn start_transfers(&self) {
+        let (done_tx, done_rx) = mpsc::channel();
+        match transfer::Transfers::start(done_tx) {
+            Ok(t) => *self.transfers.borrow_mut() = Some(t),
+            Err(e) => {
+                self.status.set_text(&format!("no photo transfers: {e}"));
+                self.status.set_visible(true);
+            }
+        }
+        let tx = self.stage_tx.clone();
+        thread::spawn(move || {
+            while let Ok(r) = done_rx.recv() {
+                if tx.send(Stage::Transferred(r)).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    // The preview (and the ASICs, which the driver powers down a while after) stops while the
+    // screen is off, and starts again when it comes back. Not while a photo is on its way:
+    // the ASICs hold it until it is transferred. As when the app closes and opens: the
+    // transfer streams stop first and start after the preview (the preview cannot restart
+    // under them).
+    // the buttons, the touch strip and the photos' progress, every 15 ms (stopped while the
+    // screen is off, so the app leaves the CPU alone)
+    fn fast_loop(self: &Rc<Self>) {
+        let a = self.clone();
+        glib::timeout_add_local(Duration::from_millis(15), move || {
+            if a.st.borrow().asleep {
+                return glib::ControlFlow::Break;
+            }
+            while let Ok(ev) = a.input_rx.try_recv() {
+                a.on_input(ev);
+            }
+            a.switched();
+            while let Ok(stage) = a.stage_rx.try_recv() {
+                a.on_stage(stage);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    fn follow_screen(self: &Rc<Self>) {
+        let on = std::fs::read_to_string("/sys/class/drm/card0-DSI-1/dpms")
+            .map_or(true, |s| s.trim() == "On");
+        let (asleep, busy) = {
+            let st = self.st.borrow();
+            (st.asleep, st.busy || st.saving > 0 || st.counting)
+        };
+        if !on && !asleep && !busy {
+            self.st.borrow_mut().asleep = true;
+            if let Some(mut t) = self.transfers.borrow_mut().take() {
+                t.stop();
+            }
+            self.stop_preview();
+        } else if on && asleep {
+            self.st.borrow_mut().asleep = false;
+            let _ = self.pipeline.set_state(gst::State::Playing);
+            self.apply_exposure();
+            self.apply_wb();
+            self.start_transfers();
+            // presses while the screen was off are not for the camera
+            while self.input_rx.try_recv().is_ok() {}
+            self.fast_loop();
+        }
     }
 
     // AF-D as stock's app runs it (there is no ASIC mode): the centre is focused again once the
@@ -1629,6 +1703,8 @@ fn build(gapp: &gtk::Application) {
             }
         }
     });
+    let (input_tx, input_rx) = mpsc::channel();
+    input::spawn(input_tx);
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -1665,6 +1741,7 @@ fn build(gapp: &gtk::Application) {
             exposure_info: true,
             inverse_wheel: false,
             strip_zoom: true,
+            asleep: false,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -1678,6 +1755,7 @@ fn build(gapp: &gtk::Application) {
         focusing: Arc::new(AtomicBool::new(false)),
         stage_tx,
         stage_rx,
+        input_rx,
         ctl_tx,
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
@@ -2042,19 +2120,8 @@ fn build(gapp: &gtk::Application) {
     });
 
     // hardware: shutter button, touch strip
-    let (tx, rx) = mpsc::channel();
-    input::spawn(tx);
     let a = app.clone();
-    glib::timeout_add_local(Duration::from_millis(15), move || {
-        while let Ok(ev) = rx.try_recv() {
-            a.on_input(ev);
-        }
-        a.switched();
-        while let Ok(stage) = a.stage_rx.try_recv() {
-            a.on_stage(stage);
-        }
-        glib::ControlFlow::Continue
-    });
+    a.fast_loop();
     let a = app.clone();
     glib::timeout_add_local(Duration::from_millis(300), move || {
         a.poll();
@@ -2080,20 +2147,7 @@ fn build(gapp: &gtk::Application) {
     app.start_preview();
     app.apply_exposure();
     app.apply_wb();
-    // the photo transfer streams, beside the preview (done: Stage::Transferred)
-    let (done_tx, done_rx) = mpsc::channel();
-    match transfer::Transfers::start(done_tx) {
-        Ok(t) => *app.transfers.borrow_mut() = Some(t),
-        Err(e) => app.show_status(&format!("no photo transfers: {e}"), 0),
-    }
-    let tx = app.stage_tx.clone();
-    thread::spawn(move || {
-        while let Ok(r) = done_rx.recv() {
-            if tx.send(Stage::Transferred(r)).is_err() {
-                break;
-            }
-        }
-    });
+    app.start_transfers();
     app.refresh();
     window.fullscreen();
     window.present();
