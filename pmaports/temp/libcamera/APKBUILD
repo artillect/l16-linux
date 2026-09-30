@@ -3,7 +3,7 @@ maintainer="Robert Mader <robert.mader@collabora.com>"
 pkgname=libcamera
 _pkgver=0.7.1
 pkgver=9999$_pkgver
-pkgrel=3
+pkgrel=4
 pkgdesc="Linux camera framework"
 url="https://libcamera.org/"
 arch="all"
@@ -60,6 +60,7 @@ source="https://gitlab.freedesktop.org/camera/libcamera/-/archive/v$_pkgver/libc
 	0003-RFC-egl-Implement-DMABuf-import-for-input-buffers.patch
 	0004-ipa-simple-awb-Manual-colour-gains.patch
 	0005-gstreamer-Apply-controls-to-requests-that-are-queued.patch
+	0006-software_isp-Light-L16-stock-preview-tone.patch
 	qcam.desktop
 	$_tuning_files
 	"
@@ -178,6 +179,7 @@ cd1559a70dabe8711bb2cc1a8c6dca114e9f5b83088000935845ad90e5d109e2b215f0810f709f5b
 6bca235e430e7392f68c94742d1bc1cd19cffe12ac03c8890ffa27b756972df67f5a408f4c806149a6b4f52827881a73d14d7f6a00bab9d4692f5eb9b06478a5  0003-RFC-egl-Implement-DMABuf-import-for-input-buffers.patch
 ae78e40d82b8367574ffc3fa6c18fec86c73d8b32ccc98272e3a663f8218f02486d6e46cbe331b6947b608f7bcfc4c906d2b131a61087e8422d6a927ef9bcb2a  0004-ipa-simple-awb-Manual-colour-gains.patch
 1506231db776e0606748027b641280cb7ffac0ef070c4c97623df5f22d947868419733f62e4caa757b54ee80f0c4857136056bd066400ab53113dba9183987d5  0005-gstreamer-Apply-controls-to-requests-that-are-queued.patch
+abf29f3d639d5a0cbd94303191fa223a02cb7e70d7a3a8d5019f8df7167ba38f740cb6dae688c4ac6be1665d29cab404d5f9d3cc6cdf8ee1ec818a6e85e0e073  0006-software_isp-Light-L16-stock-preview-tone.patch
 22167a4eceb6d1b40b0b7c45fdf116c71684f5340de7f767535cb8e160ad9d2ae0f00cb3d461f73a344520a48a4641cf46226841d78bee06bfbfd2a91337f754  qcam.desktop
 2ee566653b17d565d2c0de67cbe6ebad25df5aac6051cad78e6bae52016fa2ca0247e964d735ac776b3e0bd447ead9c4fcb26cd7629228cdba3ceb91b46f378f  hi846.yaml
 2ee566653b17d565d2c0de67cbe6ebad25df5aac6051cad78e6bae52016fa2ca0247e964d735ac776b3e0bd447ead9c4fcb26cd7629228cdba3ceb91b46f378f  imx355.yaml
