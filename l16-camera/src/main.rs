@@ -557,12 +557,8 @@ impl App {
         let iso = if st.mode.fixes_iso() { iso_at(st.iso) } else { st.live_iso };
         let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
         // stock keeps the sensors' analog gain at most 7.75 (ISO 775) and has its ISP apply
-        // the rest as digital gain, up to 4.13x (ISO 3200): the preview does the same here,
-        // from the gain the ASICs report running (in the priority modes they meter the
-        // preview themselves, as stock's trace shows; the set ISO is the photo's), or the
-        // manual ISO, which the preview does take
-        let running = if st.mode == Mode::Manual { iso_at(st.iso) } else { st.live_iso };
-        self.view.set_gain((running as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX));
+        // the rest as digital gain, up to 4.13x (ISO 3200): the preview does the same here
+        self.view.set_gain((iso as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX));
         self.hud[0].set_text(&ev);
         self.hud[1].set_text(&if iso > 0 { iso.to_string() } else { "–".into() });
         self.hud[2].set_text(&if secs > 0.0 { fmt_secs(secs) } else { "–".into() });

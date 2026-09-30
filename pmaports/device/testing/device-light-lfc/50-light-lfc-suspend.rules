@@ -1,9 +1,11 @@
 // L16: let the user at the device suspend it (the power button blanks the screen and
 // light-lfc-suspend-on-blank suspends it) even while other sessions exist, e.g. an ssh
 // login; otherwise logind asks for authentication, which a background job cannot give.
+// And let its apps hold off sleep: the camera app while photos are still on their way.
 polkit.addRule(function(action, subject) {
 	if ((action.id == "org.freedesktop.login1.suspend" ||
-	     action.id == "org.freedesktop.login1.suspend-multiple-sessions") &&
+	     action.id == "org.freedesktop.login1.suspend-multiple-sessions" ||
+	     action.id == "org.freedesktop.login1.inhibit-block-sleep") &&
 	    subject.local && subject.active)
 		return polkit.Result.YES;
 });
