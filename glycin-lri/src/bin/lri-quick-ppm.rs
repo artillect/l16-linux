@@ -10,5 +10,5 @@ fn main() {
     let mut out = format!("P6\n{} {}\n255\n", p.width, p.height).into_bytes();
     out.extend_from_slice(&p.rgb);
     std::fs::write(&args[2], out).expect("write");
-    eprintln!("{}x{} in {:.2} s", p.width, p.height, t.elapsed().as_secs_f64());
+    eprintln!("{}x{} in {:.2} s, {:?}", p.width, p.height, t.elapsed().as_secs_f64(), p.info);
 }

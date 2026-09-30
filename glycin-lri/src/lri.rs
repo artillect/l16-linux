@@ -14,11 +14,31 @@ use std::io::{self, Read};
 // frames (at most 6 modules on ASIC1, 16-17 MB each)
 const KEEP: usize = 112 << 20;
 const BLACK: f32 = 42.0; // the ASICs' 10-bit pedestal
+const TONE: f32 = 0.5; // the tone curve's shoulder
 
 pub struct Picture {
     pub width: u32,
     pub height: u32,
     pub rgb: Vec<u8>, // sRGB, 8 bits a channel
+    pub info: Info,
+}
+
+// how the photo was taken, from its headers
+#[derive(Default, Clone, Debug)]
+pub struct Info {
+    pub focal_length: Option<u32>, // mm, 35 mm equivalent
+    pub exposure_ns: Option<u64>,
+    pub iso: Option<u32>,
+    pub awb_mode: Option<u64>, // ViewPreferences' AWBMode: 0 auto, 1 daylight, 3 cloudy, 4 tungsten, 5 fluorescent
+}
+
+// the view preferences (LightHeader 19, or a block of their own)
+#[derive(Default)]
+struct View {
+    wb: Option<(f32, f32)>,
+    image_gain: Option<f32>,
+    awb_mode: Option<u64>,
+    integration_ns: Option<u64>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -29,6 +49,16 @@ struct Surface {
     stride: usize,
 }
 
+// a module's colour calibration under one illuminant: its forward matrix (white-balanced
+// camera RGB to XYZ, D50) and that illuminant's red/green and blue/green ratios
+#[derive(Clone)]
+struct Colour {
+    module: u64,
+    rg: f32,
+    bg: f32,
+    forward: [f32; 9],
+}
+
 #[derive(Default, Clone)]
 struct Module {
     id: u64,
@@ -36,6 +66,7 @@ struct Module {
     surface: Surface,
     red: Option<(i64, i64)>, // the red pixel's (x, y) in a 2x2 quad; none: monochrome
     gain: f32,                // analog x digital
+    exposure_ns: u64,
 }
 
 // --- protobuf, enough of it ----------------------------------------------------------------
@@ -133,6 +164,7 @@ fn module(v: &Val) -> Module {
             7 => ag = f32_of(&f).unwrap_or(1.0),
             14 => dg = f32_of(&f).unwrap_or(1.0),
             15 => m.frame = int(&f).unwrap_or(0),
+            8 => m.exposure_ns = int(&f).unwrap_or(0),
             13 => {
                 let p = point(&f);
                 m.red = (p.0 >= 0 && p.1 >= 0 && p.0 < 2 && p.1 < 2).then_some(p);
@@ -158,20 +190,53 @@ fn module(v: &Val) -> Module {
     m
 }
 
-// ViewPreferences: awb_gains (15: ChannelGain {r 1, g_r 2, g_b 3, b 4}), image_gain (10)
-fn view(v: &[(u64, Val)], wb: &mut Option<(f32, f32)>, image_gain: &mut Option<f32>) {
+// FactoryModuleCalibration (LightHeader 13): camera_id 1, colour calibrations 2 {illuminant
+// 1, forward_matrix 2 (Matrix3x3F, x00..x22 as fields 1-9), rg_ratio 4, bg_ratio 5}
+fn colour_cal(v: &Val, out: &mut Vec<Colour>) {
+    let f = sub(v);
+    let Some(id) = f.iter().find(|(n, _)| *n == 1).and_then(|(_, v)| int(v)) else { return };
+    for (_, c) in f.iter().filter(|(n, _)| *n == 2) {
+        let mut col = Colour { module: id, rg: 0.0, bg: 0.0, forward: [0.0; 9] };
+        let mut ok = false;
+        for (n, g) in sub(c) {
+            match n {
+                2 => {
+                    for (k, x) in sub(&g) {
+                        if (1..=9).contains(&k) {
+                            col.forward[k as usize - 1] = f32_of(&x).unwrap_or(0.0);
+                        }
+                    }
+                    ok = true;
+                }
+                4 => col.rg = f32_of(&g).unwrap_or(0.0),
+                5 => col.bg = f32_of(&g).unwrap_or(0.0),
+                _ => {}
+            }
+        }
+        if ok {
+            out.push(col);
+        }
+    }
+}
+
+// ViewPreferences: awb_mode (7), awb_gains (15: ChannelGain {r 1, g_r 2, g_b 3, b 4}),
+// image_gain (10), integration time (11, ns)
+fn view(v: &[(u64, Val)], out: &mut View) {
     for (n, f) in v {
         match n {
+            7 => out.awb_mode = int(f),
+            11 => out.integration_ns = int(f).filter(|t| *t > 0),
             15 => {
                 let g: Vec<_> = sub(f);
                 let get = |k| g.iter().find(|(n, _)| *n == k).and_then(|(_, v)| f32_of(v));
+                // (older photos of this port's say 1, 1: none worked out)
                 if let (Some(r), Some(b)) = (get(1), get(4)) {
-                    if r > 0.0 && b > 0.0 {
-                        *wb = Some((r, b));
+                    if r > 0.0 && b > 0.0 && (r, b) != (1.0, 1.0) {
+                        out.wb = Some((r, b));
                     }
                 }
             }
-            10 => *image_gain = f32_of(f).filter(|g| *g > 0.0),
+            10 => out.image_gain = f32_of(f).filter(|g| *g > 0.0),
             _ => {}
         }
     }
@@ -195,7 +260,9 @@ fn bad(what: &str) -> io::Error {
 
 pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
     let mut kept: Option<(Vec<u8>, Vec<Module>, Option<u64>)> = None;
-    let (mut wb, mut image_gain) = (None, None);
+    let mut vp = View::default();
+    let mut focal_length = None;
+    let mut colours = Vec::new();
     loop {
         let mut h = [0u8; 32];
         match r.read_exact(&mut h) {
@@ -223,6 +290,7 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
             r.read_exact(&mut msg)?;
             let fl = fields(&msg);
             let refcam = fl.iter().find(|(n, _)| *n == 5).and_then(|(_, v)| int(v));
+            focal_length = fl.iter().find(|(n, _)| *n == 4).and_then(|(_, v)| int(v)).map(|f| f as u32);
             let mods = fl.iter().filter(|(n, _)| *n == 12).map(|(_, v)| module(v)).collect();
             kept = Some((buf, mods, refcam));
             skip(r, len - off - n)?;
@@ -233,11 +301,13 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
             r.read_exact(&mut rest)?;
             let msg = &rest[(off - 32) as usize..(off - 32 + n) as usize];
             if h[24] == 1 {
-                view(&fields(msg), &mut wb, &mut image_gain);
+                view(&fields(msg), &mut vp);
             } else {
                 for (f, v) in fields(msg) {
                     if f == 19 {
-                        view(&sub(&v), &mut wb, &mut image_gain);
+                        view(&sub(&v), &mut vp);
+                    } else if f == 13 {
+                        colour_cal(&v, &mut colours);
                     }
                 }
             }
@@ -261,9 +331,20 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
         .ok_or_else(|| bad("no colour frame in reach"))?;
     // the reference runs a stop under the others: bring it up to the photo's gain
     let others = mods.iter().filter(|m| m.id != pick.id).map(|m| m.gain).fold(0.0f32, f32::max);
-    let target = image_gain.unwrap_or(if others > 0.0 { others } else { pick.gain });
+    let target = vp.image_gain.unwrap_or(if others > 0.0 { others } else { pick.gain });
     let exposure = (target / pick.gain.max(0.01)).clamp(1.0, 16.0);
-    Ok(render(&buf[(pick.surface.offset - 32) as usize..], pick, wb, exposure))
+    let colours: Vec<Colour> = colours.into_iter().filter(|c| c.module == pick.id).collect();
+    let mut times: Vec<u64> = mods.iter().map(|m| m.exposure_ns).filter(|t| *t > 0).collect();
+    times.sort();
+    let info = Info {
+        focal_length,
+        exposure_ns: vp.integration_ns.or(times.get(times.len() / 2).copied()),
+        iso: Some((target * 100.0).round() as u32).filter(|i| *i > 0),
+        awb_mode: vp.awb_mode,
+    };
+    let mut p = render(&buf[(pick.surface.offset - 32) as usize..], pick, vp.wb, exposure, &colours);
+    p.info = info;
+    Ok(p)
 }
 
 // --- the picture ---------------------------------------------------------------------------
@@ -277,7 +358,35 @@ fn px(img: &[u8], stride: usize, x: usize, y: usize) -> f32 {
     ((v >> (bit % 8)) & 1023) as f32
 }
 
-fn render(img: &[u8], m: &Module, wb: Option<(f32, f32)>, exposure: f32) -> Picture {
+// XYZ (D50) to linear sRGB, Bradford-adapted
+const XYZ_SRGB: [f32; 9] = [
+    3.1338561, -1.6168667, -0.4906146, //
+    -0.9787684, 1.9161415, 0.0334540, //
+    0.0719453, -0.2289914, 1.4052427,
+];
+
+fn mul(a: &[f32; 9], b: &[f32; 9]) -> [f32; 9] {
+    let mut m = [0f32; 9];
+    for r in 0..3 {
+        for c in 0..3 {
+            m[r * 3 + c] = (0..3).map(|k| a[r * 3 + k] * b[k * 3 + c]).sum();
+        }
+    }
+    m
+}
+
+// camera RGB (white balanced) to linear sRGB: the forward matrix of the calibrated illuminant
+// nearest the photo's white balance (gains are the inverse of its r/g, b/g), then to sRGB
+fn camera_to_srgb(colours: &[Colour], gr: f32, gb: f32) -> Option<[f32; 9]> {
+    let d = |c: &Colour| (c.rg * gr).ln().powi(2) + (c.bg * gb).ln().powi(2);
+    let c = colours
+        .iter()
+        .filter(|c| c.rg > 0.0 && c.bg > 0.0)
+        .min_by(|a, b| d(a).total_cmp(&d(b)))?;
+    Some(mul(&XYZ_SRGB, &c.forward))
+}
+
+fn render(img: &[u8], m: &Module, wb: Option<(f32, f32)>, exposure: f32, colours: &[Colour]) -> Picture {
     let s = m.surface;
     let (w, h) = (s.width / 2, s.height / 2);
     let (rx, ry) = m.red.map(|(x, y)| (x as usize, y as usize)).unwrap_or((0, 0));
@@ -324,17 +433,23 @@ fn render(img: &[u8], m: &Module, wb: Option<(f32, f32)>, exposure: f32) -> Pict
     let scale = exposure / (1023.0 - BLACK);
     let lut: Vec<u8> = (0..4096)
         .map(|i| {
+            // a tone curve with a soft shoulder (midtones up about a stop, white stays white),
+            // like the renderer's, then sRGB
             let v = i as f32 / 4095.0;
+            let v = (1.0 + TONE) * v / (v + TONE);
             let s = if v <= 0.0031308 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
             (s * 255.0).round() as u8
         })
         .collect();
     let enc = |v: f32| lut[((v * 4095.0).clamp(0.0, 4095.0)) as usize];
+    // white balance, then the colour matrix (none without calibration: camera RGB as is)
+    let wbm = [gr, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, gb];
+    let k = camera_to_srgb(colours, gr, gb).map(|c| mul(&c, &wbm)).unwrap_or(wbm);
     let mut rgb = vec![0u8; w * h * 3];
     for (o, p) in rgb.chunks_exact_mut(3).zip(lin.chunks_exact(3)) {
-        o[0] = enc(p[0] * gr * scale);
-        o[1] = enc(p[1] * scale);
-        o[2] = enc(p[2] * gb * scale);
+        for c in 0..3 {
+            o[c] = enc((k[c * 3] * p[0] + k[c * 3 + 1] * p[1] + k[c * 3 + 2] * p[2]) * scale);
+        }
     }
-    Picture { width: w as u32, height: h as u32, rgb }
+    Picture { width: w as u32, height: h as u32, rgb, info: Info::default() }
 }
