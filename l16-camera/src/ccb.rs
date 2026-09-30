@@ -13,7 +13,10 @@ pub const AE_EXPOSURE_US: u32 = 0x0098_1d04; // the ASICs' metering (read-only)
 pub const AE_ISO: u32 = 0x0098_1d05;
 pub const FOCUS_X: u32 = 0x0098_1d06; // the AF window's top left in the module's 4160x3120
 pub const FOCUS_Y: u32 = 0x0098_1d07;
-pub const FLASH: u32 = 0x0098_1d08; // 0 off, 1 auto (the ASICs may light it to focus and meter)
+pub const FLASH: u32 = 0x0098_1d08; // 0 off, 1 auto, 2 on
+pub const ZOOM: u32 = 0x0098_1d09; // the zoom factor x 1000 (1000: 28 mm)
+pub const MIRRORS: u32 = 0x0098_1d0a; // button: the mirrors for the zoom (once it settles)
+pub const METERING: u32 = 0x0098_1d0b; // 0 centre-weighted, 1 touch
 
 #[repr(C)]
 struct Control {

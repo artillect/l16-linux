@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..31e206c01
+index 000000000..c2792690c
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1347 @@
+@@ -0,0 +1,1446 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -162,11 +162,15 @@ index 000000000..31e206c01
 +#define V4L2_CID_LIGHT_FOCUS_X		(V4L2_CID_LIGHT_BASE + 6)
 +#define V4L2_CID_LIGHT_FOCUS_Y		(V4L2_CID_LIGHT_BASE + 7)
 +#define V4L2_CID_LIGHT_FLASH		(V4L2_CID_LIGHT_BASE + 8)
++#define V4L2_CID_LIGHT_ZOOM		(V4L2_CID_LIGHT_BASE + 9)
++#define V4L2_CID_LIGHT_MIRRORS		(V4L2_CID_LIGHT_BASE + 10)
++#define V4L2_CID_LIGHT_METERING		(V4L2_CID_LIGHT_BASE + 11)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
 +/* preview modules: stock previews on A1 (28 mm), B4 (70 mm) or C5 (150 mm) */
-+static const char * const ccb_flash_names[] = { "Off", "Auto", NULL };
++static const char * const ccb_flash_names[] = { "Off", "Auto", "On", NULL };
++static const char * const ccb_metering_names[] = { "Centre-weighted", "Touch", NULL };
 +
 +static const char * const ccb_module_names[] = { "A1", "B4", "C5" };
 +static const u8 ccb_module_masks[][3] = {
@@ -174,8 +178,6 @@ index 000000000..31e206c01
 +	{ 0x00, 0x02, 0x00 },	/* B4: bit 9 */
 +	{ 0x00, 0x80, 0x00 },	/* C5: bit 15 */
 +};
-+/* zoom factor (f32) the ASIC needs to run AE on the module: 1.0, 2.5, 150/28 */
-+static const u32 ccb_module_zoom[] = { 0x3f800000, 0x40200004, 0x40ab6db7 };
 +
 +struct ccb {
 +	struct v4l2_subdev sd;
@@ -195,6 +197,7 @@ index 000000000..31e206c01
 +	ktime_t last_send;
 +	bool ae_seen;			/* an AE push since the preview started */
 +	int read_errors;		/* queue reads failed in a row while previewing */
++	bool flash_needed;		/* the ASICs' AE says the flash would fire (auto) */
 +	struct delayed_work drain;	/* reads the queue while previewing */
 +	struct work_struct af;		/* a focus run (seconds; not under the control lock) */
 +	struct delayed_work ae;		/* exposure settings, sent once a burst of changes ends */
@@ -214,7 +217,9 @@ index 000000000..31e206c01
 +	struct v4l2_ctrl *raw_transfer;
 +	struct v4l2_ctrl *focus_x;	/* the AF window's top left, sensor pixels */
 +	struct v4l2_ctrl *focus_y;
-+	struct v4l2_ctrl *flash;	/* 0 off, 1 auto */
++	struct v4l2_ctrl *flash;	/* 0 off, 1 auto, 2 on */
++	struct v4l2_ctrl *zoom_ctrl;	/* the zoom factor x 1000 (1000: 28 mm) */
++	struct v4l2_ctrl *metering;	/* 0 centre-weighted, 1 touch (the focus window) */
 +};
 +
 +static inline struct ccb *to_ccb(struct v4l2_subdev *sd)
@@ -377,7 +382,7 @@ index 000000000..31e206c01
 +		return ret;
 +	}
 +	c->booted = true;
-+	c->zoom = ccb_module_zoom[0];
++	c->zoom = 0x3f800000;		/* a boot resets the zoom factor to 1.0 */
 +	dev_info(&c->client->dev, "ASICs booted\n");
 +	return 0;
 +}
@@ -468,28 +473,57 @@ index 000000000..31e206c01
 +	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, b, sizeof(b));
 +}
 +
-+static int ccb_ae_auto(struct ccb *c)
++/*
++ * 0x0060 in auto (stock's trace of its flash and metering settings): {AE mode, 00, regions?,
++ * 00 3c, count, regions}: the AE mode is Android's (1 on, 2 with auto flash, 3 with the
++ * flash always), and touch metering sends one region, the focus window: {u16 x, y, w, h,
++ * weight 1000, 40 cd}.
++ */
++static int ccb_ae_mode(struct ccb *c)
 +{
-+	static const u8 stack[] = { 0x01, 0x01 };
-+	static const u8 mode[] = { 0x02, 0x00, 0x00, 0x00, 0x3c, 0x00 };
-+	static const u8 zero[24] = { 0 };
++	u8 b[18] = { 1 + c->flash->cur.val, 0x00, 0x00, 0x00, 0x3c, 0x00 };
++	int n = 6;
 +
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, mode, sizeof(mode));
-+	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, zero, sizeof(zero));
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
++	if (c->metering->cur.val) {
++		b[2] = 1;
++		b[5] = 1;
++		put_unaligned_le16(c->focus_x->cur.val, b + 6);
++		put_unaligned_le16(c->focus_y->cur.val, b + 8);
++		put_unaligned_le16(200, b + 10);
++		put_unaligned_le16(200, b + 12);
++		put_unaligned_le16(1000, b + 14);
++		b[16] = 0x40;
++		b[17] = 0xcd;
++		n = 18;
++	}
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0060, b, n);
 +}
 +
 +/*
-+ * The flash LEDs' torch / pre-flash currents (0x0066 {u16 led1, led2}, mA): stock's 1 and 149
-+ * (warm, cool) when the flash may be used, so the ASICs light it to focus and meter in the
-+ * dark (AF assist); zero when it is off.
++ * the flash will fire: always "on", or "auto" when the ASICs' AE says so. Stock then sends the
++ * pre-flash (torch) currents before focusing and before a capture: 0x0066 {u16 64, 86} mA.
 + */
-+static int ccb_apply_flash(struct ccb *c)
++static bool ccb_flash_fires(struct ccb *c)
 +{
-+	static const u8 on[] = { 0x01, 0x00, 0x95, 0x00 }, off[] = { 0, 0, 0, 0 };
++	return c->flash->cur.val == 2 || (c->flash->cur.val == 1 && c->flash_needed);
++}
 +
-+	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0066, c->flash->cur.val ? on : off,
-+			sizeof(off));
++static void ccb_preflash(struct ccb *c, int kind)
++{
++	static const u8 currents[] = { 0x40, 0x00, 0x56, 0x00 };
++
++	if (ccb_flash_fires(c))
++		ccb_send(c, ccb_tid(c, kind), 0x0066, currents, sizeof(currents));
++}
++
++static int ccb_ae_auto(struct ccb *c)
++{
++	static const u8 stack[] = { 0x01, 0x01 };
++	static const u8 zero[24] = { 0 };
++
++	ccb_ae_mode(c);
++	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0067, zero, sizeof(zero));
++	return ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x006a, stack, sizeof(stack));
 +}
 +
 +static int ccb_apply_ae(struct ccb *c)
@@ -529,6 +563,8 @@ index 000000000..31e206c01
 +		if (t == CCB_TYPE_AE && get_unaligned_le16(m + 2) >= 16) {
 +			ns = get_unaligned_le64(m + 4);
 +			gain = get_unaligned_le32(m + 16);
++			if (get_unaligned_le16(m + 2) >= 33)
++				c->flash_needed = m[4 + 32] & 1;
 +			ae = true;
 +			if (debug)
 +				dev_info(&c->client->dev, "AE push %llu us, ISO %u\n",
@@ -557,6 +593,20 @@ index 000000000..31e206c01
 +		v4l2_ctrl_s_ctrl(c->ae_us, clamp_t(u64, div_u64(ns, 1000), 0, c->ae_us->maximum));
 +		v4l2_ctrl_s_ctrl(c->ae_iso, clamp_t(u32, ccb_f32_mul(gain, 100), 0, c->ae_iso->maximum));
 +	}
++}
++
++/*
++ * Stock's mirror update when a zoom settles (ccb_move_mirror): the zoom factor again on the
++ * mirror slot, then 0x8059 {00}. It sets the 150 mm modules' mirrors for the framing.
++ */
++static void ccb_mirrors(struct ccb *c)
++{
++	static const u8 update[] = { 0x00 };
++	u8 z[4];
++
++	put_unaligned_le32(c->zoom, z);
++	ccb_send(c, ccb_tid(c, CCB_KIND_MIRROR), 0x005c, z, sizeof(z));
++	ccb_send(c, ccb_tid(c, CCB_KIND_MIRROR), 0x8059, update, sizeof(update));
 +}
 +
 +/* stock's camera start (LightOS I2C traces), preview on the selected module */
@@ -617,25 +667,19 @@ index 000000000..31e206c01
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0033, ae3b, sizeof(ae3b));
 +	c->previewing = true;
 +	c->ae_seen = false;
-+	ccb_apply_flash(c);
 +	ret = ccb_apply_ae(c);
 +	if (ret)
 +		return ret;
 +
 +	/*
-+	 * the ASIC skips AE unless its zoom factor matches the preview module, and focuses
-+	 * for its zoom factor too; it keeps the factor across a module switch. Only send a
-+	 * change: 1.0 sent to a fresh A1 preview stops its AE (no more type 7 pushes).
++	 * the zoom factor (the ASIC runs AE and focus for it; it must not be below the
++	 * preview module's), then the mirrors for it; the ASICs keep it across a boot as 1.0
 +	 */
-+	if (c->zoom != ccb_module_zoom[mod]) {
-+		static const u8 mirrors[] = { 0x00 };
-+
-+		put_unaligned_le32(ccb_module_zoom[mod], z);
++	if (c->zoom != ccb_f32(c->zoom_ctrl->cur.val, 1000)) {
++		c->zoom = ccb_f32(c->zoom_ctrl->cur.val, 1000);
++		put_unaligned_le32(c->zoom, z);
 +		ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x005c, z, sizeof(z));
-+		/* stock's mirror move after a zoom: the factor again, then the mirror update */
-+		ccb_send(c, ccb_tid(c, CCB_KIND_MIRROR), 0x005c, z, sizeof(z));
-+		ccb_send(c, ccb_tid(c, CCB_KIND_MIRROR), 0x8059, mirrors, sizeof(mirrors));
-+		c->zoom = ccb_module_zoom[mod];
++		ccb_mirrors(c);
 +	}
 +	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	return 0;
@@ -699,7 +743,10 @@ index 000000000..31e206c01
 +
 +	if (!c->previewing)
 +		return -EBUSY;
++	if (c->metering->cur.val && c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL)
++		ccb_ae_mode(c);
 +	ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0061, lock, sizeof(lock));
++	ccb_preflash(c, CCB_KIND_AF);
 +	put_unaligned_le32(c->zoom, z);
 +	ccb_send(c, ccb_tid(c, CCB_KIND_AF), 0x005c, z, sizeof(z));
 +	/* on the B and C modules focus runs across the ASICs and takes a few seconds */
@@ -757,11 +804,27 @@ index 000000000..31e206c01
 +		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
 +		break;
 +	case V4L2_CID_LIGHT_FLASH:
++	case V4L2_CID_LIGHT_METERING:
++		/* the AE mode byte and region (sent once the change is in) */
++		mod_delayed_work(system_wq, &c->ae, msecs_to_jiffies(60));
++		break;
++	case V4L2_CID_LIGHT_ZOOM:
++		/* stock sends the zoom factor as it changes, every 30-50 ms */
++		mutex_lock(&c->lock);
++		if (c->previewing) {
++			u8 z[4];
++
++			c->zoom = ccb_f32(ctrl->val, 1000);
++			put_unaligned_le32(c->zoom, z);
++			ret = ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x005c, z, sizeof(z));
++		}
++		mutex_unlock(&c->lock);
++		break;
++	case V4L2_CID_LIGHT_MIRRORS:
++		/* and the mirrors once it settles */
 +		mutex_lock(&c->lock);
 +		if (c->previewing)
-+			ret = ccb_send(c, ccb_tid(c, CCB_KIND_CFG), 0x0066,
-+				       ctrl->val ? (const u8[]){ 0x01, 0x00, 0x95, 0x00 } :
-+						   (const u8[]){ 0, 0, 0, 0 }, 4);
++			ccb_mirrors(c);
 +		mutex_unlock(&c->lock);
 +		break;
 +	case V4L2_CID_AUTO_FOCUS_START:
@@ -777,16 +840,21 @@ index 000000000..31e206c01
 +		break;
 +	case V4L2_CID_LIGHT_MODULE:
 +		/*
-+		 * while previewing, restart the ASICs' preview on the new module; the CSI-2
-+		 * stream just pauses, and whoever is streaming keeps going
++		 * while previewing, as stock: use case 3 and the new module's stream on (nothing
++		 * stopped or closed); the CSI-2 stream carries on
 +		 */
 +		mutex_lock(&c->lock);
 +		if (c->previewing) {
-+			ret = ccb_preview_stop(c, c->module->cur.val);
-+			if (!ret)
-+				ret = ccb_preview_start(c);
-+			if (ret)
-+				ret = ccb_restart_preview(c);
++			static const u8 ucid3[] = { 0x03, 0x00 };
++			u8 on[6];
++
++			memcpy(on, ccb_module_masks[ctrl->val], 3);
++			on[3] = 0x11;
++			on[4] = on[5] = 0x00;
++			ret = ccb_command(c, CCB_KIND_CMD, 0x9000, ucid3, sizeof(ucid3));
++			if (ret >= 0)
++				ret = ccb_command(c, CCB_KIND_CMD, 0x8002, on, sizeof(on));
++			ret = ret < 0 ? ccb_restart_preview(c) : 0;
 +		}
 +		mutex_unlock(&c->lock);
 +		break;
@@ -883,8 +951,35 @@ index 000000000..31e206c01
 +	.id = V4L2_CID_LIGHT_FLASH,
 +	.name = "Flash",
 +	.type = V4L2_CTRL_TYPE_MENU,
-+	.max = 1,
++	.max = 2,
 +	.qmenu = ccb_flash_names,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_zoom = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_ZOOM,
++	.name = "Zoom Factor x1000",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.min = 1000,
++	.max = 6000,
++	.step = 1,
++	.def = 1000,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_mirrors = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_MIRRORS,
++	.name = "Mirror Update",
++	.type = V4L2_CTRL_TYPE_BUTTON,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_metering = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_METERING,
++	.name = "Metering",
++	.type = V4L2_CTRL_TYPE_MENU,
++	.max = 1,
++	.qmenu = ccb_metering_names,
 +};
 +
 +static int ccb_s_stream(struct v4l2_subdev *sd, int enable)
@@ -964,8 +1059,9 @@ index 000000000..31e206c01
 +
 +	if (cap->burst > 31)
 +		return -EINVAL;
++	ccb_preflash(c, CCB_KIND_CAPTURE);
 +	if (c->exp_auto->cur.val != V4L2_EXPOSURE_MANUAL &&
-+	    !(cap->flags & LIGHT_CCB_CAPTURE_NO_PRECAPTURE))
++	    (!(cap->flags & LIGHT_CCB_CAPTURE_NO_PRECAPTURE) || ccb_flash_fires(c)))
 +		ccb_send(c, ccb_tid(c, CCB_KIND_CAPTURE), 0x0061, trigger, sizeof(trigger));
 +	memcpy(prev, ccb_module_masks[mod], 3);
 +	prev[3] = 0x10;
@@ -1243,7 +1339,7 @@ index 000000000..31e206c01
 +	if (ret)
 +		return ret;
 +
-+	v4l2_ctrl_handler_init(h, 20);
++	v4l2_ctrl_handler_init(h, 23);
 +	link_freq = v4l2_ctrl_new_int_menu(h, NULL, V4L2_CID_LINK_FREQ, 0, 0, ccb_link_freqs);
 +	if (link_freq)
 +		link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -1274,6 +1370,9 @@ index 000000000..31e206c01
 +	c->focus_x = v4l2_ctrl_new_custom(h, &ccb_ctrl_focus_x, NULL);
 +	c->focus_y = v4l2_ctrl_new_custom(h, &ccb_ctrl_focus_y, NULL);
 +	c->flash = v4l2_ctrl_new_custom(h, &ccb_ctrl_flash, NULL);
++	c->zoom_ctrl = v4l2_ctrl_new_custom(h, &ccb_ctrl_zoom, NULL);
++	v4l2_ctrl_new_custom(h, &ccb_ctrl_mirrors, NULL);
++	c->metering = v4l2_ctrl_new_custom(h, &ccb_ctrl_metering, NULL);
 +	if (h->error)
 +		return h->error;
 +

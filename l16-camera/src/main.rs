@@ -44,7 +44,9 @@ const BURSTS: &[u8] = &[1, 3, 6];
 const PRIMES: &[f64] = &[28.0, 35.0, 70.0, 150.0];
 const ZOOM_MIN: f64 = 28.0;
 const ZOOM_MAX: f64 = 150.0;
-const MODULE_MM: [f64; 3] = [28.0, 70.0, 150.0];
+// the preview modules' focal lengths: A1, and B4 from 70 mm on (stock never previews on
+// the 150 mm modules; it crops B4)
+const MODULE_MM: [f64; 2] = [28.0, 70.0];
 const ACCENT: (f64, f64, f64) = (0.0, 0.694, 0.929); // #00B1ED
 const STRIP_LEN: f64 = 768.0;
 
@@ -102,7 +104,7 @@ struct State {
     burst_count: u8,  // the burst screen's number (0: not showing)
     burst_captured: bool,
     burst: usize,
-    flash: bool,
+    flash: u8, // 0 off, 1 auto, 2 on
     dragged: bool,
     wheel: Option<Dial>,
     wheel_start: f64,
@@ -110,6 +112,8 @@ struct State {
     zoom_wheel_until: Option<Instant>,
     focus_until: Option<Instant>,
     focus_at: Option<(f64, f64)>,
+    zoom_sent: Instant,
+    touch_meter: bool,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -125,6 +129,7 @@ struct App {
     ccb: Option<ccb::Ccb>,
     focusing: Arc<AtomicBool>,
     stage_tx: mpsc::Sender<Stage>,
+    ctl_tx: mpsc::Sender<(u32, i32)>,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -153,6 +158,7 @@ struct App {
     grid_btn: gtk::Button,
     burst_btn: gtk::Button,
     flash_btn: gtk::Button,
+    meter_btn: gtk::Button,
     status: gtk::Label,
     countdown: gtk::Label,
 }
@@ -192,6 +198,10 @@ fn fmt_secs(t: f64) -> String {
     } else {
         format!("1/{:.0}", 1.0 / t)
     }
+}
+
+fn preview_module(zoom: f64) -> usize {
+    usize::from(zoom >= 70.0)
 }
 
 fn module_for(zoom: f64) -> usize {
@@ -289,8 +299,14 @@ impl App {
             self.timer_btn.add_css_class("on");
         }
         self.grid_btn.set_label(if st.grid { "grid 3×3" } else { "grid off" });
-        self.flash_btn.set_label(if st.flash { "flash auto" } else { "flash off" });
-        if st.flash {
+        self.flash_btn.set_label(["flash off", "flash auto", "flash on"][st.flash as usize]);
+        self.meter_btn.set_label(if st.touch_meter { "meter touch" } else { "meter centre" });
+        if st.touch_meter {
+            self.meter_btn.add_css_class("on");
+        } else {
+            self.meter_btn.remove_css_class("on");
+        }
+        if st.flash > 0 {
             self.flash_btn.add_css_class("on");
         } else {
             self.flash_btn.remove_css_class("on");
@@ -384,7 +400,7 @@ impl App {
             let mut st = self.st.borrow_mut();
             st.switching = None;
             st.module = module;
-            (st.zoom, module_for(st.zoom))
+            (st.zoom, preview_module(st.zoom))
         };
         self.view.set_zoom_next_frame(zoom / MODULE_MM[module]);
         if want != module {
@@ -402,15 +418,22 @@ impl App {
                 id.remove();
             }
             self.view.set_zoom(zoom / MODULE_MM[st.module]);
+            // the ASICs follow the zoom as stock's app sends it, every 30-50 ms
+            if st.zoom_sent.elapsed() >= Duration::from_millis(40) {
+                st.zoom_sent = Instant::now();
+                let _ = self.ctl_tx.send((ccb::ZOOM, (zoom / ZOOM_MIN * 1000.0).round() as i32));
+            }
         }
-        // the module follows once the zoom settles (switching restarts the preview)
+        // once it settles: the last factor, the mirrors, and the preview module
         let app = self.clone();
-        let id = glib::timeout_add_local_once(Duration::from_millis(400), move || {
-            let (want, have, busy) = {
+        let id = glib::timeout_add_local_once(Duration::from_millis(200), move || {
+            let (want, have, busy, zoom) = {
                 let mut st = app.st.borrow_mut();
                 st.settle = None;
-                (module_for(st.zoom), st.module, st.busy || st.switching.is_some())
+                (preview_module(st.zoom), st.module, st.busy || st.switching.is_some(), st.zoom)
             };
+            let _ = app.ctl_tx.send((ccb::ZOOM, (zoom / ZOOM_MIN * 1000.0).round() as i32));
+            let _ = app.ctl_tx.send((ccb::MIRRORS, 1));
             if want != have && !busy {
                 app.switch_module(want);
             }
@@ -1116,11 +1139,13 @@ fn build(gapp: &gtk::Application) {
     let grid_btn = gtk::Button::with_label("grid off");
     let burst_btn = gtk::Button::with_label("burst off");
     let flash_btn = gtk::Button::with_label("flash off");
+    let meter_btn = gtk::Button::with_label("meter centre");
     let close_btn = gtk::Button::with_label("✕");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
     bar.append(&mode_btn);
     bar.append(&flash_btn);
+    bar.append(&meter_btn);
     bar.append(&timer_btn);
     bar.append(&grid_btn);
     bar.append(&burst_btn);
@@ -1190,6 +1215,16 @@ fn build(gapp: &gtk::Application) {
     window.set_child(Some(&root));
 
     let (stage_tx, stage_rx) = mpsc::channel();
+    // control writes that can wait for the driver (an AF run holds it for seconds)
+    let (ctl_tx, ctl_rx) = mpsc::channel::<(u32, i32)>();
+    thread::spawn(move || {
+        let c = ccb::Ccb::open();
+        while let Ok((id, v)) = ctl_rx.recv() {
+            if let Some(c) = &c {
+                c.set(id, v);
+            }
+        }
+    });
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -1206,7 +1241,7 @@ fn build(gapp: &gtk::Application) {
             burst_count: 0,
             burst_captured: false,
             burst: 0,
-            flash: false,
+            flash: 0,
             dragged: false,
             wheel: None,
             wheel_start: 0.0,
@@ -1214,6 +1249,8 @@ fn build(gapp: &gtk::Application) {
             zoom_wheel_until: None,
             focus_until: None,
             focus_at: None,
+            zoom_sent: Instant::now(),
+            touch_meter: false,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -1227,6 +1264,7 @@ fn build(gapp: &gtk::Application) {
         focusing: Arc::new(AtomicBool::new(false)),
         stage_tx,
         stage_rx,
+        ctl_tx,
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
@@ -1254,6 +1292,7 @@ fn build(gapp: &gtk::Application) {
         grid_btn,
         burst_btn,
         flash_btn,
+        meter_btn,
         status,
         countdown,
     });
@@ -1402,14 +1441,22 @@ fn build(gapp: &gtk::Application) {
     });
     let a = app.clone();
     app.flash_btn.connect_clicked(move |_| {
-        let on = {
+        let f = {
             let mut st = a.st.borrow_mut();
-            st.flash = !st.flash;
+            st.flash = (st.flash + 1) % 3;
             st.flash
         };
-        if let Some(c) = &a.ccb {
-            c.set(ccb::FLASH, on as i32);
-        }
+        let _ = a.ctl_tx.send((ccb::FLASH, f as i32));
+        a.refresh();
+    });
+    let a = app.clone();
+    app.meter_btn.connect_clicked(move |_| {
+        let t = {
+            let mut st = a.st.borrow_mut();
+            st.touch_meter = !st.touch_meter;
+            st.touch_meter
+        };
+        let _ = a.ctl_tx.send((ccb::METERING, t as i32));
         a.refresh();
     });
     let a = app.clone();
@@ -1461,6 +1508,8 @@ fn build(gapp: &gtk::Application) {
     if let Some(c) = &app.ccb {
         c.set(ccb::MODULE, 0);
         c.set(ccb::FLASH, 0);
+        c.set(ccb::METERING, 0);
+        c.set(ccb::ZOOM, 1000);
     }
     app.start_preview();
     app.apply_exposure();
