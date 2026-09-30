@@ -3,12 +3,13 @@
 # packs l16-camera/ and the tools into $pkgname-src.tar.gz here).
 pkgname=l16-camera
 pkgver=0.1.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Camera app for the Light L16, after OpenLight's layout"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
 license="MIT"
 depends="
+	font-nerd-fonts-symbols
 	gst-plugins-base
 	gst-plugins-rs-gtk4
 	libcamera-gstreamer
@@ -39,5 +40,5 @@ package() {
 	install -Dm644 l16-camera.desktop "$pkgdir"/usr/share/applications/l16-camera.desktop
 }
 sha512sums="
-72c6b87686815c66225524eb2a251bd5ed1813e7764751c4bf9b89a7f3aabc692562aa5fe7073cacb08dede21a35c385d8bb5ce706ba585bd4da75fb40cfd263  l16-camera-src.tar.gz
+90c060eac4c30ced4ae64466fccc002f49b32dd18190ba9625ba8e58466e4c4fe7cc648edf59416ae1cca0e0ed3ae421732beba45e522cace842f5cf603afa20  l16-camera-src.tar.gz
 "

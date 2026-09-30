@@ -9,6 +9,7 @@
 
 mod ccb;
 mod haptics;
+mod icons;
 mod input;
 mod settings;
 mod transfer;
@@ -18,7 +19,7 @@ mod zoomview;
 use gst::prelude::*;
 use gtk::prelude::*;
 use gtk::{cairo, gdk, glib};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::path::PathBuf;
@@ -64,6 +65,7 @@ window.camera { background: #000; }
 .toolbar button, button.flat-white { background: none; border: none; box-shadow: none;
     color: #fff; font-size: 16px; font-weight: 600; min-width: 68px; min-height: 56px; }
 .toolbar button.on { color: #00B1ED; }
+.options { background: rgba(0,0,0,0.55); }
 .status { color: #fff; font-size: 17px; font-weight: 600; background: rgba(0,0,0,0.55);
     border-radius: 8px; padding: 4px 14px; }
 .countdown { color: #fff; font-size: 96px; font-weight: 700; }
@@ -189,13 +191,18 @@ struct State {
     // continuous focus: the metered exposure (log) and zoom at the last focus
     caf_ref: Option<(f64, f64)>,
     // the settings screen's
-    metering: u8, // 0 centre-weighted, 1 touch
+    metering: u8, // 0 centre-weighted, 1 touch, 2 whole frame
     caf: bool,
     stacked: bool,
     exposure_info: bool,
     inverse_wheel: bool,
     strip_zoom: bool,
-    asleep: bool, // the preview stopped while the screen is off
+    tools: Vec<Tool>, // the toolbar's buttons, in order
+    tool_cycle: bool, // a button with choices steps through them, rather than showing them
+    asleep: bool, // the preview stopped while it can't be seen (follow_screen)
+    unseen_since: Option<Instant>,
+    screen_off: bool,
+    fast_loop_on: bool,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -212,7 +219,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -230,6 +237,8 @@ impl State {
             self.haptics,
             self.continuous as u8,
             self.strip_zoom as u8,
+            self.tools.iter().map(|t| t.name()).collect::<Vec<_>>().join(","),
+            self.tool_cycle as u8,
         )
     }
 
@@ -247,7 +256,7 @@ impl State {
         self.grid = num("grid").map_or(self.grid, |v| (v as u8).min(2));
         self.histogram = flag("histogram", self.histogram);
         self.burst = num("burst").map_or(self.burst, |v| (v as usize).min(BURSTS.len() - 1));
-        self.metering = num("metering").map_or(self.metering, |v| (v as u8).min(1));
+        self.metering = num("metering").map_or(self.metering, |v| (v as u8).min(2));
         self.caf = flag("caf", self.caf);
         self.wb = num("wb").map_or(self.wb, |v| (v as usize).min(wb::PRESETS.len() - 1));
         self.stacked = flag("stacked", self.stacked);
@@ -256,6 +265,11 @@ impl State {
         self.haptics = num("haptics").map_or(self.haptics, |v| (v as u8).min(2));
         self.continuous = flag("continuous", self.continuous);
         self.strip_zoom = flag("strip_zoom", self.strip_zoom);
+        if let Some(t) = m.get("toolbar") {
+            self.tools = t.split(',').filter_map(|n| TOOLS.iter().copied().find(|t| t.name() == n)).collect();
+            self.tools.dedup();
+        }
+        self.tool_cycle = flag("tool_cycle", self.tool_cycle);
     }
 }
 
@@ -274,9 +288,9 @@ struct SettingRow {
 const SETTINGS: &[SettingRow] = &[
     SettingRow {
         title: "Metering",
-        sub: "Where auto exposure meters: the centre, or the spot you tap",
+        sub: "Where auto exposure meters: the centre, the spot you tap, or the whole frame",
         kind: SettingKind::Choice(
-            &["Centre-weighted", "Touch"],
+            &["Centre-weighted", "Touch", "Whole frame"],
             |s| s.metering as usize,
             |s, v| s.metering = v as u8,
         ),
@@ -326,6 +340,81 @@ const SETTINGS: &[SettingRow] = &[
     },
 ];
 
+// what the toolbar can hold (the toolbar editor chooses which, and their order)
+#[derive(Clone, Copy, PartialEq)]
+enum Tool {
+    Flash,
+    Wb,
+    Timer,
+    Grid,
+    Histogram,
+    Burst,
+    Afd,
+}
+
+const TOOLS: [Tool; 7] = [Tool::Flash, Tool::Wb, Tool::Timer, Tool::Grid, Tool::Histogram, Tool::Burst, Tool::Afd];
+
+impl Tool {
+    // in the settings file
+    fn name(self) -> &'static str {
+        match self {
+            Tool::Flash => "flash",
+            Tool::Wb => "wb",
+            Tool::Timer => "timer",
+            Tool::Grid => "grid",
+            Tool::Histogram => "histogram",
+            Tool::Burst => "burst",
+            Tool::Afd => "afd",
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Tool::Flash => "Flash",
+            Tool::Wb => "White balance",
+            Tool::Timer => "Timer",
+            Tool::Grid => "Grid",
+            Tool::Histogram => "Histogram",
+            Tool::Burst => "Burst",
+            Tool::Afd => "Continuous focus (AF-D)",
+        }
+    }
+
+    fn icon(self) -> char {
+        match self {
+            Tool::Flash => icons::FLASH,
+            Tool::Wb => icons::WB[0],
+            Tool::Timer => icons::TIMER,
+            Tool::Grid => icons::GRID,
+            Tool::Histogram => icons::HISTOGRAM,
+            Tool::Burst => icons::BURST,
+            Tool::Afd => icons::FOCUS_AUTO,
+        }
+    }
+
+    // its choices, when it has more than two
+    fn opt(self) -> Option<Opt> {
+        match self {
+            Tool::Flash => Some(Opt::Flash),
+            Tool::Wb => Some(Opt::Wb),
+            Tool::Timer => Some(Opt::Timer),
+            Tool::Grid => Some(Opt::Grid),
+            Tool::Burst => Some(Opt::Burst),
+            Tool::Histogram | Tool::Afd => None,
+        }
+    }
+}
+
+// the toolbar's settings with more than two choices
+#[derive(Clone, Copy, PartialEq)]
+enum Opt {
+    Flash,
+    Wb,
+    Timer,
+    Grid,
+    Burst,
+}
+
 struct App {
     st: RefCell<State>,
     ccb: Option<ccb::Ccb>,
@@ -358,6 +447,11 @@ struct App {
     burst_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
+    // a multi-option setting's choices, in a row above the toolbar
+    options: gtk::Revealer,
+    options_row: gtk::Box,
+    options_for: Cell<Option<Opt>>,
+    preview_gain: Cell<f32>,
     right: gtk::Box,
     mode_wheel: gtk::DrawingArea,
     mode_touch: gtk::Box,
@@ -368,6 +462,17 @@ struct App {
     burst_btn: gtk::Button,
     flash_btn: gtk::Button,
     wb_btn: gtk::Button,
+    afd_btn: gtk::Button,
+    tools_box: gtk::Box,
+    // the settings screen, the list a value is chosen from over it, and the toolbar editor
+    settings_list: gtk::ListBox,
+    setting_taps: RefCell<Vec<Rc<dyn Fn()>>>,
+    chooser: gtk::Box,
+    chooser_title: gtk::Label,
+    chooser_list: gtk::ListBox,
+    chooser_pick: RefCell<Option<Rc<dyn Fn(usize)>>>,
+    editor: gtk::Box,
+    editor_list: gtk::ListBox,
     cal: wb::Calibration,
     motor: haptics::Haptics,
     // a photo's view preferences for the LRI (white balance, exposure), by its directory
@@ -557,29 +662,36 @@ impl App {
         let iso = if st.mode.fixes_iso() { iso_at(st.iso) } else { st.live_iso };
         let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
         // stock keeps the sensors' analog gain at most 7.75 (ISO 775) and has its ISP apply
-        // the rest as digital gain, up to 4.13x (ISO 3200): the preview does the same here
-        self.view.set_gain((iso as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX));
+        // the rest as digital gain, up to 4.13x (ISO 3200), before its tone map and gamma:
+        // the software ISP does the same here (libcamera's DigitalGain, our patch)
+        let gain = (iso as f64 / ISO_ANALOG_MAX).clamp(1.0, ISO_MAX / ISO_ANALOG_MAX) as f32;
+        if (gain - self.preview_gain.get()).abs() > 0.005 {
+            self.preview_gain.set(gain);
+            if let Some(src) = self.pipeline.by_name("src") {
+                src.set_property("digital-gain", gain);
+            }
+        }
         self.hud[0].set_text(&ev);
         self.hud[1].set_text(&if iso > 0 { iso.to_string() } else { "–".into() });
         self.hud[2].set_text(&if secs > 0.0 { fmt_secs(secs) } else { "–".into() });
         self.hud[3].set_text(&format!("{:.0}", st.zoom));
         self.mode_label.set_text(st.mode.short());
         let t = TIMERS[st.timer];
-        self.timer_btn.set_label(&if t == 0 { "timer off".into() } else { format!("timer {t}s") });
+        icons::set(&self.timer_btn, if t == 0 { icons::TIMER_OFF } else { icons::TIMER }, &if t == 0 { String::new() } else { format!("{t}s") });
         if t == 0 {
             self.timer_btn.remove_css_class("on");
         } else {
             self.timer_btn.add_css_class("on");
         }
-        self.grid_btn.set_label(["grid off", "grid 3×3", "grid golden"][st.grid as usize]);
-        self.hist_btn.set_label(if st.histogram { "histogram on" } else { "histogram off" });
+        icons::set(&self.grid_btn, if st.grid == 0 { icons::GRID_OFF } else { icons::GRID }, ["", "", "φ"][st.grid as usize]);
+        icons::set(&self.hist_btn, icons::HISTOGRAM, "");
         if st.histogram {
             self.hist_btn.add_css_class("on");
         } else {
             self.hist_btn.remove_css_class("on");
         }
-        self.flash_btn.set_label(["flash off", "flash auto", "flash on"][st.flash as usize]);
-        self.wb_btn.set_label(&format!("wb {}", wb::PRESETS[st.wb]));
+        icons::set(&self.flash_btn, [icons::FLASH_OFF, icons::FLASH_AUTO, icons::FLASH][st.flash as usize], "");
+        icons::set(&self.wb_btn, icons::WB[st.wb], "");
         if st.wb > 0 {
             self.wb_btn.add_css_class("on");
         } else {
@@ -592,7 +704,7 @@ impl App {
             self.flash_btn.remove_css_class("on");
         }
         let b = BURSTS[st.burst];
-        self.burst_btn.set_label(&if b > 1 { format!("burst {b}") } else { "burst off".into() });
+        icons::set(&self.burst_btn, icons::BURST, &if b > 1 { b.to_string() } else { String::new() });
         self.burst_badge.set_text(&format!("×{b}"));
         self.burst_badge.set_visible(b > 1);
         if b > 1 {
@@ -604,6 +716,11 @@ impl App {
             self.grid_btn.add_css_class("on");
         } else {
             self.grid_btn.remove_css_class("on");
+        }
+        if st.caf {
+            self.afd_btn.add_css_class("on");
+        } else {
+            self.afd_btn.remove_css_class("on");
         }
         let saved = st.saved();
         drop(st);
@@ -692,6 +809,321 @@ impl App {
         self.refresh();
     }
 
+    // a setting's choices, as (icon, name), and which is chosen
+    fn choices(&self, o: Opt) -> (Vec<(char, String)>, usize) {
+        let st = self.st.borrow();
+        match o {
+            Opt::Flash => (
+                vec![(icons::FLASH_OFF, "off".into()), (icons::FLASH_AUTO, "auto".into()), (icons::FLASH, "on".into())],
+                st.flash as usize,
+            ),
+            Opt::Wb => (
+                wb::PRESETS.iter().zip(icons::WB).map(|(n, i)| (i, n.to_string())).collect(),
+                st.wb,
+            ),
+            Opt::Timer => (
+                TIMERS
+                    .iter()
+                    .map(|&t| if t == 0 { (icons::TIMER_OFF, "off".into()) } else { (icons::TIMER, format!("{t}s")) })
+                    .collect(),
+                st.timer,
+            ),
+            Opt::Grid => (
+                vec![(icons::GRID_OFF, "off".into()), (icons::GRID, "3×3".into()), (icons::GRID, "golden".into())],
+                st.grid as usize,
+            ),
+            Opt::Burst => (
+                BURSTS.iter().map(|&b| (icons::BURST, if b > 1 { b.to_string() } else { "off".into() })).collect(),
+                st.burst,
+            ),
+        }
+    }
+
+    fn tool_button(&self, t: Tool) -> &gtk::Button {
+        match t {
+            Tool::Flash => &self.flash_btn,
+            Tool::Wb => &self.wb_btn,
+            Tool::Timer => &self.timer_btn,
+            Tool::Grid => &self.grid_btn,
+            Tool::Histogram => &self.hist_btn,
+            Tool::Burst => &self.burst_btn,
+            Tool::Afd => &self.afd_btn,
+        }
+    }
+
+    // the toolbar: the chosen buttons, in their order
+    fn layout_toolbar(&self) {
+        while let Some(c) = self.tools_box.first_child() {
+            self.tools_box.remove(&c);
+        }
+        let tools = self.st.borrow().tools.clone();
+        for t in tools {
+            self.tools_box.append(self.tool_button(t));
+        }
+    }
+
+    fn tool_tap(self: &Rc<Self>, t: Tool) {
+        match t.opt() {
+            Some(o) if self.st.borrow().tool_cycle => {
+                let (choices, now) = self.choices(o);
+                self.choose(o, (now + 1) % choices.len());
+            }
+            Some(o) => self.show_options(Some(o)),
+            None => {
+                self.show_options(None);
+                {
+                    let mut st = self.st.borrow_mut();
+                    match t {
+                        Tool::Histogram => st.histogram = !st.histogram,
+                        _ => st.caf = !st.caf,
+                    }
+                }
+                self.refresh();
+            }
+        }
+    }
+
+    // after a setting changes: the driver's side of it, the screen, the settings file
+    fn setting_changed(&self) {
+        let meter = self.st.borrow().metering;
+        let _ = self.ctl_tx.send((ccb::METERING, meter as i32));
+        self.refresh();
+    }
+
+    // a settings row: title, explanation and what goes on the right; its tap
+    fn setting_row(&self, title: &str, sub: &str, right: &[gtk::Widget], tap: Rc<dyn Fn()>) {
+        let t = gtk::Label::new(Some(title));
+        t.add_css_class("set-title");
+        t.set_halign(gtk::Align::Start);
+        let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        text.append(&t);
+        if !sub.is_empty() {
+            let d = gtk::Label::new(Some(sub));
+            d.add_css_class("set-sub");
+            d.set_halign(gtk::Align::Start);
+            text.append(&d);
+        }
+        text.set_hexpand(true);
+        let line = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        line.append(&text);
+        for w in right {
+            line.append(w);
+        }
+        self.settings_list.append(&line);
+        self.setting_taps.borrow_mut().push(tap);
+    }
+
+    fn switch_row(self: &Rc<Self>, title: &str, sub: &str, get: fn(&State) -> bool, set: fn(&mut State, bool)) {
+        let sw = gtk::Switch::new();
+        sw.set_active(get(&self.st.borrow()));
+        sw.set_valign(gtk::Align::Center);
+        sw.set_can_target(false); // the row's tap flips it
+        let a = self.clone();
+        sw.connect_active_notify(move |sw| {
+            set(&mut a.st.borrow_mut(), sw.is_active());
+            a.setting_changed();
+        });
+        let s = sw.clone();
+        self.setting_row(title, sub, &[sw.upcast()], Rc::new(move || s.set_active(!s.is_active())));
+    }
+
+    fn choice_row(self: &Rc<Self>, title: &'static str, sub: &str, options: Vec<String>, now: usize, pick: Rc<dyn Fn(usize)>) {
+        let value = gtk::Label::new(options.get(now).map(String::as_str));
+        value.add_css_class("set-value");
+        let chevron = icons::label(icons::CHEVRON_RIGHT);
+        chevron.add_css_class("set-chevron");
+        let a = self.clone();
+        self.setting_row(title, sub, &[value.upcast(), chevron.upcast()], Rc::new(move || {
+            a.open_chooser(title, &options, now, pick.clone());
+        }));
+    }
+
+    fn link_row(&self, title: &str, sub: &str, tap: Rc<dyn Fn()>) {
+        let chevron = icons::label(icons::CHEVRON_RIGHT);
+        chevron.add_css_class("set-chevron");
+        self.setting_row(title, sub, &[chevron.upcast()], tap);
+    }
+
+    fn open_chooser(&self, title: &str, options: &[String], now: usize, pick: Rc<dyn Fn(usize)>) {
+        self.chooser_title.set_text(title);
+        while let Some(c) = self.chooser_list.first_child() {
+            self.chooser_list.remove(&c);
+        }
+        for (k, o) in options.iter().enumerate() {
+            let l = gtk::Label::new(Some(o));
+            l.add_css_class("set-title");
+            l.set_halign(gtk::Align::Start);
+            l.set_hexpand(true);
+            let check = if k == now { icons::label(icons::CHECK) } else { gtk::Label::new(None) };
+            check.add_css_class("chooser-check");
+            let b = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+            b.append(&l);
+            b.append(&check);
+            self.chooser_list.append(&b);
+        }
+        *self.chooser_pick.borrow_mut() = Some(pick);
+        self.chooser.set_visible(true);
+    }
+
+    // the settings screen: first the toolbar's settings that aren't on the toolbar, then
+    // the toolbar's own, then the rest
+    fn fill_settings(self: &Rc<Self>) {
+        while let Some(c) = self.settings_list.first_child() {
+            self.settings_list.remove(&c);
+        }
+        self.setting_taps.borrow_mut().clear();
+        let hidden: Vec<Tool> = TOOLS
+            .into_iter()
+            // (AF-D has its row among the rest)
+            .filter(|t| *t != Tool::Afd && !self.st.borrow().tools.contains(t))
+            .collect();
+        for t in hidden {
+            match t.opt() {
+                Some(o) => {
+                    let (choices, now) = self.choices(o);
+                    let names = choices.into_iter().map(|(_, n)| n).collect();
+                    let a = self.clone();
+                    self.choice_row(t.title(), "", names, now, Rc::new(move |k| a.choose(o, k)));
+                }
+                None if t == Tool::Histogram => {
+                    self.switch_row(t.title(), "", |s| s.histogram, |s, v| s.histogram = v)
+                }
+                None => self.switch_row(t.title(), "", |s| s.caf, |s, v| s.caf = v),
+            }
+        }
+        let a = self.clone();
+        self.link_row(
+            "Toolbar",
+            "Which buttons the toolbar has, and their order",
+            Rc::new(move || {
+                a.fill_editor();
+                a.editor.set_visible(true);
+            }),
+        );
+        let a = self.clone();
+        let cycle = self.st.borrow().tool_cycle as usize;
+        self.choice_row(
+            "Toolbar buttons",
+            "A button with several settings shows them in a row above the toolbar, or steps to the next",
+            vec!["Show choices".into(), "Cycle".into()],
+            cycle,
+            Rc::new(move |k| a.st.borrow_mut().tool_cycle = k == 1),
+        );
+        for row in SETTINGS {
+            match row.kind {
+                SettingKind::Switch(get, set) => self.switch_row(row.title, row.sub, get, set),
+                SettingKind::Choice(options, get, set) => {
+                    let now = get(&self.st.borrow());
+                    let a = self.clone();
+                    let names = options.iter().map(|o| o.to_string()).collect();
+                    self.choice_row(row.title, row.sub, names, now, Rc::new(move |k| set(&mut a.st.borrow_mut(), k)));
+                }
+            }
+        }
+    }
+
+    // the toolbar editor: the toolbar's buttons in order (up and down move them), then the
+    // others; the switch puts one on the toolbar or takes it off
+    fn fill_editor(self: &Rc<Self>) {
+        while let Some(c) = self.editor_list.first_child() {
+            self.editor_list.remove(&c);
+        }
+        let shown = self.st.borrow().tools.clone();
+        let rest = TOOLS.into_iter().filter(|t| !shown.contains(t));
+        for t in shown.iter().copied().chain(rest) {
+            let on = shown.contains(&t);
+            let line = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+            let icon = icons::label(t.icon());
+            icon.add_css_class("set-title");
+            let title = gtk::Label::new(Some(t.title()));
+            title.add_css_class("set-title");
+            title.set_halign(gtk::Align::Start);
+            title.set_hexpand(true);
+            line.append(&icon);
+            line.append(&title);
+            for (glyph, by) in [(icons::CHEVRON_UP, -1i32), (icons::CHEVRON_DOWN, 1)] {
+                let b = icons::button(glyph, "");
+                b.add_css_class("flat-white");
+                let i = shown.iter().position(|s| *s == t);
+                let can = i.is_some_and(|i| (0..shown.len() as i32).contains(&(i as i32 + by)));
+                b.set_opacity(if can { 1.0 } else { 0.0 });
+                b.set_sensitive(can);
+                let a = self.clone();
+                b.connect_clicked(move |_| {
+                    if let Some(i) = i {
+                        a.st.borrow_mut().tools.swap(i, (i as i32 + by) as usize);
+                        a.editor_changed();
+                    }
+                });
+                line.append(&b);
+            }
+            let sw = gtk::Switch::new();
+            sw.set_active(on);
+            sw.set_valign(gtk::Align::Center);
+            let a = self.clone();
+            sw.connect_active_notify(move |sw| {
+                {
+                    let mut st = a.st.borrow_mut();
+                    st.tools.retain(|s| *s != t);
+                    if sw.is_active() {
+                        st.tools.push(t);
+                    }
+                }
+                a.editor_changed();
+            });
+            line.append(&sw);
+            self.editor_list.append(&line);
+        }
+    }
+
+    fn editor_changed(self: &Rc<Self>) {
+        self.layout_toolbar();
+        self.refresh();
+        let a = self.clone();
+        glib::idle_add_local_once(move || a.fill_editor());
+    }
+
+    // a toolbar button with choices: their row, or (tapped again) none
+    fn show_options(self: &Rc<Self>, o: Option<Opt>) {
+        let o = if o.is_some() && self.options_for.get() == o { None } else { o };
+        self.options_for.set(o);
+        self.options.set_reveal_child(o.is_some());
+        let Some(o) = o else { return };
+        while let Some(c) = self.options_row.first_child() {
+            self.options_row.remove(&c);
+        }
+        let (choices, now) = self.choices(o);
+        for (k, (icon, name)) in choices.into_iter().enumerate() {
+            let b = icons::button(icon, &name);
+            if k == now {
+                b.add_css_class("on");
+            }
+            let a = self.clone();
+            b.connect_clicked(move |_| {
+                a.choose(o, k);
+                a.show_options(None);
+            });
+            self.options_row.append(&b);
+        }
+    }
+
+    fn choose(&self, o: Opt, k: usize) {
+        match o {
+            Opt::Flash => {
+                self.st.borrow_mut().flash = k as u8;
+                let _ = self.ctl_tx.send((ccb::FLASH, k as i32));
+            }
+            Opt::Wb => {
+                self.st.borrow_mut().wb = k;
+                self.apply_wb();
+            }
+            Opt::Timer => self.st.borrow_mut().timer = k,
+            Opt::Grid => self.st.borrow_mut().grid = k as u8,
+            Opt::Burst => self.st.borrow_mut().burst = k,
+        }
+        self.refresh();
+    }
+
     // stock's toolbar: opening it swaps the right-hand column (last photo, dials, shutter)
     // for the mode wheel (only while no photo is being taken)
     fn show_toolbar(&self, open: bool) {
@@ -699,6 +1131,10 @@ impl App {
             return;
         }
         self.toolbar.set_reveal_child(open);
+        if !open {
+            self.options_for.set(None);
+            self.options.set_reveal_child(false);
+        }
         self.right.set_opacity(if open { 0.0 } else { 1.0 });
         self.right.set_can_target(!open);
         self.mode_wheel.set_visible(open);
@@ -1369,17 +1805,24 @@ impl App {
         });
     }
 
-    // The preview (and the ASICs, which the driver powers down a while after) stops while the
-    // screen is off, and starts again when it comes back. Not while a photo is on its way:
+    // The preview (and the ASICs, which the driver powers down a while after) stops while it
+    // can't be seen: the screen off, another app in front (or the notification drawer; after a
+    // second, so a glance away doesn't stop it), or the settings screen over it. It starts
+    // again when it can. Not while a photo is on its way:
     // the ASICs hold it until it is transferred. As when the app closes and opens: the
     // transfer streams stop first and start after the preview (the preview cannot restart
     // under them).
     // the buttons, the touch strip and the photos' progress, every 15 ms (stopped while the
-    // screen is off, so the app leaves the CPU alone)
+    // screen is off, so the app leaves the CPU alone; the buttons still count while the
+    // preview is stopped behind another app or the settings)
     fn fast_loop(self: &Rc<Self>) {
+        if std::mem::replace(&mut self.st.borrow_mut().fast_loop_on, true) {
+            return;
+        }
         let a = self.clone();
         glib::timeout_add_local(Duration::from_millis(15), move || {
-            if a.st.borrow().asleep {
+            if a.st.borrow().asleep && a.st.borrow().screen_off {
+                a.st.borrow_mut().fast_loop_on = false;
                 return glib::ControlFlow::Break;
             }
             while let Ok(ev) = a.input_rx.try_recv() {
@@ -1394,8 +1837,23 @@ impl App {
     }
 
     fn follow_screen(self: &Rc<Self>) {
-        let on = std::fs::read_to_string("/sys/class/drm/card0-DSI-1/dpms")
+        let screen = std::fs::read_to_string("/sys/class/drm/card0-DSI-1/dpms")
             .map_or(true, |s| s.trim() == "On");
+        let front = self.view.root().and_downcast::<gtk::Window>().map_or(true, |w| w.is_active());
+        let seen = front && !self.settings_page.is_visible();
+        let unseen_since = {
+            let mut st = self.st.borrow_mut();
+            if seen {
+                st.unseen_since = None;
+            } else if st.unseen_since.is_none() {
+                st.unseen_since = Some(Instant::now());
+            }
+            st.unseen_since
+        };
+        let away = unseen_since.is_some_and(|t| t.elapsed() >= Duration::from_secs(1))
+            || (!seen && self.settings_page.is_visible());
+        let on = screen && !away;
+        let was_off = std::mem::replace(&mut self.st.borrow_mut().screen_off, !screen);
         let (asleep, busy) = {
             let st = self.st.borrow();
             (st.asleep, st.busy || st.saving > 0 || st.counting)
@@ -1413,7 +1871,9 @@ impl App {
             self.apply_wb();
             self.start_transfers();
             // presses while the screen was off are not for the camera
-            while self.input_rx.try_recv().is_ok() {}
+            if was_off {
+                while self.input_rx.try_recv().is_ok() {}
+            }
             self.fast_loop();
         }
     }
@@ -1442,6 +1902,17 @@ impl App {
     }
 
     fn on_input(self: &Rc<Self>, ev: input::Ev) {
+        // the preview stopped behind another app or the settings: a button brings it back
+        if self.st.borrow().asleep {
+            if let input::Ev::Key(input::KEY_CAMERA_FOCUS | input::KEY_CAMERA, true) = ev {
+                self.settings_page.set_visible(false);
+                if let Some(w) = self.view.root().and_downcast::<gtk::Window>() {
+                    w.present();
+                }
+                self.follow_screen();
+            }
+            return;
+        }
         match ev {
             input::Ev::Key(input::KEY_CAMERA_FOCUS, true) => self.focus(None),
             input::Ev::Key(input::KEY_CAMERA | input::KEY_VOLUMEUP, true) => self.shutter_pressed(),
@@ -1499,11 +1970,10 @@ impl App {
         let (tw, th) = (tex.width() as usize, tex.height() as usize);
         let mut buf = vec![0u8; tw * th * 4];
         tex.download(&mut buf, tw * 4);
-        let gain = self.view.gain();
         let mut bins = vec![0u32; 64];
         for p in buf.chunks_exact(4) {
             // GDK's download format is B8G8R8A8 (premultiplied; the preview is opaque)
-            let luma = (p[2] as f64 * 0.299 + p[1] as f64 * 0.587 + p[0] as f64 * 0.114) * gain;
+            let luma = p[2] as f64 * 0.299 + p[1] as f64 * 0.587 + p[0] as f64 * 0.114;
             bins[((luma / 256.0 * 64.0) as usize).min(63)] += 1;
         }
         *self.hist.borrow_mut() = bins;
@@ -1756,6 +2226,27 @@ fn build(gapp: &gtk::Application) {
     thumb_box.add_overlay(&thumb_spin);
     thumb_box.set_halign(gtk::Align::Center);
     thumb_box.set_margin_top(16);
+    // the gallery, at the newest photo
+    let open_gallery = gtk::GestureClick::new();
+    open_gallery.connect_released(|_, _, _, _| {
+        let dir = glib::user_special_dir(glib::UserDirectory::Pictures)
+            .unwrap_or_else(|| glib::home_dir().join("Pictures"))
+            .join("L16");
+        let newest = std::fs::read_dir(dir).ok().and_then(|d| {
+            d.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e == "lri"))
+                .filter_map(|p| Some((p.metadata().ok()?.modified().ok()?, p)))
+                .max()
+                .map(|(_, p)| gtk::gio::File::for_path(p))
+        });
+        let Some(app) = gtk::gio::DesktopAppInfo::new("l16-gallery.desktop") else { return };
+        let ctx = gdk::Display::default().map(|d| d.app_launch_context());
+        if let Err(e) = app.launch(&newest.into_iter().collect::<Vec<_>>(), ctx.as_ref()) {
+            eprintln!("launching the gallery: {e}");
+        }
+    });
+    thumb_box.add_controller(open_gallery);
     let dial = |size: i32| {
         let d = gtk::DrawingArea::new();
         d.set_size_request(size, size);
@@ -1765,7 +2256,7 @@ fn build(gapp: &gtk::Application) {
     let (top, shutter, bottom) = (dial(54), dial(66), dial(54));
     let mode_label = gtk::Label::new(Some("auto"));
     let opener_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    opener_box.append(&gtk::Label::new(Some("︿")));
+    opener_box.append(&icons::label(icons::CHEVRON_UP));
     opener_box.append(&mode_label);
     let opener = gtk::Button::new();
     opener.set_child(Some(&opener_box));
@@ -1793,22 +2284,20 @@ fn build(gapp: &gtk::Application) {
     row.append(&right);
 
     // the toolbar: flash, timer, grid, burst, and the settings screen (the mode wheel beside it)
-    let timer_btn = gtk::Button::with_label("timer off");
-    let grid_btn = gtk::Button::with_label("grid off");
-    let hist_btn = gtk::Button::with_label("histogram off");
-    let burst_btn = gtk::Button::with_label("burst off");
-    let flash_btn = gtk::Button::with_label("flash off");
-    let wb_btn = gtk::Button::with_label("wb auto");
-    let settings_btn = gtk::Button::with_label("settings");
-    let close_btn = gtk::Button::with_label("✕");
+    let timer_btn = icons::button(icons::TIMER_OFF, "");
+    let grid_btn = icons::button(icons::GRID_OFF, "");
+    let hist_btn = icons::button(icons::HISTOGRAM, "");
+    let burst_btn = icons::button(icons::BURST, "");
+    let flash_btn = icons::button(icons::FLASH_OFF, "");
+    let wb_btn = icons::button(icons::WB[0], "");
+    let settings_btn = icons::button(icons::COG, "");
+    let close_btn = icons::button(icons::CLOSE, "");
+    let afd_btn = icons::button(icons::FOCUS_AUTO, "");
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
-    bar.append(&flash_btn);
-    bar.append(&wb_btn);
-    bar.append(&timer_btn);
-    bar.append(&grid_btn);
-    bar.append(&hist_btn);
-    bar.append(&burst_btn);
+    // the chosen buttons (layout_toolbar)
+    let tools_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    bar.append(&tools_box);
     let fill = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     fill.set_hexpand(true);
     bar.append(&fill);
@@ -1822,7 +2311,7 @@ fn build(gapp: &gtk::Application) {
     settings_scroll.set_child(Some(&settings_list));
     settings_scroll.set_vexpand(true);
     settings_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
-    let settings_back = gtk::Button::with_label("‹  settings");
+    let settings_back = icons::button(icons::ARROW_LEFT, "settings");
     settings_back.add_css_class("flat-white");
     settings_back.set_halign(gtk::Align::Start);
     settings_back.set_margin_start(16);
@@ -1853,9 +2342,36 @@ fn build(gapp: &gtk::Application) {
     chooser_card.set_vexpand(true);
     chooser.set_visible(false);
     settings_page.add_overlay(&chooser);
+    // the toolbar editor: which buttons, in what order
+    let editor_list = gtk::ListBox::new();
+    editor_list.set_selection_mode(gtk::SelectionMode::None);
+    let editor_scroll = gtk::ScrolledWindow::new();
+    editor_scroll.set_child(Some(&editor_list));
+    editor_scroll.set_vexpand(true);
+    editor_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+    let editor_back = icons::button(icons::ARROW_LEFT, "toolbar");
+    editor_back.add_css_class("flat-white");
+    editor_back.set_halign(gtk::Align::Start);
+    editor_back.set_margin_start(16);
+    let editor = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    editor.add_css_class("settings");
+    editor.append(&editor_back);
+    editor.append(&editor_scroll);
+    editor.set_visible(false);
+    settings_page.add_overlay(&editor);
+    let options_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    options_row.add_css_class("toolbar");
+    options_row.add_css_class("options");
+    let options = gtk::Revealer::builder()
+        .transition_type(gtk::RevealerTransitionType::SlideUp)
+        .child(&options_row)
+        .build();
+    let toolbar_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    toolbar_box.append(&options);
+    toolbar_box.append(&bar);
     let toolbar = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::SlideUp)
-        .child(&bar)
+        .child(&toolbar_box)
         .valign(gtk::Align::End)
         .build();
     // the mode wheel: drawn down the whole right edge, but touched only around its labels, so
@@ -1990,12 +2506,17 @@ fn build(gapp: &gtk::Application) {
             zoom_sent: Instant::now(),
             metering: 1, // stock's default: touch-weighted
             caf: true,
+            tools: TOOLS.to_vec(),
+            tool_cycle: false,
             caf_ref: None,
             stacked: true,
             exposure_info: true,
             inverse_wheel: false,
             strip_zoom: true,
             asleep: false,
+            unseen_since: None,
+            screen_off: false,
+            fast_loop_on: false,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -2034,6 +2555,10 @@ fn build(gapp: &gtk::Application) {
         burst_badge,
         mode_label,
         toolbar,
+        options,
+        options_row,
+        options_for: Cell::new(None),
+        preview_gain: Cell::new(1.0),
         right,
         mode_wheel,
         mode_touch,
@@ -2044,6 +2569,16 @@ fn build(gapp: &gtk::Application) {
         burst_btn,
         flash_btn,
         wb_btn,
+        afd_btn,
+        tools_box,
+        settings_list,
+        setting_taps: RefCell::new(Vec::new()),
+        chooser: chooser.clone(),
+        chooser_title,
+        chooser_list: chooser_list.clone(),
+        chooser_pick: RefCell::new(None),
+        editor,
+        editor_list,
         cal: wb::Calibration::load(),
         motor: haptics::Haptics::open(),
         photo_args: RefCell::new(HashMap::new()),
@@ -2246,171 +2781,71 @@ fn build(gapp: &gtk::Application) {
         }
     });
     app.mode_touch.add_controller(click);
+    // the toolbar's buttons
+    for t in TOOLS {
+        let a = app.clone();
+        app.tool_button(t).connect_clicked(move |_| a.tool_tap(t));
+    }
+    app.layout_toolbar();
     let a = app.clone();
-    app.wb_btn.connect_clicked(move |_| {
-        {
-            let mut st = a.st.borrow_mut();
-            st.wb = (st.wb + 1) % wb::PRESETS.len();
-        }
-        a.apply_wb();
-        a.refresh();
-    });
-    let a = app.clone();
-    app.timer_btn.connect_clicked(move |_| {
-        {
-            let mut st = a.st.borrow_mut();
-            st.timer = (st.timer + 1) % TIMERS.len();
-        }
-        a.refresh();
-    });
-    let a = app.clone();
-    app.flash_btn.connect_clicked(move |_| {
-        let f = {
-            let mut st = a.st.borrow_mut();
-            st.flash = (st.flash + 1) % 3;
-            st.flash
-        };
-        let _ = a.ctl_tx.send((ccb::FLASH, f as i32));
-        a.refresh();
-    });
-    let a = app.clone();
-    let ch = chooser.clone();
     settings_btn.connect_clicked(move |_| {
         a.show_toolbar(false);
-        ch.set_visible(false);
+        a.chooser.set_visible(false);
+        a.editor.set_visible(false);
+        a.fill_settings();
         a.settings_page.set_visible(true);
+        a.follow_screen();
     });
     let a = app.clone();
-    settings_back.connect_clicked(move |_| a.settings_page.set_visible(false));
-    // after a setting changes: the driver's side of it, the screen, the settings file
-    let changed = {
-        let a = app.clone();
-        move || {
-            let meter = a.st.borrow().metering;
-            let _ = a.ctl_tx.send((ccb::METERING, meter as i32));
-            a.refresh();
-        }
-    };
-    // the chooser: which setting it is choosing for, and that row's value label
-    let choosing: Rc<RefCell<Option<(usize, gtk::Label)>>> = Rc::new(RefCell::new(None));
-    // a row's tap: a switch flips, a choice opens the chooser
-    let mut on_tap: Vec<Box<dyn Fn()>> = Vec::new();
-    for (i, row) in SETTINGS.iter().enumerate() {
-        let title = gtk::Label::new(Some(row.title));
-        title.add_css_class("set-title");
-        title.set_halign(gtk::Align::Start);
-        let sub = gtk::Label::new(Some(row.sub));
-        sub.add_css_class("set-sub");
-        sub.set_halign(gtk::Align::Start);
-        let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        text.append(&title);
-        text.append(&sub);
-        text.set_hexpand(true);
-        let line = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-        line.append(&text);
-        match row.kind {
-            SettingKind::Switch(get, set) => {
-                let sw = gtk::Switch::new();
-                sw.set_active(get(&app.st.borrow()));
-                sw.set_valign(gtk::Align::Center);
-                sw.set_can_target(false); // the row's tap flips it
-                let a = app.clone();
-                let changed = changed.clone();
-                sw.connect_active_notify(move |sw| {
-                    set(&mut a.st.borrow_mut(), sw.is_active());
-                    changed();
-                });
-                line.append(&sw);
-                on_tap.push(Box::new(move || sw.set_active(!sw.is_active())));
-            }
-            SettingKind::Choice(options, get, _) => {
-                let value = gtk::Label::new(Some(options[get(&app.st.borrow())]));
-                value.add_css_class("set-value");
-                let chevron = gtk::Label::new(Some("›"));
-                chevron.add_css_class("set-chevron");
-                line.append(&value);
-                line.append(&chevron);
-                let a = app.clone();
-                let choosing = choosing.clone();
-                let (chooser, chooser_title, chooser_list) =
-                    (chooser.clone(), chooser_title.clone(), chooser_list.clone());
-                on_tap.push(Box::new(move || {
-                    let now = get(&a.st.borrow());
-                    chooser_title.set_text(row.title);
-                    while let Some(c) = chooser_list.first_child() {
-                        chooser_list.remove(&c);
-                    }
-                    for (k, o) in options.iter().enumerate() {
-                        let l = gtk::Label::new(Some(o));
-                        l.add_css_class("set-title");
-                        l.set_halign(gtk::Align::Start);
-                        l.set_hexpand(true);
-                        let check = gtk::Label::new(Some(if k == now { "✓" } else { "" }));
-                        check.add_css_class("chooser-check");
-                        let b = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-                        b.append(&l);
-                        b.append(&check);
-                        chooser_list.append(&b);
-                    }
-                    *choosing.borrow_mut() = Some((i, value.clone()));
-                    chooser.set_visible(true);
-                }));
-            }
-        }
-        settings_list.append(&line);
-    }
-    settings_list.connect_row_activated(move |_, r| on_tap[r.index() as usize]());
-    // a choice made: set it, show it on its row, close the chooser
+    editor_back.connect_clicked(move |_| {
+        a.editor.set_visible(false);
+        a.fill_settings();
+    });
     let a = app.clone();
-    let (ch, ch_choosing) = (chooser.clone(), choosing.clone());
-    chooser_list.connect_row_activated(move |_, r| {
-        if let Some((i, value)) = ch_choosing.borrow_mut().take() {
-            if let SettingKind::Choice(options, _, set) = SETTINGS[i].kind {
-                let k = r.index() as usize;
-                set(&mut a.st.borrow_mut(), k);
-                value.set_text(options[k]);
-                changed();
-            }
+    settings_back.connect_clicked(move |_| {
+        a.settings_page.set_visible(false);
+        a.follow_screen();
+    });
+    // back in front: the preview again at once
+    let a = app.clone();
+    window.connect_is_active_notify(move |w| {
+        if w.is_active() {
+            a.follow_screen();
         }
-        ch.set_visible(false);
+    });
+    // the settings screen's rows, the chooser's and the editor's taps
+    let a = app.clone();
+    app.settings_list.connect_row_activated(move |_, r| {
+        let tap = a.setting_taps.borrow().get(r.index() as usize).cloned();
+        if let Some(tap) = tap {
+            tap();
+        }
+    });
+    let a = app.clone();
+    app.chooser_list.connect_row_activated(move |_, r| {
+        let pick = a.chooser_pick.borrow_mut().take();
+        a.chooser.set_visible(false);
+        if let Some(pick) = pick {
+            pick(r.index() as usize);
+            a.setting_changed();
+            let a = a.clone();
+            glib::idle_add_local_once(move || a.fill_settings());
+        }
     });
     // a tap beside the list: nothing chosen
     let backdrop = gtk::GestureClick::new();
-    let (ch, card) = (chooser.clone(), chooser_card.clone());
+    let a = app.clone();
+    let card = chooser_card.clone();
     backdrop.connect_released(move |_, _, x, y| {
-        let inside = card.compute_bounds(&ch).is_some_and(|b| {
+        let inside = card.compute_bounds(&a.chooser).is_some_and(|b| {
             b.contains_point(&gtk::graphene::Point::new(x as f32, y as f32))
         });
         if !inside {
-            choosing.borrow_mut().take();
-            ch.set_visible(false);
+            a.chooser_pick.borrow_mut().take();
+            a.chooser.set_visible(false);
         }
     });
-    chooser.add_controller(backdrop);
-    let a = app.clone();
-    app.burst_btn.connect_clicked(move |_| {
-        {
-            let mut st = a.st.borrow_mut();
-            st.burst = (st.burst + 1) % BURSTS.len();
-        }
-        a.refresh();
-    });
-    let a = app.clone();
-    app.hist_btn.connect_clicked(move |_| {
-        {
-            let mut st = a.st.borrow_mut();
-            st.histogram = !st.histogram;
-        }
-        a.refresh();
-    });
-    let a = app.clone();
-    app.grid_btn.connect_clicked(move |_| {
-        {
-            let mut st = a.st.borrow_mut();
-            st.grid = (st.grid + 1) % 3;
-        }
-        a.refresh();
-    });
+    app.chooser.add_controller(backdrop);
 
     // hardware: shutter button, touch strip
     let a = app.clone();
@@ -2474,6 +2909,10 @@ fn build(gapp: &gtk::Application) {
 fn main() -> glib::ExitCode {
     gst::init().expect("gstreamer");
     let app = gtk::Application::builder().application_id("org.l16linux.Camera").build();
-    app.connect_activate(build);
+    // launched again while running (the gallery's camera button): back to the window there is
+    app.connect_activate(|app| match app.active_window() {
+        Some(w) => w.present(),
+        None => build(app),
+    });
     app.run()
 }
