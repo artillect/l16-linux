@@ -134,7 +134,6 @@ struct App {
     view: ZoomView,
     marks: gtk::DrawingArea,
     wheels: gtk::DrawingArea,
-    dial_wheel: gtk::DrawingArea,
     hud: Vec<gtk::Label>,
     top: gtk::DrawingArea,
     bottom: gtk::DrawingArea,
@@ -350,7 +349,7 @@ impl App {
             }
         }
         self.refresh();
-        self.dial_wheel.queue_draw();
+        self.wheels.queue_draw();
     }
 
     fn set_mode(&self, mode: Mode) {
@@ -883,74 +882,57 @@ impl App {
         }
     }
 
-    // The exposure wheel, as the original's FerrisWheel: the title and a pointer on the left,
-    // the values on a wheel of radius 400 turning with the finger, 12 degrees apart (the
-    // original's table entries, as ticks), the current value on the pointer.
-    fn draw_dial_wheel(&self, cr: &cairo::Context, w: f64, h: f64) {
-        let st = self.st.borrow();
-        let Some(dial) = st.wheel else { return };
-        let (title, pos, value, ticks): (&str, f64, String, Vec<(f64, String)>) = match dial {
-            Dial::Iso => (
-                "iso",
-                st.iso,
-                iso_at(st.iso).to_string(),
-                ISO.iter().map(|&i| (iso_pos(i as f64), i.to_string())).collect(),
-            ),
-            Dial::Shutter => (
-                "shutter",
-                st.shutter,
-                fmt_secs(secs_at(st.shutter)),
-                SHUTTER.iter().map(|s| (secs_pos(shutter_secs(s)), s.to_string())).collect(),
-            ),
-        };
-        let _ = w;
-        let (r, cy) = (400.0, h / 2.0);
-        let step = 12f64.to_radians() * (ticks.len() - 1) as f64;
-        // the title and the pointer
-        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
-        cr.set_source_rgb(1.0, 1.0, 1.0);
-        text(cr, title, 8.0, cy, 30.0, 0.0);
-        cr.set_font_size(30.0);
-        let tw = cr.text_extents(title).map(|e| e.x_advance()).unwrap_or(60.0);
-        let px = 8.0 + tw + 14.0;
-        cr.set_source_rgb(ACCENT.0, ACCENT.1, ACCENT.2);
-        cr.move_to(px, cy - 12.0);
-        cr.line_to(px + 18.0, cy);
-        cr.line_to(px, cy + 12.0);
-        cr.close_path();
-        let _ = cr.fill();
-        let x0 = px + 34.0;
-        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
-        let label = |cr: &cairo::Context, s: &str, y: f64, size: f64, alpha: f64| {
-            cr.set_font_size(size);
-            if let Ok(e) = cr.text_extents(s) {
-                cr.move_to(x0 - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
-                cr.text_path(s);
-                cr.set_source_rgba(0.0, 0.0, 0.0, 0.3 * alpha);
-                cr.set_line_width(4.0);
-                let _ = cr.stroke_preserve();
-                cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
-                let _ = cr.fill();
-            }
-        };
-        for (tp, s) in &ticks {
-            let th = (tp - pos) * step;
-            if th.abs() < 5f64.to_radians() || th.abs() > 32f64.to_radians() {
-                continue;
-            }
-            let y = cy + th.sin() * r * th.cos().powi(4);
-            label(cr, s, y, (60.0 * th.cos().powi(14)).max(12.0), 0.8 * th.cos());
-        }
-        label(cr, &value, cy, 60.0, 1.0);
-    }
-
     fn draw_wheels(&self, cr: &cairo::Context, w: f64, h: f64) {
         let st = self.st.borrow();
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
+        // the exposure wheel: the value lists as ticks on an arc beside the dials, turning
+        // with the (continuous) value, which sits on the pointer
+        if let Some(dial) = st.wheel {
+            let (pos, value, ticks): (f64, String, Vec<(f64, String)>) = match dial {
+                Dial::Iso => (
+                    st.iso,
+                    iso_at(st.iso).to_string(),
+                    ISO.iter().map(|&i| (iso_pos(i as f64), i.to_string())).collect(),
+                ),
+                Dial::Shutter => (
+                    st.shutter,
+                    fmt_secs(secs_at(st.shutter)),
+                    SHUTTER.iter().map(|s| (secs_pos(shutter_secs(s)), s.to_string())).collect(),
+                ),
+            };
+            let r = 400.0;
+            let (cx, cy) = (w - 340.0 + r, h / 2.0);
+            // 0.1 rad between neighbouring list entries, as before
+            let k = 0.1 * (ticks.len() - 1) as f64;
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.25);
+            cr.set_line_width(2.0);
+            cr.arc(cx, cy, r, PI - 0.7, PI + 0.7);
+            let _ = cr.stroke();
+            for (tp, l) in &ticks {
+                // lower values below (the finger goes down for less light)
+                let d = (tp - pos) * k;
+                if d.abs() > 0.6 {
+                    continue;
+                }
+                let a = PI - d;
+                let (x, y) = (cx + r * a.cos(), cy + r * a.sin());
+                cr.set_source_rgba(1.0, 1.0, 1.0, 1.0 - d.abs() / 0.7);
+                cr.arc(x, y, 3.0, 0.0, 2.0 * PI);
+                let _ = cr.fill();
+                if d.abs() > 0.06 {
+                    text(cr, l, x - 18.0, y, 20.0, 1.0);
+                }
+            }
+            let (x, y) = (cx - r, cy);
+            cr.set_source_rgb(ACCENT.0, ACCENT.1, ACCENT.2);
+            cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+            text(cr, &value, x - 18.0, y, 34.0, 1.0);
+        }
         // the zoom wheel: an arc of dots from 28 (bottom) to 150 mm (top), primes labelled
         if st.zoom_wheel_until.is_some_and(|t| Instant::now() < t) {
             let r = 300.0;
-            let (cx, cy) = (w - 150.0 + r, h / 2.0);
+            let (cx, cy) = (w - 340.0 + r, h / 2.0);
             let angle = |z: f64| PI - 0.55 + 1.1 * (z / ZOOM_MIN).ln() / (ZOOM_MAX / ZOOM_MIN).ln();
             let point = |z: f64| {
                 let a = angle(z);
@@ -1152,11 +1134,6 @@ fn build(gapp: &gtk::Application) {
         .valign(gtk::Align::End)
         .build();
 
-    let dial_wheel = gtk::DrawingArea::new();
-    dial_wheel.set_can_target(false);
-    dial_wheel.set_halign(gtk::Align::Center);
-    dial_wheel.set_size_request(400, -1);
-    dial_wheel.set_visible(false);
     let wheels = gtk::DrawingArea::new();
     wheels.set_can_target(false);
     wheels.set_halign(gtk::Align::End);
@@ -1206,7 +1183,6 @@ fn build(gapp: &gtk::Application) {
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
     root.add_overlay(&wheels);
-    root.add_overlay(&dial_wheel);
     root.add_overlay(&status);
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
@@ -1259,7 +1235,6 @@ fn build(gapp: &gtk::Application) {
         view,
         marks,
         wheels,
-        dial_wheel,
         hud,
         top,
         bottom,
@@ -1291,8 +1266,7 @@ fn build(gapp: &gtk::Application) {
     app.marks.set_draw_func(move |_, cr, w, h| a.draw_marks(cr, w as f64, h as f64));
     let a = app.clone();
     app.wheels.set_draw_func(move |_, cr, w, h| a.draw_wheels(cr, w as f64, h as f64));
-    let a = app.clone();
-    app.dial_wheel.set_draw_func(move |_, cr, w, h| a.draw_dial_wheel(cr, w as f64, h as f64));
+
     let a = app.clone();
     app.top.set_draw_func(move |_, cr, w, h| a.draw_dial(cr, w as f64, h as f64, true));
     let a = app.clone();
@@ -1373,8 +1347,7 @@ fn build(gapp: &gtk::Application) {
             };
             drop(st);
             a.refresh();
-            a.dial_wheel.set_visible(true);
-            a.dial_wheel.queue_draw();
+            a.wheels.queue_draw();
         });
         let a = app.clone();
         drag.connect_drag_update(move |_, _, dy| {
@@ -1392,7 +1365,7 @@ fn build(gapp: &gtk::Application) {
             glib::timeout_add_local_once(Duration::from_millis(600), move || {
                 a.st.borrow_mut().wheel = None;
                 a.refresh();
-                a.dial_wheel.set_visible(false);
+                a.wheels.queue_draw();
             });
         });
         widget.add_controller(drag);

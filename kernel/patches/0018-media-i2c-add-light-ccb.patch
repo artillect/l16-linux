@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..3b58fc4ac
+index 000000000..700343227
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1322 @@
+@@ -0,0 +1,1336 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -193,6 +193,7 @@ index 000000000..3b58fc4ac
 +	u32 zoom;			/* the zoom factor (f32) the ASIC has */
 +	ktime_t last_send;
 +	bool ae_seen;			/* an AE push since the preview started */
++	int read_errors;		/* queue reads failed in a row while previewing */
 +	struct delayed_work drain;	/* reads the queue while previewing */
 +	struct work_struct af;		/* a focus run (seconds; not under the control lock) */
 +	struct delayed_work ae;		/* exposure settings, sent once a burst of changes ends */
@@ -504,6 +505,8 @@ index 000000000..3b58fc4ac
 + * manual (Megapixels does before a capture) holds them.
 + * AE push: u64 exposure ns, f32 (max gain), f32 gain in ASIC units (2x analog), ...
 + */
++static int ccb_restart_preview(struct ccb *c);
++
 +static void ccb_drain_work(struct work_struct *work)
 +{
 +	struct ccb *c = container_of(to_delayed_work(work), struct ccb, drain);
@@ -535,7 +538,18 @@ index 000000000..3b58fc4ac
 +			c->ae_seen = true;
 +		}
 +	}
-+	schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
++	/*
++	 * ASIC1 can stop answering (after quick preview restarts, for one): if the queue
++	 * cannot be read for two seconds, boot the ASICs again and carry on previewing
++	 */
++	if (t < 0 && ++c->read_errors >= 40) {
++		c->read_errors = 0;
++		ccb_restart_preview(c);
++	} else if (t >= 0) {
++		c->read_errors = 0;
++	}
++	if (c->previewing)
++		schedule_delayed_work(&c->drain, msecs_to_jiffies(50));
 +	mutex_unlock(&c->lock);
 +
 +	if (ae) {
