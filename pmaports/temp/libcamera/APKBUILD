@@ -3,7 +3,7 @@ maintainer="Robert Mader <robert.mader@collabora.com>"
 pkgname=libcamera
 _pkgver=0.7.1
 pkgver=9999$_pkgver
-pkgrel=1
+pkgrel=2
 pkgdesc="Linux camera framework"
 url="https://libcamera.org/"
 arch="all"
@@ -59,6 +59,7 @@ source="https://gitlab.freedesktop.org/camera/libcamera/-/archive/v$_pkgver/libc
 	0002-libcamera-simple-Skip-hwISP-formats-if-swISP-is-acti.patch
 	0003-RFC-egl-Implement-DMABuf-import-for-input-buffers.patch
 	0004-ipa-simple-awb-Manual-colour-gains.patch
+	0005-gstreamer-Apply-controls-under-the-object-lock.patch
 	qcam.desktop
 	$_tuning_files
 	"
@@ -175,7 +176,8 @@ sha512sums="
 aa24b1caab3d0e6bca413ff149aafa5233ba8141c2585b1b55c655759dd663612091222135ec5add402e60bf53d58c307f3f3127385efaa11b6cef866e03906e  0001-libcamera-simple-Enable-softISP-for-the-Pinephone.patch
 cd1559a70dabe8711bb2cc1a8c6dca114e9f5b83088000935845ad90e5d109e2b215f0810f709f5bf00dd76be76e937bad4db49a1c6662135ec1704809a9a62b  0002-libcamera-simple-Skip-hwISP-formats-if-swISP-is-acti.patch
 6bca235e430e7392f68c94742d1bc1cd19cffe12ac03c8890ffa27b756972df67f5a408f4c806149a6b4f52827881a73d14d7f6a00bab9d4692f5eb9b06478a5  0003-RFC-egl-Implement-DMABuf-import-for-input-buffers.patch
-e0fb5d7958a5016c610709d16527f02911c0fe7f08cc203ed697c6026f7aeab66a5e33a9fdd38fcf4daff738733a81471dcd90521e47f59e459aa29ac10a449d  0004-ipa-simple-awb-Manual-colour-gains.patch
+ae78e40d82b8367574ffc3fa6c18fec86c73d8b32ccc98272e3a663f8218f02486d6e46cbe331b6947b608f7bcfc4c906d2b131a61087e8422d6a927ef9bcb2a  0004-ipa-simple-awb-Manual-colour-gains.patch
+4fa70042bbbc4df958607d17e433b2926a76105891f3337ea314b7ff28ff0feefc25b7e13a2a453a060e618050640ab8d9aa1fa9ddbf5fca597b2c34fdee01f8  0005-gstreamer-Apply-controls-under-the-object-lock.patch
 22167a4eceb6d1b40b0b7c45fdf116c71684f5340de7f767535cb8e160ad9d2ae0f00cb3d461f73a344520a48a4641cf46226841d78bee06bfbfd2a91337f754  qcam.desktop
 2ee566653b17d565d2c0de67cbe6ebad25df5aac6051cad78e6bae52016fa2ca0247e964d735ac776b3e0bd447ead9c4fcb26cd7629228cdba3ceb91b46f378f  hi846.yaml
 2ee566653b17d565d2c0de67cbe6ebad25df5aac6051cad78e6bae52016fa2ca0247e964d735ac776b3e0bd447ead9c4fcb26cd7629228cdba3ceb91b46f378f  imx355.yaml

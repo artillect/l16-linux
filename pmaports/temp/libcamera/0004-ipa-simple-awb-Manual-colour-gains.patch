@@ -5,9 +5,9 @@ Let the application turn AWB off (AwbEnable) and set the red and blue gains itse
 (ColourGains), for white balance presets.
 ---
 diff -ruN a/src/ipa/simple/algorithms/awb.cpp b/src/ipa/simple/algorithms/awb.cpp
---- a/src/ipa/simple/algorithms/awb.cpp	2026-09-29 22:27:53.345986754 -0700
-+++ b/src/ipa/simple/algorithms/awb.cpp	2026-09-29 22:27:53.345986754 -0700
-@@ -23,6 +23,29 @@
+--- a/src/ipa/simple/algorithms/awb.cpp	2026-09-29 23:29:38.475072275 -0700
++++ b/src/ipa/simple/algorithms/awb.cpp	2026-09-29 23:29:38.475072275 -0700
+@@ -23,6 +23,34 @@
  
  namespace ipa::soft::algorithms {
  
@@ -19,7 +19,7 @@ diff -ruN a/src/ipa/simple/algorithms/awb.cpp b/src/ipa/simple/algorithms/awb.cp
 +}
 +
 +void Awb::queueRequest([[maybe_unused]] typename Module::Context &context,
-+		       [[maybe_unused]] const uint32_t frame,
++		       const uint32_t frame,
 +		       [[maybe_unused]] typename Module::FrameContext &frameContext,
 +		       const ControlList &controls)
 +{
@@ -32,12 +32,17 @@ diff -ruN a/src/ipa/simple/algorithms/awb.cpp b/src/ipa/simple/algorithms/awb.cp
 +		manualRed_ = (*colourGains)[0];
 +		manualBlue_ = (*colourGains)[1];
 +	}
++
++	if (enable.has_value() || colourGains.has_value())
++		LOG(IPASoftAwb, Debug)
++			<< "frame " << frame << ": AWB " << (manual_ ? "off" : "on")
++			<< ", colour gains " << manualRed_ << " " << manualBlue_;
 +}
 +
  int Awb::configure(IPAContext &context,
  		   [[maybe_unused]] const IPAConfigInfo &configInfo)
  {
-@@ -65,6 +88,12 @@
+@@ -65,6 +93,12 @@
  	};
  	metadata.set(controls::ColourGains, mdGains);
  
@@ -51,8 +56,8 @@ diff -ruN a/src/ipa/simple/algorithms/awb.cpp b/src/ipa/simple/algorithms/awb.cp
  		return;
  
 diff -ruN a/src/ipa/simple/algorithms/awb.h b/src/ipa/simple/algorithms/awb.h
---- a/src/ipa/simple/algorithms/awb.h	2026-09-29 22:27:53.345986754 -0700
-+++ b/src/ipa/simple/algorithms/awb.h	2026-09-29 22:27:53.345986754 -0700
+--- a/src/ipa/simple/algorithms/awb.h	2026-09-29 23:29:38.470672274 -0700
++++ b/src/ipa/simple/algorithms/awb.h	2026-09-29 23:29:38.475072275 -0700
 @@ -19,7 +19,12 @@
  	Awb() = default;
  	~Awb() = default;
