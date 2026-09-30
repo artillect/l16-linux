@@ -9,6 +9,7 @@ on:
     paths:
       - "pmaports/**"
       - "kernel/**"
+      - "l16-render/**"
       - "tools/ci/**"
       - ".github/workflows/build.yml"
   workflow_dispatch:
@@ -31,7 +32,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # l16-render is an Android program (it runs Light's renderer from the stock partitions):
+  # built with the NDK, which has no aarch64 Linux build, on x86
+  render:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build l16-render
+        env:
+          NDK_VERSION: "30.0.15729638"
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
+          NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
+          # linked against the NDK's C++ runtime; the camera runs it with the stock gallery's
+          NDK="$NDK" sh l16-render/build.sh "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l16-render
+          path: l16-render/build/l16-render
+
   build:
+    needs: render
     # native aarch64: the kernel builds without emulation
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
@@ -42,15 +65,22 @@ jobs:
         if: inputs.release != ''
         run: test -f "releases/${{ inputs.release }}.md"
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: l16-render
+          path: l16-render/build
+
       - name: Set up pmbootstrap
         env:
           APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
         run: |
           sh tools/ci/setup.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # this build's l16-render, not the one the repository's checksum is for
+          "$HOME/.local/bin/pmbootstrap" checksum l16-render
 
       - name: Build packages
-        run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera l16-camera glycin-lri
+        run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera l16-camera glycin-lri l16-render l16-gallery
 
       - name: Publish packages
         env:

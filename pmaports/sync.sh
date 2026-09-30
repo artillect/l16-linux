@@ -18,7 +18,7 @@ cp "$REPO"/kernel/patches/*.patch "$REPO/kernel/config-light-lfc.aarch64" \
 	"$DST/linux-light-lfc/"
 
 # other packages (not device-specific) go to main/
-for pkg in chiaro l16-camera glycin-lri; do
+for pkg in chiaro l16-camera glycin-lri l16-gallery l16-render; do
 	rm -rf "${PMAPORTS:?}/main/$pkg"
 	mkdir -p "$PMAPORTS/main/$pkg"
 	cp -r "$REPO/pmaports/main/$pkg/." "$PMAPORTS/main/$pkg/"
@@ -45,8 +45,35 @@ pack() {
 		gzip -n > "$PMAPORTS/main/$pkg/$pkg-src.tar.gz"
 	rm -rf "$S"
 }
+# pack_tree(PKG PATH...): the repository's paths as they are, for a program that uses files
+# of its neighbours (PKG's own folder is PATH one)
+pack_tree() {
+	local pkg=$1 S
+	shift
+	S=$(mktemp -d)
+	for f in "$@"; do
+		mkdir -p "$S/$(dirname "$f")"
+		cp -r "$REPO/$f" "$S/$f"
+	done
+	rm -rf "$S/$pkg/target"
+	# (built programs, in build/, as they are)
+	find "$S" -type f ! -path "*/build/*" -exec sed -i 's/\r$//' {} +
+	find "$S" -type d -exec chmod 755 {} +
+	find "$S" -type f -exec chmod 644 {} +
+	tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$S" -cf - . |
+		gzip -n > "$PMAPORTS/main/$pkg/$pkg-src.tar.gz"
+	rm -rf "$S"
+}
 pack l16-camera l16-camera tools/l16-shoot tools/l16-lri-assemble
 pack glycin-lri glycin-lri
+pack_tree l16-gallery l16-gallery l16-camera/src/icons.rs glycin-lri/src/lri.rs
+# l16-render: with its NDK build (l16-render/build.sh), which isn't in the repository
+if [ -e "$REPO/l16-render/build/l16-render" ]; then
+	pack_tree l16-render l16-render/build.sh l16-render/l16-render.sh l16-render/render.cpp \
+		l16-render/libcp-stub.cpp l16-render/build/l16-render
+else
+	echo "no l16-render/build/l16-render (l16-render/build.sh): l16-render can't be packaged" >&2
+fi
 
 # our patched copies of pmaports' own packages go back to temp/
 for pkg in libcamera; do

@@ -1,0 +1,27 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# l16-render: LRIs rendered by Light's own renderer (libcp), which runs from the camera's
+# stock partitions (light-lfc-android-libs gathers it at boot; nothing of Light's is in
+# this package). The program is an Android one, built with the NDK outside pmbootstrap
+# (l16-render/build.sh; CI builds it first); pmaports/sync.sh packs l16-render/ with that
+# build into $pkgname-src.tar.gz here.
+pkgname=l16-render
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Light L16 photos rendered by Light's own renderer, from the stock partitions"
+url="https://github.com/artillect/l16-linux"
+arch="aarch64"
+license="MIT"
+depends="device-light-lfc"
+# an Android (bionic) program: left as the NDK built it, and its libraries (bionic's, Light's)
+# come from the stock partitions, not packages
+options="!check !strip !tracedeps"
+source="$pkgname-src.tar.gz"
+builddir="$srcdir/$pkgname"
+
+package() {
+	install -Dm755 build/l16-render "$pkgdir"/usr/libexec/l16-render
+	install -Dm755 l16-render.sh "$pkgdir"/usr/bin/l16-render
+}
+sha512sums="
+c5e0bb873425eda2ff8ed84049ab7a6bec4b4eb7f9ae0dab18463076f36da9516c24399f8bce19f83c4261214e5e59e4f7857d023168cbe2c94236ed566646a4  l16-render-src.tar.gz
+"
