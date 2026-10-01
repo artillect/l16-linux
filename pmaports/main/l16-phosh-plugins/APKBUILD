@@ -4,7 +4,7 @@
 # into $pkgname-src.tar.gz here).
 pkgname=l16-phosh-plugins
 pkgver=0.1.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Phosh quick settings for the Light L16"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -31,5 +31,5 @@ package() {
 	install -Dm755 light-lfc-android-dialog -t "$pkgdir"/usr/libexec
 }
 sha512sums="
-b1d2a454a1bef9f6c582f97b6bcdc5e8fd34f09f7b3ea5684c3aa5ed1d47dd915f9cae67c389efa18247951752024adab248c7fddbe58baa2082952d038c153d  l16-phosh-plugins-src.tar.gz
+0eb12b47942e3589c6bc2370511197e0cb8a971a4f829fe3204036daa1a8e8dd55033326d8c94aa2b622b8c9d3fa2ce454449890d9fc98580b9120e8764f68fb  l16-phosh-plugins-src.tar.gz
 "
