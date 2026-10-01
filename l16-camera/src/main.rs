@@ -26,7 +26,7 @@ use std::f64::consts::PI;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -75,6 +75,7 @@ window.camera { background: #000; }
 .burst-screen { background: #000; }
 .burst-count { color: #fff; font-size: 48px; }
 .burst-saving { color: #fff; font-size: 24px; }
+.assist-badge { color: #fff; font-size: 15px; }
 .burst-badge { color: #fff; font-size: 13px; font-weight: 600; border: 1px solid #fff;
     border-radius: 3px; padding: 0 4px; }
 .settings { background: #000; }
@@ -425,9 +426,10 @@ struct App {
     ctl_tx: mpsc::Sender<(u32, i32)>,
     // the driver's metered ISO and exposure (us), the photo's as the ASICs have it, and the
     // preview's digital boost x 100, read by a thread of their own
-    metered: Arc<[std::sync::atomic::AtomicI32; 3]>,
+    metered: Arc<[std::sync::atomic::AtomicI32; 4]>,
     // tripod mode: the gyro read while the preview runs, and whether the camera is still
     gyro_on: Arc<AtomicBool>,
+    focal: Arc<AtomicU32>, // the zoom (35 mm focal length x 10), for the gyro's blur limit
     still: Arc<AtomicBool>,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
@@ -451,6 +453,10 @@ struct App {
     burst_saving: gtk::Box,
     burst_dots: gtk::DrawingArea,
     burst_badge: gtk::Label,
+    // stock's assist icons: tripod mode on (the camera still), a stacked capture ahead (the
+    // moon, stock's "low-light assist")
+    tripod_badge: gtk::DrawingArea,
+    moon_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
     // a multi-option setting's choices, in a row above the toolbar
@@ -687,6 +693,7 @@ impl App {
         self.hud[1].set_text(&if iso > 0 { iso.to_string() } else { "–".into() });
         self.hud[2].set_text(&if secs > 0.0 { fmt_secs(secs) } else { "–".into() });
         self.hud[3].set_text(&format!("{:.0}", st.zoom));
+        self.focal.store((st.zoom * 10.0) as u32, Ordering::Relaxed);
         self.mode_label.set_text(st.mode.short());
         let t = TIMERS[st.timer];
         icons::set(&self.timer_btn, if t == 0 { icons::TIMER_OFF } else { icons::TIMER }, &if t == 0 { String::new() } else { format!("{t}s") });
@@ -1790,7 +1797,11 @@ impl App {
         if still != self.st.borrow().tripod {
             self.st.borrow_mut().tripod = still;
             let _ = self.ctl_tx.send((ccb::TRIPOD, still as i32));
+            self.tripod_badge.set_visible(still);
         }
+        // the moon: a stacked capture ahead (only where stacking is on: auto, the setting)
+        let stacking = self.st.borrow().stacked && self.st.borrow().mode == Mode::Auto;
+        self.moon_badge.set_visible(stacking && self.metered[3].load(Ordering::Relaxed) == 1);
         let (show, asleep) = {
             let st = self.st.borrow();
             (st.histogram, st.asleep)
@@ -2171,6 +2182,27 @@ impl App {
     }
 }
 
+// stock's tripod assist icon (tripod_detected.png): a camera, its lenses as dots, on three
+// legs, in 24 x 24
+fn draw_tripod(cr: &cairo::Context) {
+    cr.set_source_rgb(1.0, 1.0, 1.0);
+    cr.set_line_width(1.6);
+    cr.rectangle(3.5, 3.5, 17.0, 9.0);
+    for (x, y) in [(13.0, 6.5), (16.5, 6.5), (11.5, 9.5), (15.0, 9.5)] {
+        cr.new_sub_path();
+        cr.arc(x, y, 1.1, 0.0, 2.0 * PI);
+    }
+    let _ = cr.stroke_preserve();
+    let _ = cr.fill();
+    cr.move_to(12.0, 12.5);
+    cr.line_to(5.0, 22.0);
+    cr.move_to(12.0, 12.5);
+    cr.line_to(12.0, 22.0);
+    cr.move_to(12.0, 12.5);
+    cr.line_to(19.0, 22.0);
+    let _ = cr.stroke();
+}
+
 fn hud_item(value: &gtk::Label, unit: &str) -> gtk::Box {
     let b = gtk::Box::new(gtk::Orientation::Vertical, 0);
     value.add_css_class("hud-value");
@@ -2451,6 +2483,17 @@ fn build(gapp: &gtk::Application) {
     burst_badge.set_halign(gtk::Align::Center);
     burst_badge.set_visible(false);
     left.prepend(&burst_badge);
+    let tripod_badge = gtk::DrawingArea::new();
+    tripod_badge.set_size_request(24, 24);
+    tripod_badge.set_halign(gtk::Align::Center);
+    tripod_badge.set_visible(false);
+    tripod_badge.set_draw_func(|_, cr, _, _| draw_tripod(cr));
+    left.prepend(&tripod_badge);
+    let moon_badge = icons::label(icons::MOON);
+    moon_badge.add_css_class("assist-badge");
+    moon_badge.set_halign(gtk::Align::Center);
+    moon_badge.set_visible(false);
+    left.prepend(&moon_badge);
 
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
@@ -2479,7 +2522,7 @@ fn build(gapp: &gtk::Application) {
     input::spawn(input_tx);
     // the metered exposure, off the UI thread (reading a control waits for the driver, which
     // a focus run holds for seconds: the UI stalled and drags were dropped)
-    let metered: Arc<[std::sync::atomic::AtomicI32; 3]> = Arc::new(Default::default());
+    let metered: Arc<[std::sync::atomic::AtomicI32; 4]> = Arc::new(Default::default());
     let m = metered.clone();
     thread::spawn(move || {
         let Some(c) = ccb::Ccb::open() else { return };
@@ -2487,11 +2530,13 @@ fn build(gapp: &gtk::Application) {
             m[0].store(c.get(ccb::AE_ISO).unwrap_or(0), Ordering::Relaxed);
             m[1].store(c.get(ccb::AE_EXPOSURE_US).unwrap_or(0), Ordering::Relaxed);
             m[2].store(c.get(ccb::PREVIEW_BOOST).unwrap_or(100), Ordering::Relaxed);
+            m[3].store(c.get(ccb::STACKED).unwrap_or(0), Ordering::Relaxed);
             thread::sleep(Duration::from_millis(300));
         }
     });
     let (gyro_on, still) = (Arc::new(AtomicBool::new(true)), Arc::new(AtomicBool::new(false)));
-    gyro::spawn(gyro_on.clone(), still.clone());
+    let focal = Arc::new(AtomicU32::new(280));
+    gyro::spawn(gyro_on.clone(), still.clone(), focal.clone());
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -2557,6 +2602,7 @@ fn build(gapp: &gtk::Application) {
         ctl_tx,
         metered: metered.clone(),
         gyro_on: gyro_on.clone(),
+        focal,
         still: still.clone(),
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
@@ -2578,6 +2624,8 @@ fn build(gapp: &gtk::Application) {
         burst_saving,
         burst_dots,
         burst_badge,
+        tripod_badge,
+        moon_badge,
         mode_label,
         toolbar,
         options,
