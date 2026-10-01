@@ -5,6 +5,9 @@
 // zoom in use (a pixel is 0.30 mrad at 28 mm, 0.055 mrad at 150 mm), so a steady hand can
 // qualify at 28 mm while at 150 mm only a rest will. Still once it has stayed under that for
 // SETTLE, moving again as soon as a window passes 1.5x it.
+// It also tells AF-D when the camera has moved and settled again (`moved`): stock's
+// SignificantMotionDetector, gyro flavour: a turn faster than 0.7 rad/s, then 300 ms
+// without one.
 // The gyro is read only while `on` is set (the preview running). Its buffer and device are
 // the video group's (device-light-lfc's udev rule). L16_GYRO_DEBUG=1 prints the turns.
 
@@ -20,6 +23,8 @@ use std::time::{Duration, Instant};
 const BLUR_PX: f64 = 1.5;
 const EXPOSURE: f64 = 0.1; // s: tripod mode's longest auto photo
 const SETTLE: Duration = Duration::from_secs(1);
+const MOTION: f64 = 0.7; // rad/s: stock's AF-D motion (gyro)
+const MOTION_STABLE: Duration = Duration::from_millis(300);
 // one pixel at 28 mm: the 13 MP modules' 1.1 um pixels over their 3.7 mm focal length
 const PIXEL_28MM: f64 = 1.1e-3 / 3.7;
 
@@ -53,7 +58,7 @@ fn enable(sys: &PathBuf, on: bool) -> std::io::Result<()> {
 
 // the thread: `still` follows the camera while `on`; false while off. `focal`: the zoom's
 // 35 mm focal length x 10
-pub fn spawn(on: Arc<AtomicBool>, still: Arc<AtomicBool>, focal: Arc<AtomicU32>) {
+pub fn spawn(on: Arc<AtomicBool>, still: Arc<AtomicBool>, focal: Arc<AtomicU32>, moved: Arc<AtomicBool>) {
     thread::spawn(move || {
         let Some((sys, dev)) = find() else { return };
         let read = |f: &str, d: f64| fs::read_to_string(sys.join(f)).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(d);
@@ -77,6 +82,8 @@ pub fn spawn(on: Arc<AtomicBool>, still: Arc<AtomicBool>, focal: Arc<AtomicU32>)
             let mut sum = [0f64; 3];
             let mut shown = Instant::now();
             let mut worst = 0f64;
+            // AF-D: the last fast turn, until the camera has been steady after it
+            let mut motion: Option<Instant> = None;
             while on.load(Ordering::Relaxed) {
                 // the buffer can be found turned off with the device open (by the sensor
                 // driver?), and a read then waits for ever: wait a second at most, and
@@ -95,6 +102,13 @@ pub fn spawn(on: Arc<AtomicBool>, still: Arc<AtomicBool>, focal: Arc<AtomicU32>)
                 }
                 let w: [f64; 3] =
                     std::array::from_fn(|k| i32::from_le_bytes(buf[k * 4..k * 4 + 4].try_into().unwrap()) as f64 * scale);
+                let rate = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+                if rate > MOTION {
+                    motion = Some(Instant::now());
+                } else if motion.is_some_and(|t| t.elapsed() >= MOTION_STABLE) {
+                    motion = None;
+                    moved.store(true, Ordering::Relaxed);
+                }
                 window.push_back(w);
                 for k in 0..3 {
                     sum[k] += w[k];

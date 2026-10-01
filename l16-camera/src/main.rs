@@ -193,8 +193,9 @@ struct State {
     focus_done: Option<(i32, Instant)>,
     focus_at: Option<(f64, f64)>,
     zoom_sent: Instant,
-    // continuous focus: the metered exposure (log) and zoom at the last focus
-    caf_ref: Option<(f64, f64)>,
+    // AF-D: the zoom at the last focus; no refocusing until then after a focus by hand
+    caf_zoom: Option<f64>,
+    caf_pause_until: Option<Instant>,
     // the settings screen's
     metering: u8, // 0 centre-weighted, 1 touch, 2 whole frame
     caf: bool,
@@ -434,6 +435,8 @@ struct App {
     gyro_on: Arc<AtomicBool>,
     focal: Arc<AtomicU32>, // the zoom (35 mm focal length x 10), for the gyro's blur limit
     still: Arc<AtomicBool>,
+    // AF-D: the camera has moved and settled since the last look (the gyro thread)
+    moved: Arc<AtomicBool>,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -1334,16 +1337,19 @@ impl App {
     // focus on @at (preview coordinates), or the centre: a 200x200 window in the module's
     // 4160x3120 pixels, through the zoom's crop (the driver runs AF in the background)
     fn focus(self: &Rc<Self>, at: Option<(f64, f64)>) {
+        // stock: AF-D leaves a focus by hand alone for 5 s
+        self.st.borrow_mut().caf_pause_until = Some(Instant::now() + Duration::from_secs(5));
         self.focus_run(at, true);
     }
 
-    // @marks: show the focus marks (not for continuous focus's runs)
+    // @marks: show the focus marks
     fn focus_run(self: &Rc<Self>, at: Option<(f64, f64)>, marks: bool) {
         if self.st.borrow().busy || self.focusing.swap(true, Ordering::SeqCst) {
             return;
         }
-        // continuous focus waits for the scene to change from here
-        self.st.borrow_mut().caf_ref = None;
+        // AF-D's zoom trigger counts from here
+        let zoom = self.st.borrow().zoom;
+        self.st.borrow_mut().caf_zoom = Some(zoom);
         let (w, h) = (self.view.width() as f64, self.view.height() as f64);
         let z = self.view.zoom();
         let (px, py) = at.unwrap_or((w / 2.0, h / 2.0));
@@ -1956,26 +1962,23 @@ impl App {
         }
     }
 
-    // AF-D as stock's app runs it (there is no ASIC mode): the centre is focused again once the
-    // scene has changed, judged by the metered exposure (2/3 EV) or the zoom
+    // AF-D as stock's app runs it (SmartAFTriggerMgr; there is no ASIC mode for stills): the
+    // centre is focused again once the camera has moved and settled (the gyro), or the zoom
+    // has changed; not for 5 s after a focus by hand. (Stock also follows faces.)
     fn continuous_focus(self: &Rc<Self>) {
-        let (want, scene) = {
+        let moved = self.moved.swap(false, Ordering::Relaxed);
+        let (want, zoom, last) = {
             let st = self.st.borrow();
             let settled = st.settle.is_none() && st.switching.is_none();
-            let want = st.caf && st.mode != Mode::Manual && !st.busy && settled && st.live_iso > 0;
-            (want, ((st.live_iso as f64 * st.live_secs).max(1e-9).ln(), st.zoom))
+            let paused = st.caf_pause_until.is_some_and(|t| Instant::now() < t);
+            let want = st.caf && st.mode != Mode::Manual && !st.busy && settled && !paused;
+            (want, st.zoom, st.caf_zoom)
         };
         if !want || self.focusing.load(Ordering::SeqCst) {
             return;
         }
-        let r = self.st.borrow().caf_ref;
-        match r {
-            None => self.st.borrow_mut().caf_ref = Some(scene),
-            Some((ev, zoom)) => {
-                if (scene.0 - ev).abs() > 0.46 || (scene.1 - zoom).abs() > 1.0 {
-                    self.focus_run(None, false);
-                }
-            }
+        if moved || last.is_some_and(|z| (zoom - z).abs() > 1.0) {
+            self.focus_run(None, true);
         }
     }
 
@@ -2592,7 +2595,8 @@ fn build(gapp: &gtk::Application) {
     });
     let (gyro_on, still) = (Arc::new(AtomicBool::new(true)), Arc::new(AtomicBool::new(false)));
     let focal = Arc::new(AtomicU32::new(280));
-    gyro::spawn(gyro_on.clone(), still.clone(), focal.clone());
+    let moved = Arc::new(AtomicBool::new(false));
+    gyro::spawn(gyro_on.clone(), still.clone(), focal.clone(), moved.clone());
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -2633,7 +2637,8 @@ fn build(gapp: &gtk::Application) {
             caf: true,
             tools: TOOLS.to_vec(),
             tool_cycle: false,
-            caf_ref: None,
+            caf_zoom: None,
+            caf_pause_until: None,
             stacked: true,
             exposure_info: true,
             inverse_wheel: false,
@@ -2662,6 +2667,7 @@ fn build(gapp: &gtk::Application) {
         gyro_on: gyro_on.clone(),
         focal,
         still: still.clone(),
+        moved: moved.clone(),
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
