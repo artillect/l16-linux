@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..6059ac4fe
+index 000000000..6ff913267
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1769 @@
+@@ -0,0 +1,1777 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -100,6 +100,8 @@ index 000000000..6059ac4fe
 +#define CCB_VBLANK	(CCB_FRAME_LINES - CCB_HEIGHT)
 +
 +#define CCB_MSG_MAX	128
++#define CCB_PREVIEW_FPS	30
++
 +#define CCB_TYPE_REPLY	1
 +#define CCB_TYPE_EMPTY	2
 +#define CCB_TYPE_EVENT	3
@@ -780,8 +782,14 @@ index 000000000..6059ac4fe
 +	/* AE: gain 1.0 for capture; preview gain 1.0, 2.5 ms, as stock starts */
 +	static const u8 ae5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x05, 0x00, 0x00, 0x80, 0x3f,
 +				  0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x3c };
++	/*
++	 * the preview's AE setup; its last bytes are the frame rate, 8.8 fixed point: stock asks
++	 * for 60, here 30 (CCB_PREVIEW_FPS): the preview is processed in software on the SoC,
++	 * and 60 kept it near 80 C, the camera modules warm beside it, for no visible gain.
++	 * Dim scenes still go down to ~24 fps (42 ms exposures) as with stock's
++	 */
 +	static const u8 ae3[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x07, 0x00, 0x00, 0x80, 0x3f,
-+				  0xa0, 0x25, 0x26, 0, 0, 0, 0, 0, 0x00, 0x3c };
++				  0xa0, 0x25, 0x26, 0, 0, 0, 0, 0, 0x00, CCB_PREVIEW_FPS };
 +	static const u8 ucid3[] = { 0x03, 0x00 };
 +	static const u8 evcomp[] = { 0x00, 0x01 };
 +	static const u8 zero67[24] = { 0 };
