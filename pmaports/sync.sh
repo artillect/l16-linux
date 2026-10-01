@@ -18,7 +18,7 @@ cp "$REPO"/kernel/patches/*.patch "$REPO/kernel/config-light-lfc.aarch64" \
 	"$DST/linux-light-lfc/"
 
 # other packages (not device-specific) go to main/
-for pkg in chiaro l16-camera glycin-lri l16-gallery l16-render; do
+for pkg in chiaro l16-camera glycin-lri l16-gallery l16-render l16-phosh-plugins; do
 	rm -rf "${PMAPORTS:?}/main/$pkg"
 	mkdir -p "$PMAPORTS/main/$pkg"
 	cp -r "$REPO/pmaports/main/$pkg/." "$PMAPORTS/main/$pkg/"
@@ -67,6 +67,7 @@ pack_tree() {
 pack l16-camera l16-camera tools/l16-shoot tools/l16-lri-assemble
 pack glycin-lri glycin-lri
 pack_tree l16-gallery l16-gallery l16-camera/src/icons.rs glycin-lri/src/lri.rs
+pack_tree l16-phosh-plugins l16-phosh
 # l16-render: with its NDK build (l16-render/build.sh), which isn't in the repository
 if [ -e "$REPO/l16-render/build/l16-render" ]; then
 	pack_tree l16-render l16-render/build.sh l16-render/l16-render.sh l16-render/render.cpp \

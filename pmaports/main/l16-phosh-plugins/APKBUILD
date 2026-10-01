@@ -1,0 +1,34 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# The Light L16's Phosh additions: the "Android" quick setting (dual boot: a dialog that
+# reboots to the stock system). From this repository (pmaports/sync.sh packs l16-phosh/
+# into $pkgname-src.tar.gz here).
+pkgname=l16-phosh-plugins
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Phosh quick settings for the Light L16"
+url="https://github.com/artillect/l16-linux"
+arch="aarch64"
+license="MIT"
+depends="gtk4-layer-shell phosh py3-gobject3"
+makedepends="gtk+3.0-dev libphosh-dev phosh-dev"
+options="!check"
+source="$pkgname-src.tar.gz"
+builddir="$srcdir/l16-phosh"
+
+build() {
+	# shellcheck disable=SC2046
+	${CC:-gcc} $CFLAGS -shared -fPIC -Wall -o libphosh-plugin-lfc-android-quick-setting.so \
+		android-quick-setting.c \
+		$(pkg-config --cflags gtk+-3.0 phosh-plugins) -I/usr/include/libphosh-0.45 \
+		$LDFLAGS $(pkg-config --libs gtk+-3.0) -lphosh-0.45
+}
+
+package() {
+	install -Dm755 libphosh-plugin-lfc-android-quick-setting.so \
+		-t "$pkgdir"/usr/lib/phosh/plugins
+	install -Dm644 lfc-android-quick-setting.plugin -t "$pkgdir"/usr/lib/phosh/plugins
+	install -Dm755 light-lfc-android-dialog -t "$pkgdir"/usr/libexec
+}
+sha512sums="
+18d24539efe90872ccd99ba84178807785679f1067457e096a9efda5d7f0dfd8b0cd17a85c9fd68bc2b7ef11f61e970ce544aca6935ebb03a4b257fab7d079e9  l16-phosh-plugins-src.tar.gz
+"

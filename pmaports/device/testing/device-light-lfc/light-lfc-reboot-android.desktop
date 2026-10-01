@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Reboot to Android
-Comment=Restart into the stock LightOS
-Exec=/usr/bin/light-lfc-reboot-android
-TryExec=/run/light-lfc-dual-boot
-Icon=system-reboot-symbolic
-Categories=System;

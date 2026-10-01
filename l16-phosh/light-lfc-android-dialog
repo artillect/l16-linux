@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+# light-lfc-android-dialog: "Reboot to Android?" over everything, as Phosh's own system
+# dialogs are (a layer-shell overlay: dimmed screen, a card in the middle), from the
+# "Android" quick setting. Reboot runs light-lfc-reboot-android.
+# gtk4-layer-shell must be loaded before libwayland: the script runs itself again with it
+# preloaded.
+import os
+import sys
+
+LIB = "/usr/lib/libgtk4-layer-shell.so"
+if "LFC_DIALOG_PRELOADED" not in os.environ:
+    os.environ["LD_PRELOAD"] = LIB
+    os.environ["LFC_DIALOG_PRELOADED"] = "1"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+import subprocess
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gtk4LayerShell", "1.0")
+from gi.repository import Gdk, Gtk  # noqa: E402
+from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402
+
+CSS = b"""
+window.lfc-dialog { background: rgba(0, 0, 0, 0.6); }
+.lfc-card { background: @window_bg_color; border-radius: 12px; padding: 24px; }
+.lfc-title { font-size: 20px; font-weight: bold; }
+.lfc-card button { min-height: 40px; min-width: 120px; }
+"""
+
+
+def on_activate(app):
+    css = Gtk.CssProvider()
+    css.load_from_data(CSS)
+    Gtk.StyleContext.add_provider_for_display(
+        Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+    win = Gtk.ApplicationWindow(application=app)
+    win.add_css_class("lfc-dialog")
+    LayerShell.init_for_window(win)
+    LayerShell.set_layer(win, LayerShell.Layer.OVERLAY)
+    LayerShell.set_namespace(win, "phosh system prompt")
+    for edge in (LayerShell.Edge.TOP, LayerShell.Edge.BOTTOM, LayerShell.Edge.LEFT, LayerShell.Edge.RIGHT):
+        LayerShell.set_anchor(win, edge, True)
+    LayerShell.set_exclusive_zone(win, -1)
+    LayerShell.set_keyboard_mode(win, LayerShell.KeyboardMode.EXCLUSIVE)
+
+    title = Gtk.Label(label="Reboot to Android?")
+    title.add_css_class("lfc-title")
+    text = Gtk.Label(label="The camera restarts into its stock system. Linux comes back with Switch to Linux.")
+    text.set_wrap(True)
+    text.set_max_width_chars(36)
+    text.set_justify(Gtk.Justification.CENTER)
+    cancel = Gtk.Button(label="Cancel")
+    reboot = Gtk.Button(label="Reboot")
+    reboot.add_css_class("destructive-action")
+    buttons = Gtk.Box(spacing=12, halign=Gtk.Align.CENTER)
+    buttons.append(cancel)
+    buttons.append(reboot)
+    card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16,
+                   halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
+    card.add_css_class("lfc-card")
+    card.append(title)
+    card.append(text)
+    card.append(buttons)
+    win.set_child(card)
+
+    cancel.connect("clicked", lambda _b: win.close())
+
+    def do_reboot(_b):
+        subprocess.Popen(["/usr/bin/light-lfc-reboot-android"])
+        win.close()
+
+    reboot.connect("clicked", do_reboot)
+    # a tap beside the card, or Escape: cancel
+    backdrop = Gtk.GestureClick()
+
+    def on_backdrop(_g, _n, x, y):
+        picked = win.pick(x, y, Gtk.PickFlags.DEFAULT)
+        if picked is win:
+            win.close()
+
+    backdrop.connect("released", on_backdrop)
+    win.add_controller(backdrop)
+    keys = Gtk.EventControllerKey()
+    keys.connect("key-pressed", lambda _c, k, _code, _m: (win.close(), True)[1] if k == Gdk.KEY_Escape else False)
+    win.add_controller(keys)
+    win.present()
+
+
+app = Gtk.Application(application_id="org.l16linux.RebootAndroid")
+app.connect("activate", on_activate)
+app.run(None)

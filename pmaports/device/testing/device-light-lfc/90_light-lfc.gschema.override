@@ -5,3 +5,8 @@ screen-keyboard-enabled=true
 
 [sm.puri.phosh]
 enable-suspend=true
+
+# Phosh's own quick settings plus "Android" (dual boot: reboot to the stock system;
+# l16-phosh-plugins, hidden on a Linux-only install)
+[sm.puri.phosh.plugins:Phosh]
+quick-settings=['wifi-hotspot-quick-setting', 'mobile-data-quick-setting', 'lfc-android-quick-setting']

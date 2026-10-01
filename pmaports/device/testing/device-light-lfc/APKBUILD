@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=24
+pkgrel=25
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -58,7 +58,6 @@ source="
 	light-lfc-camss.conf
 	light-lfc-postprocess.sh
 	light-lfc-reboot-android
-	light-lfc-reboot-android.desktop
 	light-lfc-rotate
 	light-lfc-rotate.desktop
 	light-lfc-suspend-on-blank
@@ -123,11 +122,9 @@ package() {
 	install -Dm644 "$srcdir"/light-lfc-camss.conf \
 		"$pkgdir"/etc/modprobe.d/light-lfc-camss.conf
 
-	# dual boot: "Reboot to Android" (shown by light-lfc-bootmode only when dual booting)
+	# dual boot: rebooting to Android (l16-phosh-plugins' "Android" quick setting runs it)
 	install -Dm755 "$srcdir"/light-lfc-reboot-android \
 		"$pkgdir"/usr/bin/light-lfc-reboot-android
-	install -Dm644 "$srcdir"/light-lfc-reboot-android.desktop \
-		-t "$pkgdir"/usr/share/applications
 
 	# no RTC to keep time across installs: set the clock as soon as the network is up
 	install -Dm755 "$srcdir"/light-lfc-chrony.dispatcher \
@@ -169,7 +166,7 @@ phosh() {
 	replaces="phosh"
 	# greetd: the post-install configures its user; light-lfc-rotate: monitor-sensor,
 	# wlr-randr
-	depends="greetd iio-sensor-proxy wlr-randr"
+	depends="greetd iio-sensor-proxy l16-phosh-plugins wlr-randr"
 	install="$subpkgname.post-install $subpkgname.post-upgrade"
 
 	# landscape (kernel panel orientation) at 1.75x; the phrog login screen falls
@@ -177,7 +174,7 @@ phosh() {
 	install -Dm644 "$srcdir"/phoc.ini \
 		"$subpkgdir"/usr/share/phosh/phoc.ini
 
-	# on-screen keyboard on, Suspend in the power menu
+	# on-screen keyboard on, Suspend in the power menu, the "Android" quick setting
 	install -Dm644 "$srcdir"/90_light-lfc.gschema.override \
 		-t "$subpkgdir"/usr/share/glib-2.0/schemas
 
@@ -204,7 +201,7 @@ phosh() {
 sha512sums="
 ae20add2083afcdb2ade1348127f6510a7056f1a74d5f5639decd7da9a972436d93f25375e6ba740403208b35711a310b5a62efc2de335d1334a9728eb095bb9  50-light-lfc-suspend.rules
 076662b14ecdaa4c5e4386a78c0753ea11ed658a3b987226b383ceeff2f09e8b1bbabdfa06c3cde3b2ebba327edd0a7ae47d309648527c67587e48150e5a0442  90-device-light-lfc.rules
-bf64c5c716e7072ecdc6e3019fbc14dae0877ab8fb04d8db8dc6c6386f4e71b61b6433f9063442426c750a260bf00ac643444b7a1d70dd36520b53b834c8b110  90_light-lfc.gschema.override
+6582b0090b3448a0c8cf578342620f42717f00aa4402403f11bdb1b15b0d6af0573b11af4599d2776bcb15c761319b3a323de2d70bd449cc80f7f7dc0e70c7c4  90_light-lfc.gschema.override
 67abed5f0ed1b36da63e79430386805ffa0edc4b1cac907a0054dfee34427373b28a2050e79874415d383376461bc814c2cad96988107314fd6e26d83a6f83b6  HiFi.conf
 97b14e6ab622d1fc3fa2841dc9ea6c3b53328675b8910a64eabc8c99c28b7bebf3281d7333bab8ff19947c8645ab28c6aa62a2496433cd9c7c358829c7468a4d  L16.conf
 9ebd71f280a5c9dc6ee46819aa5d3b235b190abe49b8f4ba86bae0f5a7ef5d34c27afbc6c69672a91bb317f66d2d2a9037f757a4580338b6f97af6d00d8ab879  deviceinfo
@@ -212,7 +209,7 @@ bf64c5c716e7072ecdc6e3019fbc14dae0877ab8fb04d8db8dc6c6386f4e71b61b6433f906344242
 0779d528d56ad004960318affd715fbe57901a1793923522d0bd03d1ac63eae3de3739331b62b8376c5f116dbea170a1e477c12e73dc3c9685aad4b2e8d33df3  l16-linux.list
 b985667d6242d84247b88aed2f931b71250257bab199355f3ed9376065ec4a574670795a2938b19e5aeee9cceb9ec92d0596d70b6dc01ab83e69e05ce5a08bfb  l16-linux@artillect-6ab9d2e0.rsa.pub
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
-f1436d28cb1b726a16bad76e1eaf5ce428dc9f9578c09f66e67379261f6f074f5f138d532c72f5e0a6f435ce2d1cd61682c6f6db058d8d5f7e881d2412d35b06  light-lfc-bootmode.initd
+88a78da6bdc56adad9d9c41c79d25547785089b55d3804cfc23d1f05708d114cb4b9d30285f79afc3548378423e98f5eb77f511f46398bf48ca7cae4ac97e10f  light-lfc-bootmode.initd
 1871f2c94d4df3e71e077288391ebbd2cd511848abc065c1fe2e0cf548da1560a07240fefe3fa08b56e409dc504573feffb9817f0e953e64fbd7afed1704a921  light-lfc-bootsig
 7909a8446cd9de4955a3a9759fb0a3e268463da0cf1a90e6226913dbfa960fd7618e5b9485602bdbe7a5c93d7c7d0bb77a4f4dd668fa2d80893efa12fcfcd492  light-lfc-chrony.dispatcher
 8510e9f5b5a95f35f2653f0acff90ccdc51ae8e248edf8803368eb0b591645dcd4541fad3c61a2eb9b723f01cb7e32c63af8a40b0180da67b399791224a00b2e  light-lfc-firmware.initd
@@ -227,7 +224,6 @@ e913a563acefc8bf96160e4c76e370bc75bc6fd9f5b96d179c21368e243d46f8c48ce9ee012cf54b
 6dcf5c6755319cc0b886c4bf570a5e169e4b2528fc1ed0a8ee9ddc56b845d4ece26a54f94bb179603bc71b30d2dc6bf2ff58f943031525c198be1334a5cae5ec  light-lfc-camss.conf
 8541cc5044aff7df7cab337c0ff3c59c5ad033792b70972626d2c6b634f7d60ac6ed5bb043445db766e3253da1b3a4fc489ca8cf67b441a15fee4ebb7f601bc9  light-lfc-postprocess.sh
 6d9f22b0adc3a2ea7fdd0dbbe907ff7261638b5b20cc52eb02ed96349fbbdf8058259a1879bba643059d36c7f21304451ef1de11bbb0816e18ed45f775ee6976  light-lfc-reboot-android
-b1e82e8cc14eb85947cb91ec6bbd85dc96beb841f1c5fa665da51a2fe913b003d41531403d7608174bb65cb7e8b69886220031645523f3dbb436358a4b035765  light-lfc-reboot-android.desktop
 7f8baefaaa5423983da689063c93ad5881a0e344dd492853e391d27f49974d874981bc143e34704f7d20ee8bed6adb66f503ef9d5056d28c1aef2000143a11d4  light-lfc-rotate
 9791da069e950b9d69024e24ebf434648299216416d0301475c3e609b6ca83c3e8eb33225627571be4773f9efb6bb8aed2af5d117307b2f13f4284f839a5d4a7  light-lfc-rotate.desktop
 437c9ef112722bfcafa4b9f9609d2da63cfb79818e9857faae1f2db2b8ee9709aa7a6ff4ff58d4f7aeeb1cd47ebd5d4f7f264a465044bf3a8e90de832e70e936  light-lfc-suspend-on-blank

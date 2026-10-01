@@ -1,0 +1,7 @@
+[Plugin]
+Id=lfc-android-quick-setting
+Name=Reboot to Android (Light L16 dual boot)
+Types=quick-setting;
+Comment=Reboot to the stock system
+Plugin=/usr/lib/phosh/plugins/libphosh-plugin-lfc-android-quick-setting.so
+Icon=system-reboot-symbolic

@@ -46,7 +46,7 @@ start() {
 		# "Reboot to Android" runs as the user; the setting only picks which of the
 		# two installed systems the next reboot starts
 		chmod 666 /sys/module/reboot_mode/parameters/default_mode
-		# shows the "Reboot to Android" launcher (its TryExec)
+		# shows the "Android" quick setting (l16-phosh-plugins)
 		ln -s /usr/bin/light-lfc-reboot-android /run/light-lfc-dual-boot
 	else
 		einfo "Linux only: plain reboots and kernel updates go to boot"
