@@ -12,6 +12,7 @@ mod gyro;
 mod haptics;
 mod icons;
 mod input;
+mod prox;
 mod settings;
 mod transfer;
 mod wb;
@@ -26,7 +27,7 @@ use std::f64::consts::PI;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -210,6 +211,8 @@ struct State {
     screen_off: bool,
     fast_loop_on: bool,
     tripod: bool, // tripod mode as last sent
+    lens_warning: bool, // the settings screen's: warn when a lens is covered
+    lens_mask: u8,      // the covered sensors last shown
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -226,7 +229,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warning={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -246,6 +249,7 @@ impl State {
             self.strip_zoom as u8,
             self.tools.iter().map(|t| t.name()).collect::<Vec<_>>().join(","),
             self.tool_cycle as u8,
+            self.lens_warning as u8,
         )
     }
 
@@ -277,6 +281,7 @@ impl State {
             self.tools.dedup();
         }
         self.tool_cycle = flag("tool_cycle", self.tool_cycle);
+        self.lens_warning = flag("lens_warning", self.lens_warning);
     }
 }
 
@@ -339,6 +344,11 @@ const SETTINGS: &[SettingRow] = &[
         title: "Inverse wheel scroll",
         sub: "Turn the exposure wheels the other way",
         kind: SettingKind::Switch(|s| s.inverse_wheel, |s, v| s.inverse_wheel = v),
+    },
+    SettingRow {
+        title: "Lens blocked warning",
+        sub: "Warn when a finger covers the camera modules (the sensors around them)",
+        kind: SettingKind::Switch(|s| s.lens_warning, |s, v| s.lens_warning = v),
     },
     SettingRow {
         title: "Touch strip",
@@ -437,6 +447,9 @@ struct App {
     still: Arc<AtomicBool>,
     // AF-D: the camera has moved and settled since the last look (the gyro thread)
     moved: Arc<AtomicBool>,
+    // the proximity sensors covered (a bit each, prox's thread), and stock's warning
+    blocked: Arc<AtomicU8>,
+    lens_badge: gtk::DrawingArea,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -1836,6 +1849,21 @@ impl App {
         self.refresh();
     }
 
+    // a lens covered: stock's warning and its buzz (every pass of the fast loop)
+    fn lens_check(&self) {
+        let mask = self.blocked.load(Ordering::Relaxed);
+        let (shown, warn) = (self.st.borrow().lens_mask, self.st.borrow().lens_warning);
+        let mask = if warn { mask } else { 0 };
+        if mask != shown {
+            self.st.borrow_mut().lens_mask = mask;
+            self.lens_badge.set_visible(mask != 0);
+            self.lens_badge.queue_draw();
+            if shown == 0 {
+                self.buzz(30);
+            }
+        }
+    }
+
     fn poll(self: &Rc<Self>) {
         // the metered exposure, which the driver mirrors into its controls
         if self.st.borrow().mode != Mode::Manual && !self.st.borrow().busy {
@@ -1911,6 +1939,7 @@ impl App {
                 a.on_input(ev);
             }
             a.switched();
+            a.lens_check();
             while let Ok(stage) = a.stage_rx.try_recv() {
                 a.on_stage(stage);
             }
@@ -2101,6 +2130,54 @@ impl App {
         }
     }
 
+    // stock's lens-blocked warning (proximity_sensor_notification_layout): the camera's back
+    // as seen through the screen (its cut corner top right), a ringed dot at each covered
+    // sensor: ch0-2 down the left edge, ch3 top centre, ch4 bottom centre; "lens blocked"
+    fn draw_lens_blocked(&self, cr: &cairo::Context, w: f64, _h: f64) {
+        let mask = self.st.borrow().lens_mask;
+        let (bw, bh) = (160.0, 93.0);
+        let (x0, y0) = ((w - bw) / 2.0, 12.0);
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
+        rounded(cr, x0 - 12.0, 0.0, bw + 24.0, bh + 52.0, 12.0);
+        let _ = cr.fill();
+        // the body: rounded corners, the top right one cut
+        let (r, cut) = (6.0, 22.0);
+        cr.new_path();
+        cr.arc(x0 + r, y0 + r, r, PI, 1.5 * PI);
+        cr.line_to(x0 + bw - cut, y0);
+        cr.line_to(x0 + bw, y0 + cut * 0.55);
+        cr.arc(x0 + bw - r, y0 + bh - r, r, 0.0, 0.5 * PI);
+        cr.arc(x0 + r, y0 + bh - r, r, 0.5 * PI, PI);
+        cr.close_path();
+        cr.set_source_rgb(0.34, 0.34, 0.34);
+        let _ = cr.fill_preserve();
+        cr.set_source_rgb(0.95, 0.95, 0.95);
+        cr.set_line_width(3.0);
+        let _ = cr.stroke();
+        let at = [
+            (x0, y0 + 10.0),
+            (x0, y0 + bh / 2.0),
+            (x0, y0 + bh - 10.0),
+            (x0 + bw / 2.0, y0),
+            (x0 + bw / 2.0, y0 + bh),
+        ];
+        for (i, (x, y)) in at.iter().enumerate() {
+            if mask & (1 << i) == 0 {
+                continue;
+            }
+            for (rad, a) in [(16.0, 0.25), (11.0, 0.45)] {
+                cr.set_source_rgba(1.0, 1.0, 1.0, a);
+                cr.arc(*x, *y, rad, 0.0, 2.0 * PI);
+                let _ = cr.fill();
+            }
+            cr.set_source_rgb(1.0, 1.0, 1.0);
+            cr.arc(*x, *y, 6.0, 0.0, 2.0 * PI);
+            let _ = cr.fill();
+        }
+        cr.set_source_rgb(1.0, 1.0, 1.0);
+        text(cr, "lens blocked", w / 2.0, y0 + bh + 24.0, 17.0, 0.5);
+    }
+
     // stock's focus marks (CrossHair): grey corners while focusing; then yellow and a little
     // larger when focused, with a lock while the focus holds (no AF-D), or a shake when
     // not; dimmed after a second, gone after five
@@ -2261,6 +2338,15 @@ impl App {
         cr.arc(cx, cy, r - 7.0, 0.0, 2.0 * PI);
         let _ = cr.fill();
     }
+}
+
+fn rounded(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    cr.new_path();
+    cr.arc(x + w - r, y + r, r, -0.5 * PI, 0.0);
+    cr.arc(x + w - r, y + h - r, r, 0.0, 0.5 * PI);
+    cr.arc(x + r, y + h - r, r, 0.5 * PI, PI);
+    cr.arc(x + r, y + r, r, PI, 1.5 * PI);
+    cr.close_path();
 }
 
 fn hud_item(value: &gtk::Label, unit: &str) -> gtk::Box {
@@ -2554,8 +2640,18 @@ fn build(gapp: &gtk::Application) {
     moon_badge.set_visible(false);
     left.prepend(&moon_badge);
 
+    // stock's lens-blocked warning: the camera's back with the covered sensors, top centre
+    let lens_badge = gtk::DrawingArea::new();
+    lens_badge.set_size_request(230, 150);
+    lens_badge.set_halign(gtk::Align::Center);
+    lens_badge.set_valign(gtk::Align::Start);
+    lens_badge.set_margin_top(24);
+    lens_badge.set_can_target(false);
+    lens_badge.set_visible(false);
+
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
+    root.add_overlay(&lens_badge);
     root.add_overlay(&wheels);
     root.add_overlay(&status);
     root.add_overlay(&countdown);
@@ -2597,6 +2693,9 @@ fn build(gapp: &gtk::Application) {
     let focal = Arc::new(AtomicU32::new(280));
     let moved = Arc::new(AtomicBool::new(false));
     gyro::spawn(gyro_on.clone(), still.clone(), focal.clone(), moved.clone());
+    // the lens-blocked sensors, read while the preview runs (as the gyro)
+    let blocked = Arc::new(AtomicU8::new(0));
+    prox::spawn(gyro_on.clone(), blocked.clone());
     let app = Rc::new(App {
         st: RefCell::new(State {
             mode: Mode::Auto,
@@ -2648,6 +2747,8 @@ fn build(gapp: &gtk::Application) {
             screen_off: false,
             fast_loop_on: false,
             tripod: false,
+            lens_warning: true,
+            lens_mask: 0,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -2668,6 +2769,8 @@ fn build(gapp: &gtk::Application) {
         focal,
         still: still.clone(),
         moved: moved.clone(),
+        blocked: blocked.clone(),
+        lens_badge,
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
@@ -2742,6 +2845,8 @@ fn build(gapp: &gtk::Application) {
     let a = app.clone();
     app.wheels.set_draw_func(move |_, cr, w, h| a.draw_wheels(cr, w as f64, h as f64));
 
+    let a = app.clone();
+    app.lens_badge.set_draw_func(move |_, cr, w, h| a.draw_lens_blocked(cr, w as f64, h as f64));
     let a = app.clone();
     app.top.set_draw_func(move |_, cr, w, h| a.draw_dial(cr, w as f64, h as f64, true));
     let a = app.clone();
