@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..65bbcf645
+index 000000000..cde09e871
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1665 @@
+@@ -0,0 +1,1690 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -169,6 +169,7 @@ index 000000000..65bbcf645
 +#define V4L2_CID_LIGHT_EV		(V4L2_CID_LIGHT_BASE + 13)
 +#define V4L2_CID_LIGHT_PREVIEW_BOOST	(V4L2_CID_LIGHT_BASE + 14)
 +#define V4L2_CID_LIGHT_TRIPOD		(V4L2_CID_LIGHT_BASE + 15)
++#define V4L2_CID_LIGHT_STACKED		(V4L2_CID_LIGHT_BASE + 16)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
@@ -234,6 +235,7 @@ index 000000000..65bbcf645
 +	struct v4l2_ctrl *ae_iso;	/* read-only: and ISO */
 +	struct v4l2_ctrl *boost;	/* read-only: the preview's digital boost x 100 */
 +	struct v4l2_ctrl *tripod;	/* the camera is still: auto photos may take longer */
++	struct v4l2_ctrl *stacked;	/* read-only: the next photo will be stacked (low light) */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
 +	struct v4l2_ctrl *focus_x;	/* the AF window's top left, sensor pixels */
@@ -653,6 +655,7 @@ index 000000000..65bbcf645
 +	u8 m[CCB_MSG_MAX];
 +	u64 ns = 0;
 +	u32 sens, boost = 0, iso = 0, boost100 = 100;
++	int stacked = -1;
 +	bool ae = false;
 +	int i, t;
 +
@@ -690,8 +693,17 @@ index 000000000..65bbcf645
 +					dev_info(&c->client->dev, "AE push HUD %llu us, ISO %u\n",
 +						 div_u64(ns, 1000), iso);
 +			}
-+			if (get_unaligned_le16(m + 2) >= 33)
++			/*
++			 * the flags: precapture (flash) needed, torch, 60 Hz, 50 Hz; bits 4 and 5
++			 * the stacked capture's (liblight_ccb posts both; stock's low-light assist,
++			 * the moon, shows the "fw" one, taken as bit 5)
++			 */
++			if (get_unaligned_le16(m + 2) >= 33) {
 +				c->flash_needed = m[4 + 32] & 1;
++				stacked = !!(m[4 + 32] & 0x20);
++				if (debug)
++					dev_info(&c->client->dev, "AE push flags 0x%02x\n", m[4 + 32]);
++			}
 +			ae = true;
 +			if (!c->ae_seen)
 +				dev_info(&c->client->dev, "AE running: %llu us, ISO %u\n",
@@ -717,6 +729,8 @@ index 000000000..65bbcf645
 +		v4l2_ctrl_s_ctrl(c->ae_us, clamp_t(u64, div_u64(ns, 1000), 0, c->ae_us->maximum));
 +		v4l2_ctrl_s_ctrl(c->ae_iso, clamp_t(u32, iso, 0, c->ae_iso->maximum));
 +		v4l2_ctrl_s_ctrl(c->boost, clamp_t(u32, boost100, 100, c->boost->maximum));
++		if (stacked >= 0)
++			v4l2_ctrl_s_ctrl(c->stacked, stacked);
 +	}
 +}
 +
@@ -1143,6 +1157,16 @@ index 000000000..65bbcf645
 +	.step = 1,
 +};
 +
++static const struct v4l2_ctrl_config ccb_ctrl_stacked = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_STACKED,
++	.name = "Stacked Capture Ahead",
++	.type = V4L2_CTRL_TYPE_BOOLEAN,
++	.max = 1,
++	.step = 1,
++	.flags = V4L2_CTRL_FLAG_READ_ONLY,
++};
++
 +static const struct v4l2_ctrl_config ccb_ctrl_ev = {
 +	.ops = &ccb_ctrl_ops,
 +	.id = V4L2_CID_LIGHT_EV,
@@ -1548,6 +1572,7 @@ index 000000000..65bbcf645
 +	c->ev = v4l2_ctrl_new_custom(h, &ccb_ctrl_ev, NULL);
 +	c->boost = v4l2_ctrl_new_custom(h, &ccb_ctrl_boost, NULL);
 +	c->tripod = v4l2_ctrl_new_custom(h, &ccb_ctrl_tripod, NULL);
++	c->stacked = v4l2_ctrl_new_custom(h, &ccb_ctrl_stacked, NULL);
 +	if (h->error)
 +		return h->error;
 +
