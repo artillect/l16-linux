@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..345786d58
+index 000000000..6059ac4fe
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1709 @@
+@@ -0,0 +1,1769 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -60,6 +60,7 @@ index 000000000..345786d58
 + */
 +#include <linux/delay.h>
 +#include <linux/gpio/consumer.h>
++#include <linux/hwmon.h>
 +#include <linux/i2c.h>
 +#include <linux/jiffies.h>
 +#include <linux/mod_devicetable.h>
@@ -238,6 +239,15 @@ index 000000000..345786d58
 +	struct v4l2_ctrl *tripod;	/* the camera is still: auto photos may take longer */
 +	struct v4l2_ctrl *stacked;	/* read-only: the next photo will be stacked (low light) */
 +	struct v4l2_ctrl *af_result;	/* read-only: the last focus run, 0 running, 1 focused, 2 not */
++
++	/*
++	 * ASIC1's telemetry (type 3, event 4, every ~10 s while previewing): the camera
++	 * modules' temperature, whole degrees C (stock's thermal-engine sensor "light": 55 C
++	 * warm, 65 C hot), and the battery's power in mW. As hwmon "light_ccb".
++	 */
++	int temp_c;
++	int power_mw;
++	unsigned long telemetry_at;	/* jiffies of the last; 0: none yet */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
 +	struct v4l2_ctrl *focus_x;	/* the AF window's top left, sensor pixels */
@@ -670,6 +680,14 @@ index 000000000..345786d58
 +		t = ccb_read(c, m, sizeof(m));
 +		if (t < 0 || t == CCB_TYPE_EMPTY)
 +			break;
++		if (t == CCB_TYPE_EVENT && get_unaligned_le16(m + 2) >= 9 && m[4] == 4) {
++			WRITE_ONCE(c->temp_c, (s32)get_unaligned_le32(m + 5));
++			WRITE_ONCE(c->power_mw, (s32)get_unaligned_le32(m + 9));
++			WRITE_ONCE(c->telemetry_at, jiffies ?: 1);
++			if (debug)
++				dev_info(&c->client->dev, "telemetry: %d C, %d mW\n",
++					 c->temp_c, c->power_mw);
++		}
 +		if (t == CCB_TYPE_AE && get_unaligned_le16(m + 2) >= 16) {
 +			/*
 +			 * {u64 exposure ns, f32 sensitivity, f32 boost, u64 hud_exposure ns,
@@ -1599,6 +1617,44 @@ index 000000000..345786d58
 +	return 0;
 +}
 +
++/* the telemetry as hwmon: nothing once it is 30 s old (the camera closed) */
++static umode_t ccb_hwmon_visible(const void *data, enum hwmon_sensor_types type, u32 attr,
++				 int channel)
++{
++	return 0444;
++}
++
++static int ccb_hwmon_read(struct device *dev, enum hwmon_sensor_types type, u32 attr,
++			  int channel, long *val)
++{
++	struct ccb *c = dev_get_drvdata(dev);
++	unsigned long at = READ_ONCE(c->telemetry_at);
++
++	if (!at || time_after(jiffies, at + 30 * HZ))
++		return -ENODATA;
++	if (type == hwmon_temp)
++		*val = READ_ONCE(c->temp_c) * 1000L;		/* millidegrees */
++	else
++		*val = READ_ONCE(c->power_mw) * 1000L;		/* microwatts */
++	return 0;
++}
++
++static const struct hwmon_ops ccb_hwmon_ops = {
++	.is_visible = ccb_hwmon_visible,
++	.read = ccb_hwmon_read,
++};
++
++static const struct hwmon_channel_info * const ccb_hwmon_info[] = {
++	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT),
++	HWMON_CHANNEL_INFO(power, HWMON_P_INPUT),
++	NULL
++};
++
++static const struct hwmon_chip_info ccb_hwmon_chip = {
++	.ops = &ccb_hwmon_ops,
++	.info = ccb_hwmon_info,
++};
++
 +static int ccb_probe(struct i2c_client *client)
 +{
 +	struct device *dev = &client->dev;
@@ -1649,6 +1705,10 @@ index 000000000..345786d58
 +	pm_runtime_set_autosuspend_delay(dev, 60000);
 +	pm_runtime_use_autosuspend(dev);
 +	pm_runtime_enable(dev);
++
++	/* the camera modules' temperature (and the battery's power), for any thermal tool */
++	if (IS_ERR(devm_hwmon_device_register_with_info(dev, "light_ccb", c, &ccb_hwmon_chip, NULL)))
++		dev_warn(dev, "no hwmon device for the camera modules' temperature\n");
 +
 +	ret = v4l2_async_register_subdev(&c->sd);
 +	if (ret)
