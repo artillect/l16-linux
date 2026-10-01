@@ -57,3 +57,30 @@ device-dumps/boot/vmlinux.elf), sysfs `/sys/devices/virtual/input/txc_ps_chN/pa2
 - Which chN is which lens, and typical open/covered counts (the >= 100 threshold): one session
   on stock: `adb shell su -c 'cat /sys/devices/virtual/input/txc_ps_ch*/pa224_sysfs/ps'`
   while covering one lens at a time (after enabling each channel as the HAL does).
+
+## PA224 registers (from stock's vmlinux.elf, 2026-10-01)
+
+SMBus byte access at 0x1e, 8-bit registers (meanings inferred from TXC's PA22x naming; the
+values are exact from the code):
+
+| Reg | Meaning | Stock |
+|---|---|---|
+| 0x00 | CFG0, bit 1 = PS on | 0x02 on, 0x00 off |
+| 0x01 | LED current / persistence | 0x48 |
+| 0x02 | interrupt set / flags | 0x00 (0x08 while calibrating) |
+| 0x03 | PS period | 0x08 |
+| 0x08 / 0x0A | PS low / high threshold | 25 / 40 (0 / 0xFF while calibrating) |
+| 0x0E | **PS data, one byte 0-255** (offset already taken off) | read |
+| 0x10 | PS offset (crosstalk) | calibrated, below |
+| 0x11 / 0x12 | ? | 0x82 / 0x0C |
+| 0x7F | chip ID | must read 0x11 |
+
+- Power-up: L29 on, 130 ms. Init: 0x01=0x48, 0x03=0x08, 0x11=0x82, 0x12=0x0C, 0x10=0, 0x02=0.
+- Crosstalk (stock does it at every boot, one sensor at a time): 0x0A=0xFF, 0x08=0, 0x02=0x08,
+  0x10=0, PS on; 4 reads of 0x0E 50 ms apart; xt = mean of the middle two + 4; if xt > 99
+  use 0, else 0x10=xt; 0x0A=40, 0x08=25, PS off. (No saved factory values: the bspdata slot
+  at 0x7C000 holds none.)
+- Reading: PS on, 150 ms, read 0x0E, PS off; >= 100 blocked.
+- No reset line, no interrupt used (purely polled).
+- Mux (TCA9545A @0x70): write 1<<chan to select, 0 to deselect; reset GPIO 131 active low.
+  Mux channels 0-3 = stock ch3, ch0, ch4, ch1; ch2 on blsp1 I2C5 directly.
