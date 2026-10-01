@@ -27,6 +27,7 @@ pub const FLASH_AUTO: char = '\u{f0242}';
 pub const FLASH_OFF: char = '\u{f0243}';
 pub const FOCUS_AUTO: char = '\u{f0f4e}';
 pub const LOCK: char = '\u{f033e}';
+pub const THERMOMETER: char = '\u{f050f}'; // stock's overheating warning (ic_temperature)
 pub const STORAGE: char = '\u{f07dc}'; // micro-sd: captures left
 pub const BATTERY_ALERT: char = '\u{f0083}';
 // battery levels as stock's status icons step: >= 90, 60, 35, 15, below

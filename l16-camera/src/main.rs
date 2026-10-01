@@ -76,6 +76,8 @@ window.camera { background: #000; }
 .burst-screen { background: #000; }
 .device-status label { color: #fff; font-size: 13px; font-weight: 600; }
 .battery-screen { background: #000; }
+.thermal-warning { color: #fff; font-size: 15px; font-weight: 600; background: rgba(180,30,30,0.75);
+    border-radius: 8px; padding: 4px 14px; }
 .battery-screen label { color: #fff; font-size: 24px; font-weight: 600; }
 .burst-count { color: #fff; font-size: 48px; }
 .burst-saving { color: #fff; font-size: 24px; }
@@ -227,6 +229,11 @@ struct State {
     // stock's in-pocket check: on (the settings screen's), and since when it has looked so
     pocket: bool,
     pocket_since: Option<Instant>,
+    // stock's thermal levels from the camera modules' temperature: 0 safe, 1 warm (55 C,
+    // clear under 45), 2 hot (65 C, clear under 56); while hot the preview is stopped
+    // (cooling) until this, then started again for a new reading
+    thermal: u8,
+    thermal_pause_until: Option<Instant>,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -489,6 +496,8 @@ struct App {
     storage_label: gtk::Label,
     battery_label: gtk::Label,
     battery_screen: gtk::Box,
+    thermal_warning: gtk::Label,
+    hot_screen: gtk::Box,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -1479,7 +1488,7 @@ impl App {
             let st = self.st.borrow();
             (st.busy, st.counting, TIMERS[st.timer])
         };
-        if busy || counting || self.st.borrow().battery_low || !self.room_for(BURSTS[self.st.borrow().burst]) {
+        if busy || counting || self.st.borrow().battery_low || self.st.borrow().thermal == 2 || !self.room_for(BURSTS[self.st.borrow().burst]) {
             return;
         }
         // stock's: no photo with less than 1 GB free
@@ -1950,6 +1959,42 @@ impl App {
         }
     }
 
+    // stock's thermal levels (thermal-engine's LIGHT-CAMERA-TSENS on ASIC1's telemetry: 55
+    // and 65 C, clear under 45 and 56), from the driver's hwmon "light_ccb" (no reading
+    // while the preview is stopped, or for its first ~10 s). Hot: the cool-off screen, the
+    // preview stopped for 2 minutes at a time until a new reading is under 56 C
+    fn update_thermal(self: &Rc<Self>) {
+        let temp = camera_temp();
+        let (level, pause) = {
+            let st = self.st.borrow();
+            (st.thermal, st.thermal_pause_until)
+        };
+        let level = match (level, temp) {
+            (0, Some(t)) if t >= 65 => 2,
+            (0, Some(t)) if t >= 55 => 1,
+            (1, Some(t)) if t >= 65 => 2,
+            (1, Some(t)) if t < 45 => 0,
+            (2, Some(t)) if t < 56 => 1,
+            (l, _) => l,
+        };
+        let pause = if level == 2 && !pause.is_some_and(|p| Instant::now() < p) && temp.is_some_and(|t| t >= 56) {
+            eprintln!("l16-camera: camera modules at {} C: cooling off", temp.unwrap_or(0));
+            Some(Instant::now() + Duration::from_secs(120))
+        } else if level == 2 {
+            pause
+        } else {
+            None
+        };
+        {
+            let mut st = self.st.borrow_mut();
+            st.thermal = level;
+            st.thermal_pause_until = pause;
+        }
+        self.thermal_warning.set_visible(level == 1);
+        self.hot_screen.set_visible(level == 2);
+        self.follow_screen();
+    }
+
     // a lens covered: stock's warning and its buzz (every pass of the fast loop)
     fn lens_check(&self) {
         let mask = self.blocked.load(Ordering::Relaxed);
@@ -1973,6 +2018,7 @@ impl App {
         };
         if n % 10 == 1 {
             self.update_battery();
+            self.update_thermal();
         }
         if n % 100 == 1 {
             self.update_storage(n == 1);
@@ -2106,8 +2152,10 @@ impl App {
             }
             st.unseen_since
         };
+        let cooling = self.st.borrow().thermal_pause_until.is_some_and(|t| Instant::now() < t);
         let away = unseen_since.is_some_and(|t| t.elapsed() >= Duration::from_secs(1))
-            || (!seen && self.settings_page.is_visible());
+            || (!seen && self.settings_page.is_visible())
+            || cooling;
         let on = screen && !away;
         let was_off = std::mem::replace(&mut self.st.borrow_mut().screen_off, !screen);
         let (asleep, busy) = {
@@ -2503,6 +2551,18 @@ fn light_proxy() -> Option<gtk::gio::DBusProxy> {
     Some(proxy)
 }
 
+// the camera modules' temperature (whole degrees C): the light-ccb driver's hwmon, from
+// ASIC1's telemetry; none without a recent reading
+fn camera_temp() -> Option<i32> {
+    for e in std::fs::read_dir("/sys/class/hwmon").ok()?.flatten() {
+        if std::fs::read_to_string(e.path().join("name")).is_ok_and(|n| n.trim() == "light_ccb") {
+            let m: i64 = std::fs::read_to_string(e.path().join("temp1_input")).ok()?.trim().parse().ok()?;
+            return Some((m / 1000) as i32);
+        }
+    }
+    None
+}
+
 // where photos go (as the capture's out path)
 fn photos_dir() -> PathBuf {
     glib::user_special_dir(glib::UserDirectory::Pictures)
@@ -2892,9 +2952,34 @@ fn build(gapp: &gtk::Application) {
     battery_screen.set_visible(false);
     battery_screen.add_controller(gtk::GestureClick::new()); // swallows taps
 
+    // stock's overheating warning (55 C) and its cool-off screen (65 C, ThermalShutdownFragment)
+    let thermal_warning = gtk::Label::new(None);
+    thermal_warning.set_markup(&icons::markup(icons::THERMOMETER, "Overheating! Shut down your camera to cool off."));
+    thermal_warning.add_css_class("thermal-warning");
+    thermal_warning.set_halign(gtk::Align::Center);
+    thermal_warning.set_valign(gtk::Align::End);
+    thermal_warning.set_margin_bottom(24);
+    thermal_warning.set_can_target(false);
+    thermal_warning.set_visible(false);
+    let hot_screen = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    hot_screen.add_css_class("battery-screen");
+    let hot_icon = gtk::Label::new(None);
+    hot_icon.set_markup(&format!("<span font_family=\"{}\" size=\"400%\">{}</span>", icons::FAMILY, icons::THERMOMETER));
+    let hot_text = gtk::Label::new(Some("Your camera is getting a little too hot.\nPlease wait for it to cool off."));
+    hot_text.set_justify(gtk::Justification::Center);
+    let hot_inner = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    hot_inner.set_valign(gtk::Align::Center);
+    hot_inner.set_vexpand(true);
+    hot_inner.append(&hot_icon);
+    hot_inner.append(&hot_text);
+    hot_screen.append(&hot_inner);
+    hot_screen.set_visible(false);
+    hot_screen.add_controller(gtk::GestureClick::new()); // swallows taps
+
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
     root.add_overlay(&lens_badge);
+    root.add_overlay(&thermal_warning);
     root.add_overlay(&status_box);
     root.add_overlay(&wheels);
     root.add_overlay(&status);
@@ -2904,6 +2989,7 @@ fn build(gapp: &gtk::Application) {
     root.add_overlay(&mode_touch);
     root.add_overlay(&burst_screen);
     root.add_overlay(&battery_screen);
+    root.add_overlay(&hot_screen);
     root.add_overlay(&settings_page);
     window.set_child(Some(&root));
 
@@ -3002,6 +3088,8 @@ fn build(gapp: &gtk::Application) {
             storage_warned: 0,
             pocket: true,
             pocket_since: None,
+            thermal: 0,
+            thermal_pause_until: None,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -3029,6 +3117,8 @@ fn build(gapp: &gtk::Application) {
         storage_label,
         battery_label,
         battery_screen,
+        thermal_warning,
+        hot_screen,
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,

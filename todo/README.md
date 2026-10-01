@@ -43,6 +43,9 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## System
 
+- [ ] Ambient light (the SLPI's stk3x1x via iio-sensor-proxy) is stuck: it read a flat
+      11.99 lux while covered, so the camera's in-pocket check never fires
+
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
       not seen on a short hold since
 - [ ] Hack cleanup: comments about the persistent transfer streams
