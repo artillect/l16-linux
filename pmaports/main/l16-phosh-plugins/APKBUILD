@@ -17,7 +17,8 @@ builddir="$srcdir/l16-phosh"
 
 build() {
 	# shellcheck disable=SC2046
-	${CC:-gcc} $CFLAGS -shared -fPIC -Wall -o libphosh-plugin-lfc-android-quick-setting.so \
+	# (--no-undefined: a symbol libphosh declares but doesn't export fails here, not in Phosh)
+	${CC:-gcc} $CFLAGS -shared -fPIC -Wall -Wl,--no-undefined -o libphosh-plugin-lfc-android-quick-setting.so \
 		android-quick-setting.c \
 		$(pkg-config --cflags gtk+-3.0 phosh-plugins) -I/usr/include/libphosh-0.45 \
 		$LDFLAGS $(pkg-config --libs gtk+-3.0) -lphosh-0.45
@@ -30,5 +31,5 @@ package() {
 	install -Dm755 light-lfc-android-dialog -t "$pkgdir"/usr/libexec
 }
 sha512sums="
-18d24539efe90872ccd99ba84178807785679f1067457e096a9efda5d7f0dfd8b0cd17a85c9fd68bc2b7ef11f61e970ce544aca6935ebb03a4b257fab7d079e9  l16-phosh-plugins-src.tar.gz
+b1d2a454a1bef9f6c582f97b6bcdc5e8fd34f09f7b3ea5684c3aa5ed1d47dd915f9cae67c389efa18247951752024adab248c7fddbe58baa2082952d038c153d  l16-phosh-plugins-src.tar.gz
 "

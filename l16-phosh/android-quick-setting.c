@@ -47,7 +47,8 @@ lfc_android_quick_setting_init (LfcAndroidQuickSetting *self)
   phosh_status_icon_set_info (info, "Android");
   phosh_status_icon_set_pixel_size (info, 16);
   gtk_widget_set_visible (GTK_WIDGET (info), TRUE);
-  phosh_quick_setting_set_status_icon (PHOSH_QUICK_SETTING (self), info);
+  /* (as a property: libphosh 0.55 doesn't export phosh_quick_setting_set_status_icon) */
+  g_object_set (self, "status-icon", info, NULL);
   g_signal_connect (self, "clicked", G_CALLBACK (on_clicked), NULL);
   gtk_widget_set_visible (GTK_WIDGET (self), g_file_test (DUAL_BOOT, G_FILE_TEST_EXISTS));
 }
