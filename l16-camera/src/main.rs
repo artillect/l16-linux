@@ -505,6 +505,7 @@ struct App {
     // the last focus run's outcome, from its thread: 0 running, 1 focused, 2 not
     af_outcome: Arc<std::sync::atomic::AtomicI32>,
     moon_badge: gtk::Label,
+    shake_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
     // a multi-option setting's choices, in a row above the toolbar
@@ -1980,6 +1981,15 @@ impl App {
             let _ = self.ctl_tx.send((ccb::TRIPOD, still as i32));
             self.tripod_badge.set_visible(still);
         }
+        // stock's hand-shake assist: the photo's exposure longer than 1/70 s (1/150 s on the
+        // 70 and 150 mm modules); not while tripod mode is on
+        let shake = {
+            let st = self.st.borrow();
+            let secs = if st.mode.fixes_shutter() { secs_at(st.shutter) } else { st.live_secs };
+            let limit = if st.zoom >= 70.0 { 0.006_67 } else { 0.014_36 };
+            secs > limit && !st.tripod
+        };
+        self.shake_badge.set_visible(shake);
         // the moon: a stacked capture ahead (only where stacking is on: auto, the setting)
         let stacking = self.st.borrow().stacked && self.st.borrow().mode == Mode::Auto;
         self.moon_badge.set_visible(stacking && self.metered[3].load(Ordering::Relaxed) == 1);
@@ -2776,6 +2786,11 @@ fn build(gapp: &gtk::Application) {
     tripod_badge.set_halign(gtk::Align::Center);
     tripod_badge.set_visible(false);
     left.prepend(&tripod_badge);
+    let shake_badge = icons::label(icons::HAND_WAVE);
+    shake_badge.add_css_class("assist-badge");
+    shake_badge.set_halign(gtk::Align::Center);
+    shake_badge.set_visible(false);
+    left.prepend(&shake_badge);
     let moon_badge = icons::label(icons::MOON);
     moon_badge.add_css_class("assist-badge");
     moon_badge.set_halign(gtk::Align::Center);
@@ -2980,6 +2995,7 @@ fn build(gapp: &gtk::Application) {
         tripod_badge,
         af_outcome: Arc::new(std::sync::atomic::AtomicI32::new(0)),
         moon_badge,
+        shake_badge,
         mode_label,
         toolbar,
         options,

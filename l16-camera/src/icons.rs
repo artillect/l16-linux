@@ -33,6 +33,7 @@ pub const BATTERY_ALERT: char = '\u{f0083}';
 pub const BATTERY: [char; 5] = ['\u{f0079}', '\u{f0080}', '\u{f007e}', '\u{f007b}', '\u{f007a}'];
 pub const BATTERY_CHARGING: [char; 5] = ['\u{f0085}', '\u{f089e}', '\u{f089d}', '\u{f0086}', '\u{f089c}']; // focus locked (stock's focus_yellow_lock)
 pub const CAMERA_LOCK: char = '\u{f1a15}'; // camera-lock-outline: tripod mode on
+pub const HAND_WAVE: char = '\u{f1821}'; // stock's hand-shake assist ("Hold steady")
 pub const MOON: char = '\u{f0594}'; // weather-night: stock's low-light assist (a stacked capture)
 pub const CHEVRON_DOWN: char = '\u{f0140}';
 // white balance presets, in wb::PRESETS' order: auto, incandescent, fluorescent, daylight, cloudy
