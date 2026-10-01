@@ -499,6 +499,8 @@ struct App {
     thermal_warning: gtk::Label,
     hot_screen: gtk::Box,
     transfers: RefCell<Option<transfer::Transfers>>,
+    // the transfers wait for the preview's first frame (start_transfers_on_frame)
+    transfers_wait: RefCell<Option<glib::SignalHandlerId>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
     input_rx: mpsc::Receiver<input::Ev>,
@@ -527,6 +529,9 @@ struct App {
     af_outcome: Arc<std::sync::atomic::AtomicI32>,
     // the focus marks are being animated; the grid as last drawn
     marks_ticking: Cell<bool>,
+    focus_area: gtk::DrawingArea,
+    // the focus point in the focus layer
+    focus_centre: Cell<(f64, f64)>,
     marks_grid: Cell<u8>,
     moon_badge: gtk::Label,
     shake_badge: gtk::Label,
@@ -689,12 +694,16 @@ fn text(cr: &cairo::Context, s: &str, x: f64, y: f64, size: f64, align: f64) {
 }
 
 fn make_pipeline() -> (gst::Pipeline, gdk::Paintable) {
-    // the frames are converted into buffers of our own: the sink shows libcamera's buffers
-    // in place, and stopping the camera (for a capture) freed them under the display
+    // the frames go to the display as they are, DMA-BUFs imported by GTK (our libcamerasrc
+    // offers them: libcamera patch 0007): no CPU copy or conversion per frame. (A copy into
+    // buffers of our own used to keep the display off libcamera's memory, freed when the
+    // camera stopped; an imported DMA-BUF holds its own reference.) The plain BGRx caps are
+    // for libcamerasrc's first query, which only knows system memory; it then offers DMA-BUF.
     let pipeline = gst::parse::launch(
-        "libcamerasrc name=src ! video/x-raw,width=1040,height=780,format=BGRx \
-         ! queue max-size-buffers=1 leaky=downstream ! videoconvert \
-         ! video/x-raw,format=RGBx ! gtk4paintablesink name=sink",
+        "libcamerasrc name=src \
+         ! video/x-raw(memory:DMABuf),format=DMA_DRM,drm-format=XR24,width=1040,height=780; \
+           video/x-raw,format=BGRx,width=1040,height=780 \
+         ! queue max-size-buffers=1 leaky=downstream ! gtk4paintablesink name=sink",
     )
     .expect("preview pipeline")
     .downcast::<gst::Pipeline>()
@@ -1434,7 +1443,9 @@ impl App {
             st.focus_t0 = Some(Instant::now());
             st.focus_done = None;
         }
-        self.marks.queue_draw();
+        if marks {
+            self.place_focus(at);
+        }
         // the run's outcome, from the driver once the ASICs answer (seconds on B and C)
         let (focusing, outcome) = (self.focusing.clone(), self.af_outcome.clone());
         outcome.store(0, Ordering::SeqCst);
@@ -1460,20 +1471,34 @@ impl App {
             focusing.store(false, Ordering::SeqCst);
         });
         if marks && !self.marks_ticking.replace(true) {
-            // animate the marks until they go (one callback however many runs: each redraws
-            // the full-screen marks layer every frame)
+            // animate the marks until they go (one callback however many runs)
             let a = self.clone();
-            self.marks.add_tick_callback(move |m, _| {
+            self.focus_area.add_tick_callback(move |m, _| {
                 a.focus_outcome();
                 m.queue_draw();
                 if a.st.borrow().focus_until.is_some_and(|t| Instant::now() < t) {
                     glib::ControlFlow::Continue
                 } else {
                     a.marks_ticking.set(false);
+                    m.set_visible(false);
                     glib::ControlFlow::Break
                 }
             });
         }
+    }
+
+    // the focus layer over the focus point (@at, or the preview's middle), kept on the preview
+    fn place_focus(&self, at: Option<(f64, f64)>) {
+        let (w, h) = (self.view.width() as f64, self.view.height() as f64);
+        let (cx, cy) = at.unwrap_or((w / 2.0, h / 2.0));
+        let (fw, fh) = FOCUS_AREA;
+        let x = (cx - fw / 2.0).clamp(0.0, (w - fw).max(0.0));
+        let y = (cy - fh * 0.55).clamp(0.0, (h - fh).max(0.0));
+        self.focus_area.set_margin_start(x as i32);
+        self.focus_area.set_margin_top(y as i32);
+        self.focus_centre.set((cx - x, cy - y));
+        self.focus_area.set_visible(true);
+        self.focus_area.queue_draw();
     }
 
     // the focus run's outcome, once known: the marks' end (stock's CrossHair: 5 s after it)
@@ -1558,7 +1583,7 @@ impl App {
             st.seq += 1;
             (st.zoom, BURSTS[st.burst], st.seq, st.mode == Mode::Auto && st.live_iso > 400, st.stacked)
         };
-        self.thumb.set_paintable(Some(&self.paintable.current_image()));
+        self.thumb.set_paintable(self.preview_still(88.0, 66.0).as_ref());
         if burst > 1 {
             self.start_burst_screen(burst);
         } else {
@@ -2096,6 +2121,26 @@ impl App {
         self.refresh();
     }
 
+    // the transfer streams once the preview is streaming (its first frame): setup links
+    // ASIC1's path off the preview's CSID, which the preview's start would refuse (EPIPE).
+    // The pipeline's start is asynchronous, so not straight after it
+    fn start_transfers_on_frame(self: &Rc<Self>) {
+        if self.transfers_wait.borrow().is_some() {
+            return;
+        }
+        let a = self.clone();
+        let id = self.paintable.connect_invalidate_contents(move |p| {
+            if let Some(id) = a.transfers_wait.borrow_mut().take() {
+                p.disconnect(id);
+            }
+            eprintln!("l16-camera: first preview frame");
+            if !a.st.borrow().asleep && a.transfers.borrow().is_none() {
+                a.start_transfers();
+            }
+        });
+        *self.transfers_wait.borrow_mut() = Some(id);
+    }
+
     // the photo transfer streams, beside the preview (done: Stage::Transferred); started after it
     fn start_transfers(&self) {
         let (done_tx, done_rx) = mpsc::channel();
@@ -2173,19 +2218,23 @@ impl App {
             (st.asleep, st.busy || st.saving > 0 || st.counting)
         };
         if !on && !asleep && !busy {
+            eprintln!("l16-camera: sleep (screen {screen}, away {away}): stopping");
             self.st.borrow_mut().asleep = true;
             self.gyro_on.store(false, Ordering::Relaxed);
             if let Some(mut t) = self.transfers.borrow_mut().take() {
                 t.stop();
             }
             self.stop_preview();
+            eprintln!("l16-camera: sleep: preview stopped");
         } else if on && asleep {
+            eprintln!("l16-camera: wake (screen {screen}, front {front}, seen {seen}): starting the preview");
             self.st.borrow_mut().asleep = false;
             self.gyro_on.store(true, Ordering::Relaxed);
-            let _ = self.pipeline.set_state(gst::State::Playing);
+            let r = self.pipeline.set_state(gst::State::Playing);
+            eprintln!("l16-camera: wake: set_state(Playing) = {r:?}");
             self.apply_exposure();
             self.apply_wb();
-            self.start_transfers();
+            self.start_transfers_on_frame();
             // presses while the screen was off are not for the camera
             if was_off {
                 while self.input_rx.try_recv().is_ok() {}
@@ -2271,6 +2320,16 @@ impl App {
 
     // the preview's brightness (Rec. 601 luma, 64 bins) from its current frame, sampled; with
     // the preview's digital gain, as shown
+    // the preview's frame, drawn into a texture of its own (keeping the sink's frame would
+    // keep one of libcamera's few buffers from the camera)
+    fn preview_still(&self, w: f32, h: f32) -> Option<gdk::Texture> {
+        let renderer = self.view.native().and_then(|n| n.renderer())?;
+        let snap = gtk::Snapshot::new();
+        self.paintable.snapshot(&snap, w as f64, h as f64);
+        let node = snap.to_node()?;
+        Some(renderer.render_texture(&node, Some(&gtk::graphene::Rect::new(0.0, 0.0, w, h))))
+    }
+
     fn update_histogram(&self) {
         // the frame as drawn, small: the sink's current image isn't always a plain texture,
         // and 160x120 is plenty for 64 bins
@@ -2328,9 +2387,6 @@ impl App {
         if st.histogram {
             self.draw_histogram(cr);
         }
-        if st.focus_until.is_some_and(|t| Instant::now() < t) {
-            self.draw_focus(cr, &st, w, h);
-        }
     }
 
     // stock's lens-blocked warning (proximity_sensor_notification_layout): the camera's back
@@ -2384,8 +2440,8 @@ impl App {
     // stock's focus marks (CrossHair): grey corners while focusing; then yellow and a little
     // larger when focused, with a lock while the focus holds (no AF-D), or a shake when
     // not; dimmed after a second, gone after five
-    fn draw_focus(&self, cr: &cairo::Context, st: &State, w: f64, h: f64) {
-        let (mut cx, cy) = st.focus_at.unwrap_or((w / 2.0, h / 2.0));
+    fn draw_focus(&self, cr: &cairo::Context, st: &State, centre: (f64, f64)) {
+        let (mut cx, cy) = centre;
         let now = Instant::now();
         let (mut s, mut alpha) = (40.0, 1.0);
         let mut yellow = false;
@@ -2616,6 +2672,9 @@ fn photo_size() -> u64 {
     (v.iter().map(|x| x.1).sum::<u64>() / v.len() as u64).max(1 << 20)
 }
 
+// the focus marks' layer (room for the 10% growth, the 25 px shake and the lock above)
+const FOCUS_AREA: (f64, f64) = (200.0, 220.0);
+
 fn rounded(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
     cr.new_path();
     cr.arc(x + w - r, y + r, r, -0.5 * PI, 0.0);
@@ -2665,9 +2724,18 @@ fn build(gapp: &gtk::Application) {
     view.set_vexpand(true);
     let marks = gtk::DrawingArea::new();
     marks.set_can_target(false);
+    // the focus marks: a small layer of their own at the focus point (they animate, and a
+    // full-screen Cairo layer redrawn every frame cost most of a core)
+    let focus_area = gtk::DrawingArea::new();
+    focus_area.set_size_request(FOCUS_AREA.0 as i32, FOCUS_AREA.1 as i32);
+    focus_area.set_halign(gtk::Align::Start);
+    focus_area.set_valign(gtk::Align::Start);
+    focus_area.set_can_target(false);
+    focus_area.set_visible(false);
     let preview = gtk::Overlay::new();
     preview.set_child(Some(&view));
     preview.add_overlay(&marks);
+    preview.add_overlay(&focus_area);
     let blackout = gtk::Box::new(gtk::Orientation::Vertical, 0);
     blackout.add_css_class("blackout");
     blackout.set_can_target(false);
@@ -3130,12 +3198,14 @@ fn build(gapp: &gtk::Application) {
         thermal_warning,
         hot_screen,
         transfers: RefCell::new(None),
+        transfers_wait: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
         paintable,
         _bus: bus,
         view,
         marks,
+        focus_area,
         wheels,
         hud,
         top,
@@ -3152,6 +3222,7 @@ fn build(gapp: &gtk::Application) {
         tripod_badge,
         af_outcome: Arc::new(std::sync::atomic::AtomicI32::new(0)),
         marks_ticking: Cell::new(false),
+        focus_centre: Cell::new((0.0, 0.0)),
         marks_grid: Cell::new(0),
         moon_badge,
         shake_badge,
@@ -3203,6 +3274,13 @@ fn build(gapp: &gtk::Application) {
     // drawing
     let a = app.clone();
     app.marks.set_draw_func(move |_, cr, w, h| a.draw_marks(cr, w as f64, h as f64));
+    let a = app.clone();
+    app.focus_area.set_draw_func(move |_, cr, _, _| {
+        let st = a.st.borrow();
+        if st.focus_until.is_some_and(|t| Instant::now() < t) {
+            a.draw_focus(cr, &st, a.focus_centre.get());
+        }
+    });
     let a = app.clone();
     app.wheels.set_draw_func(move |_, cr, w, h| a.draw_wheels(cr, w as f64, h as f64));
 
@@ -3504,7 +3582,7 @@ fn build(gapp: &gtk::Application) {
     app.start_preview();
     app.apply_exposure();
     app.apply_wb();
-    app.start_transfers();
+    app.start_transfers_on_frame();
     app.refresh();
     window.fullscreen();
     window.present();

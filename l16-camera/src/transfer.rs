@@ -99,6 +99,7 @@ impl Transfers {
             });
             streams.push(child);
         }
+        eprintln!("l16-camera: transfers started");
         Ok(Transfers { queue, streams })
     }
 
@@ -108,5 +109,17 @@ impl Transfers {
             let _ = c.wait();
         }
         self.streams.clear();
+        // ASIC1's path leaves the preview's CSID: with nothing streaming, starting the preview
+        // validates every enabled link off csid0, and this one's format (the records') is not
+        // the preview's (EPIPE, the preview black until a reboot). setup links it again
+        let r = Command::new("media-ctl")
+            .args(["-d", "/dev/media0", "-l", "\"msm_csid0\":1->\"msm_ispif1\":0[4]"])
+            .output();
+        match r {
+            Ok(o) if o.status.success() => eprintln!("l16-camera: transfers stopped, ASIC1 link off"),
+            Ok(o) => eprintln!("l16-camera: transfers stopped, ASIC1 link off failed: {}",
+                               String::from_utf8_lossy(&o.stderr).trim()),
+            Err(e) => eprintln!("l16-camera: transfers stopped, media-ctl: {e}"),
+        }
     }
 }
