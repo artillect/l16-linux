@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..cde09e871
+index 000000000..345786d58
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1690 @@
+@@ -0,0 +1,1709 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -170,6 +170,7 @@ index 000000000..cde09e871
 +#define V4L2_CID_LIGHT_PREVIEW_BOOST	(V4L2_CID_LIGHT_BASE + 14)
 +#define V4L2_CID_LIGHT_TRIPOD		(V4L2_CID_LIGHT_BASE + 15)
 +#define V4L2_CID_LIGHT_STACKED		(V4L2_CID_LIGHT_BASE + 16)
++#define V4L2_CID_LIGHT_AF_RESULT	(V4L2_CID_LIGHT_BASE + 17)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
@@ -236,6 +237,7 @@ index 000000000..cde09e871
 +	struct v4l2_ctrl *boost;	/* read-only: the preview's digital boost x 100 */
 +	struct v4l2_ctrl *tripod;	/* the camera is still: auto photos may take longer */
 +	struct v4l2_ctrl *stacked;	/* read-only: the next photo will be stacked (low light) */
++	struct v4l2_ctrl *af_result;	/* read-only: the last focus run, 0 running, 1 focused, 2 not */
 +	struct v4l2_ctrl *module;
 +	struct v4l2_ctrl *raw_transfer;
 +	struct v4l2_ctrl *focus_x;	/* the AF window's top left, sensor pixels */
@@ -899,7 +901,7 @@ index 000000000..cde09e871
 +	if (debug)
 +		dev_info(&c->client->dev, "autofocus at %d,%d: %d (1 focused, 2 failed)\n",
 +			 c->focus_x->cur.val, c->focus_y->cur.val, ret);
-+	return ret < 0 ? ret : 0;
++	return ret;
 +}
 +
 +static void ccb_ae_work(struct work_struct *work)
@@ -915,10 +917,14 @@ index 000000000..cde09e871
 +{
 +	struct ccb *c = container_of(work, struct ccb, af);
 +
++	int ret = -EBUSY;
++
 +	mutex_lock(&c->lock);
 +	if (c->previewing)
-+		ccb_autofocus(c);
++		ret = ccb_autofocus(c);
 +	mutex_unlock(&c->lock);
++	/* the app's focus marks: focused, or not (failed, timed out, preview gone) */
++	v4l2_ctrl_s_ctrl(c->af_result, ret == 1 ? 1 : 2);
 +}
 +
 +/* --- V4L2 ------------------------------------------------------------------------------- */
@@ -978,10 +984,12 @@ index 000000000..cde09e871
 +		 * of s_ctrl, which would stall every other control access (the camera app's
 +		 * exposure readout) until it ends. Run it in the background, as stock does.
 +		 */
-+		if (!c->previewing)
++		if (!c->previewing) {
 +			ret = -EBUSY;
-+		else
++		} else {
++			__v4l2_ctrl_s_ctrl(c->af_result, 0);
 +			schedule_work(&c->af);
++		}
 +		break;
 +	case V4L2_CID_LIGHT_MODULE:
 +		/*
@@ -1163,6 +1171,16 @@ index 000000000..cde09e871
 +	.name = "Stacked Capture Ahead",
 +	.type = V4L2_CTRL_TYPE_BOOLEAN,
 +	.max = 1,
++	.step = 1,
++	.flags = V4L2_CTRL_FLAG_READ_ONLY,
++};
++
++static const struct v4l2_ctrl_config ccb_ctrl_af_result = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_AF_RESULT,
++	.name = "Focus Result",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.max = 2,
 +	.step = 1,
 +	.flags = V4L2_CTRL_FLAG_READ_ONLY,
 +};
@@ -1573,6 +1591,7 @@ index 000000000..cde09e871
 +	c->boost = v4l2_ctrl_new_custom(h, &ccb_ctrl_boost, NULL);
 +	c->tripod = v4l2_ctrl_new_custom(h, &ccb_ctrl_tripod, NULL);
 +	c->stacked = v4l2_ctrl_new_custom(h, &ccb_ctrl_stacked, NULL);
++	c->af_result = v4l2_ctrl_new_custom(h, &ccb_ctrl_af_result, NULL);
 +	if (h->error)
 +		return h->error;
 +
