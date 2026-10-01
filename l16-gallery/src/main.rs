@@ -467,7 +467,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
-    let window = gtk::ApplicationWindow::builder().application(app).title("L16 Gallery").build();
+    let window = gtk::ApplicationWindow::builder().application(app).title("Lightbox").build();
     window.add_css_class("gallery");
     window.set_decorated(false);
 
@@ -626,8 +626,8 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     process.connect_clicked(move |_| a.process());
     let a = g.clone();
     delete.connect_clicked(move |_| a.delete());
-    camera.connect_clicked(|_| launch("l16-camera.desktop", None));
-    grid_camera.connect_clicked(|_| launch("l16-camera.desktop", None));
+    camera.connect_clicked(|_| launch("org.l16linux.Camera.desktop", None));
+    grid_camera.connect_clicked(|_| launch("org.l16linux.Camera.desktop", None));
 
     // swipe between photos (when not zoomed in); pinch to zoom
     let swipe = gtk::GestureSwipe::new();

@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=L16 Gallery
+Name=Lightbox
 Comment=View and render Light L16 photos
 Exec=l16-gallery %F
-Icon=image-x-generic
+Icon=l16-gallery
 Categories=Graphics;Photography;Viewer;
 MimeType=image/x-light-lri;
 X-Purism-FormFactor=Workstation;Mobile;

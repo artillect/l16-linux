@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=L16 Camera
+Name=Viewfinder
 Comment=Take photos with the Light L16's camera modules
 Exec=l16-camera
-Icon=camera-photo
+Icon=l16-camera
 Categories=Graphics;Photography;
 X-Purism-FormFactor=Workstation;Mobile;

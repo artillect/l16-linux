@@ -2201,7 +2201,7 @@ fn build(gapp: &gtk::Application) {
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
 
-    let window = gtk::ApplicationWindow::builder().application(gapp).title("Camera").build();
+    let window = gtk::ApplicationWindow::builder().application(gapp).title("Viewfinder").build();
     window.add_css_class("camera");
 
     let (pipeline, paintable) = make_pipeline();
@@ -2270,7 +2270,7 @@ fn build(gapp: &gtk::Application) {
                 .max()
                 .map(|(_, p)| gtk::gio::File::for_path(p))
         });
-        let Some(app) = gtk::gio::DesktopAppInfo::new("l16-gallery.desktop") else { return };
+        let Some(app) = gtk::gio::DesktopAppInfo::new("org.l16linux.Gallery.desktop") else { return };
         let ctx = gdk::Display::default().map(|d| d.app_launch_context());
         if let Err(e) = app.launch(&newest.into_iter().collect::<Vec<_>>(), ctx.as_ref()) {
             eprintln!("launching the gallery: {e}");
