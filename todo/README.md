@@ -59,3 +59,5 @@ them, keep Android, and not lose the camera to a bad state.
 - [ ] The ToF laser (ST VL53L0X on ASIC1's own I2C): stock never ranges with it; its CCB
       command (process_tof_cmd in ASIC1.bin) is unknown
 - [ ] UX and optimisation passes over everything
+- [ ] A grip that cools it: the SoC's heat (CPU ~80 C under the preview) spreads into the camera
+      modules beside it

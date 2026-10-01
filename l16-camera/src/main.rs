@@ -525,6 +525,9 @@ struct App {
     tripod_badge: gtk::Label,
     // the last focus run's outcome, from its thread: 0 running, 1 focused, 2 not
     af_outcome: Arc<std::sync::atomic::AtomicI32>,
+    // the focus marks are being animated; the grid as last drawn
+    marks_ticking: Cell<bool>,
+    marks_grid: Cell<u8>,
     moon_badge: gtk::Label,
     shake_badge: gtk::Label,
     mode_label: gtk::Label,
@@ -812,6 +815,7 @@ impl App {
             self.afd_btn.remove_css_class("on");
         }
         let saved = st.saved();
+        let grid = st.grid | (st.histogram as u8) << 4;
         drop(st);
         if *self.last_saved.borrow() != saved {
             settings::save(&saved);
@@ -820,7 +824,11 @@ impl App {
         self.top.queue_draw();
         self.bottom.queue_draw();
         self.shutter.queue_draw();
-        self.marks.queue_draw();
+        // the marks layer covers the screen: only when the grid or histogram is switched (the
+        // histogram's updates and the focus marks redraw it themselves)
+        if self.marks_grid.replace(grid) != grid {
+            self.marks.queue_draw();
+        }
     }
 
     fn show_status(self: &Rc<Self>, msg: &str, secs: u64) {
@@ -1451,8 +1459,9 @@ impl App {
             outcome.store(result, Ordering::SeqCst);
             focusing.store(false, Ordering::SeqCst);
         });
-        if marks {
-            // animate the marks until they go
+        if marks && !self.marks_ticking.replace(true) {
+            // animate the marks until they go (one callback however many runs: each redraws
+            // the full-screen marks layer every frame)
             let a = self.clone();
             self.marks.add_tick_callback(move |m, _| {
                 a.focus_outcome();
@@ -1460,6 +1469,7 @@ impl App {
                 if a.st.borrow().focus_until.is_some_and(|t| Instant::now() < t) {
                     glib::ControlFlow::Continue
                 } else {
+                    a.marks_ticking.set(false);
                     glib::ControlFlow::Break
                 }
             });
@@ -3141,6 +3151,8 @@ fn build(gapp: &gtk::Application) {
         burst_badge,
         tripod_badge,
         af_outcome: Arc::new(std::sync::atomic::AtomicI32::new(0)),
+        marks_ticking: Cell::new(false),
+        marks_grid: Cell::new(0),
         moon_badge,
         shake_badge,
         mode_label,
