@@ -188,6 +188,9 @@ struct State {
     zoom_start: f64,
     zoom_wheel_until: Option<Instant>,
     focus_until: Option<Instant>,
+    // the focus marks' run: when it started, and its outcome (1 focused, 2 not) and when
+    focus_t0: Option<Instant>,
+    focus_done: Option<(i32, Instant)>,
     focus_at: Option<(f64, f64)>,
     zoom_sent: Instant,
     // continuous focus: the metered exposure (log) and zoom at the last focus
@@ -456,6 +459,8 @@ struct App {
     // stock's assist icons: tripod mode on (the camera still), a stacked capture ahead (the
     // moon, stock's "low-light assist")
     tripod_badge: gtk::Label,
+    // the last focus run's outcome, from its thread: 0 running, 1 focused, 2 not
+    af_outcome: Arc<std::sync::atomic::AtomicI32>,
     moon_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
@@ -1348,21 +1353,64 @@ impl App {
         let fy = ((sy - 100.0).round() as i32).clamp(0, 3120 - 200);
         if marks {
             let mut st = self.st.borrow_mut();
-            st.focus_until = Some(Instant::now() + Duration::from_millis(1500));
+            st.focus_until = Some(Instant::now() + Duration::from_secs(12));
             st.focus_at = at;
+            st.focus_t0 = Some(Instant::now());
+            st.focus_done = None;
         }
         self.marks.queue_draw();
-        let focusing = self.focusing.clone();
+        // the run's outcome, from the driver once the ASICs answer (seconds on B and C)
+        let (focusing, outcome) = (self.focusing.clone(), self.af_outcome.clone());
+        outcome.store(0, Ordering::SeqCst);
         thread::spawn(move || {
+            let mut result = 2;
             if let Some(c) = ccb::Ccb::open() {
                 c.set(ccb::FOCUS_X, fx);
                 c.set(ccb::FOCUS_Y, fy);
                 c.set(ccb::AF_START, 1);
+                let t0 = Instant::now();
+                while t0.elapsed() < Duration::from_secs(7) {
+                    thread::sleep(Duration::from_millis(50));
+                    match c.get(ccb::AF_RESULT) {
+                        Some(r @ (1 | 2)) => {
+                            result = r;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
             }
+            outcome.store(result, Ordering::SeqCst);
             focusing.store(false, Ordering::SeqCst);
         });
-        let marks = self.marks.clone();
-        glib::timeout_add_local_once(Duration::from_millis(1600), move || marks.queue_draw());
+        if marks {
+            // animate the marks until they go
+            let a = self.clone();
+            self.marks.add_tick_callback(move |m, _| {
+                a.focus_outcome();
+                m.queue_draw();
+                if a.st.borrow().focus_until.is_some_and(|t| Instant::now() < t) {
+                    glib::ControlFlow::Continue
+                } else {
+                    glib::ControlFlow::Break
+                }
+            });
+        }
+    }
+
+    // the focus run's outcome, once known: the marks' end (stock's CrossHair: 5 s after it)
+    fn focus_outcome(&self) {
+        let r = self.af_outcome.load(Ordering::SeqCst);
+        let mut st = self.st.borrow_mut();
+        if r != 0 && st.focus_t0.is_some() && st.focus_done.is_none() {
+            let now = Instant::now();
+            st.focus_done = Some((r, now));
+            st.focus_until = Some(now + Duration::from_secs(5));
+            drop(st);
+            if r == 1 {
+                self.buzz(10);
+            }
+        }
     }
 
     fn shutter_pressed(self: &Rc<Self>) {
@@ -2046,16 +2094,46 @@ impl App {
             self.draw_histogram(cr);
         }
         if st.focus_until.is_some_and(|t| Instant::now() < t) {
-            let (cx, cy) = st.focus_at.unwrap_or((w / 2.0, h / 2.0));
-            let (s, c) = (40.0, 12.0);
-            cr.set_source_rgb(1.0, 1.0, 1.0);
-            cr.set_line_width(2.0);
+            self.draw_focus(cr, &st, w, h);
+        }
+    }
+
+    // stock's focus marks (CrossHair): grey corners while focusing; then yellow and a little
+    // larger when focused, with a lock while the focus holds (no AF-D), or a shake when
+    // not; dimmed after a second, gone after five
+    fn draw_focus(&self, cr: &cairo::Context, st: &State, w: f64, h: f64) {
+        let (mut cx, cy) = st.focus_at.unwrap_or((w / 2.0, h / 2.0));
+        let now = Instant::now();
+        let (mut s, mut alpha) = (40.0, 1.0);
+        let mut yellow = false;
+        if let Some((r, at)) = st.focus_done {
+            let t = now.duration_since(at).as_secs_f64();
+            if r == 1 {
+                yellow = true;
+                s *= 1.0 + 0.1 * (t / 0.1).min(1.0);
+            } else if t < 0.9 {
+                // stock's shake: 25 px, dying away over 0.9 s
+                cx += 25.0 * (1.0 - t / 0.9) * (t * 2.0 * PI * 5.0).sin();
+            }
+            if t > 1.0 {
+                alpha = 1.0 - (1.0 - 90.0 / 255.0) * ((t - 1.0) / 0.1).min(1.0);
+            }
+        }
+        let c = s * 0.3;
+        let (r, g, b) = if yellow { (1.0, 0.812, 0.404) } else { (0.85, 0.85, 0.85) };
+        for (width, rgb) in [(5.0, (0.29, 0.29, 0.29)), (3.0, (r, g, b))] {
+            cr.set_source_rgba(rgb.0, rgb.1, rgb.2, alpha);
+            cr.set_line_width(width);
             for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
                 cr.move_to(cx + sx * s, cy + sy * (s - c));
                 cr.line_to(cx + sx * s, cy + sy * s);
                 cr.line_to(cx + sx * (s - c), cy + sy * s);
             }
             let _ = cr.stroke();
+        }
+        if yellow && !st.caf {
+            cr.set_source_rgba(r, g, b, alpha);
+            text(cr, &icons::LOCK.to_string(), cx, cy - s - 4.0, 22.0, 0.5);
         }
     }
 
@@ -2547,6 +2625,8 @@ fn build(gapp: &gtk::Application) {
             zoom_start: ZOOM_MIN,
             zoom_wheel_until: None,
             focus_until: None,
+            focus_t0: None,
+            focus_done: None,
             focus_at: None,
             zoom_sent: Instant::now(),
             metering: 1, // stock's default: touch-weighted
@@ -2603,6 +2683,7 @@ fn build(gapp: &gtk::Application) {
         burst_dots,
         burst_badge,
         tripod_badge,
+        af_outcome: Arc::new(std::sync::atomic::AtomicI32::new(0)),
         moon_badge,
         mode_label,
         toolbar,
