@@ -13,10 +13,11 @@ them, keep Android, and not lose the camera to a bad state.
 - [x] CI green with every package (2026-10-01: ~54 min, the kernel ~42 of it)
 - [x] Lens-blocked warning: the five proximity sensors ([proximity-sensors.md](proximity-sensors.md));
       later maybe the in-pocket check
-- [ ] Low battery and low storage: warn before a shot that can't be saved
-- [ ] GPU freeze when changing ISO in continuous mode: retest (A530 preemption is off since r64)
+- [x] Device status as stock's: battery and captures left, low storage banners, the battery-low
+      screen at 10%, no photo under 1 GB free
+- [x] GPU freeze when changing ISO in continuous mode: fine in use since r64 (A530 preemption off)
 - [ ] Camera module (ASIC) stalls: none seen lately; keep the UART logs running while testing
-- [ ] Gallery: quit didn't happen once (SIGTERM); not reproduced
+- [x] Gallery: quit didn't happen once (SIGTERM); not seen again
 - [ ] README/wiki: what works, what doesn't, how to get back to Android, the photo pipeline
 
 ## Camera app (Viewfinder)

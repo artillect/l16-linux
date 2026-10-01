@@ -74,6 +74,9 @@ window.camera { background: #000; }
 .thumb { border: 2px solid rgba(255,255,255,0.8); border-radius: 4px; }
 .blackout { background: #000; }
 .burst-screen { background: #000; }
+.device-status label { color: #fff; font-size: 13px; font-weight: 600; }
+.battery-screen { background: #000; }
+.battery-screen label { color: #fff; font-size: 24px; font-weight: 600; }
 .burst-count { color: #fff; font-size: 48px; }
 .burst-saving { color: #fff; font-size: 24px; }
 .assist-badge { color: #fff; font-size: 15px; }
@@ -211,8 +214,16 @@ struct State {
     screen_off: bool,
     fast_loop_on: bool,
     tripod: bool, // tripod mode as last sent
-    lens_warning: bool, // the settings screen's: warn when a lens is covered
+    polls: u32,
+    lens_warning: u8, // the settings screen's: a covered lens: 0 nothing, 1 the warning, 2 and a buzz
     lens_mask: u8,      // the covered sensors last shown
+    // stock's device status: shown (the settings screen's), the battery (level, charging),
+    // captures left, and the low storage warning given (0 none, 1 captures, 2 space)
+    device_status: bool,
+    battery: (u8, bool),
+    battery_low: bool,
+    captures_left: u64,
+    storage_warned: u8,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -229,7 +240,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warning={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warn={}\ndevice_status={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -249,7 +260,8 @@ impl State {
             self.strip_zoom as u8,
             self.tools.iter().map(|t| t.name()).collect::<Vec<_>>().join(","),
             self.tool_cycle as u8,
-            self.lens_warning as u8,
+            self.lens_warning,
+            self.device_status as u8,
         )
     }
 
@@ -281,7 +293,8 @@ impl State {
             self.tools.dedup();
         }
         self.tool_cycle = flag("tool_cycle", self.tool_cycle);
-        self.lens_warning = flag("lens_warning", self.lens_warning);
+        self.lens_warning = num("lens_warn").map_or(self.lens_warning, |v| (v as u8).min(2));
+        self.device_status = flag("device_status", self.device_status);
     }
 }
 
@@ -346,9 +359,18 @@ const SETTINGS: &[SettingRow] = &[
         kind: SettingKind::Switch(|s| s.inverse_wheel, |s, v| s.inverse_wheel = v),
     },
     SettingRow {
+        title: "Device status",
+        sub: "Battery and captures left in the corner of the viewfinder",
+        kind: SettingKind::Switch(|s| s.device_status, |s, v| s.device_status = v),
+    },
+    SettingRow {
         title: "Lens blocked warning",
         sub: "Warn when a finger covers the camera modules (the sensors around them)",
-        kind: SettingKind::Switch(|s| s.lens_warning, |s, v| s.lens_warning = v),
+        kind: SettingKind::Choice(
+            &["Off", "On", "On, with buzz"],
+            |s| s.lens_warning as usize,
+            |s, v| s.lens_warning = v as u8,
+        ),
     },
     SettingRow {
         title: "Touch strip",
@@ -450,6 +472,11 @@ struct App {
     // the proximity sensors covered (a bit each, prox's thread), and stock's warning
     blocked: Arc<AtomicU8>,
     lens_badge: gtk::DrawingArea,
+    // stock's device status (top left) and its battery-low screen
+    status_box: gtk::Box,
+    storage_label: gtk::Label,
+    battery_label: gtk::Label,
+    battery_screen: gtk::Box,
     transfers: RefCell<Option<transfer::Transfers>>,
     transfer_turn: Arc<Mutex<()>>,
     stage_rx: mpsc::Receiver<Stage>,
@@ -1439,7 +1466,12 @@ impl App {
             let st = self.st.borrow();
             (st.busy, st.counting, TIMERS[st.timer])
         };
-        if busy || counting || !self.room_for(BURSTS[self.st.borrow().burst]) {
+        if busy || counting || self.st.borrow().battery_low || !self.room_for(BURSTS[self.st.borrow().burst]) {
+            return;
+        }
+        // stock's: no photo with less than 1 GB free
+        if photos_free().is_some_and(|f| f < 1 << 30) {
+            self.show_status("less than 1 GB free: make some space to take photos", 4);
             return;
         }
         if t == 0 {
@@ -1840,7 +1872,10 @@ impl App {
                 self.saved();
                 self.show_status(&format!("capture failed: {e}"), 6);
             }
-            Stage::Saved(Ok(_)) => self.saved(),
+            Stage::Saved(Ok(_)) => {
+                self.saved();
+                self.update_storage(true);
+            }
             Stage::Saved(Err(e)) => {
                 self.saved();
                 self.show_status(&format!("saving failed: {e}"), 6);
@@ -1849,22 +1884,86 @@ impl App {
         self.refresh();
     }
 
+    // stock's device status: the battery (its icon steps at 90, 60, 35 and 15%) and, at 10% or
+    // less, the battery-low screen over the camera until 12% (stock's hysteresis)
+    fn update_battery(self: &Rc<Self>) {
+        let read = |f: &str| std::fs::read_to_string(format!("/sys/class/power_supply/qcom-battery/{f}"));
+        let Ok(level) = read("capacity").map(|s| s.trim().parse::<u8>().unwrap_or(100)) else { return };
+        let charging = read("status").is_ok_and(|s| s.trim() == "Charging" || s.trim() == "Full");
+        let (low, show) = {
+            let st = self.st.borrow();
+            (st.battery_low, st.device_status)
+        };
+        let low_now = if low { level < 12 } else { level <= 10 };
+        if low_now && !low {
+            self.buzz(60);
+        }
+        {
+            let mut st = self.st.borrow_mut();
+            st.battery = (level, charging);
+            st.battery_low = low_now;
+        }
+        self.battery_screen.set_visible(low_now);
+        let step = [90, 60, 35, 15].iter().position(|&t| level >= t).unwrap_or(4);
+        let icon = if charging { icons::BATTERY_CHARGING[step] } else { icons::BATTERY[step] };
+        self.battery_label.set_markup(&icons::markup(icon, &format!("{level}%")));
+        self.status_box.set_visible(show);
+    }
+
+    // captures left: free space less stock's 500 MiB reserve, over the size of the last
+    // photos (stacked ones are 4x a single one; stock's 180 MiB until there are some). With
+    // @warn: stock's banner once the count runs low (under 25 here: stock's 200 is for its
+    // 256 GB), and again at 5% left
+    fn update_storage(self: &Rc<Self>, warn: bool) {
+        let Some((free, total)) = photos_space() else { return };
+        let reserve = 500u64 << 20;
+        let free = free.saturating_sub(reserve);
+        let pct = free as f64 / total.saturating_sub(reserve).max(1) as f64 * 100.0;
+        let left = free / photo_size();
+        self.st.borrow_mut().captures_left = left;
+        self.storage_label.set_markup(&icons::markup(icons::STORAGE, &left.to_string()));
+        if !warn {
+            return;
+        }
+        let warned = self.st.borrow().storage_warned;
+        if left >= 25 {
+            self.st.borrow_mut().storage_warned = 0;
+        } else if warned == 0 {
+            self.st.borrow_mut().storage_warned = 1;
+            self.show_status(&format!("{left} captures left"), 5);
+        } else if pct <= 5.0 && warned == 1 {
+            self.st.borrow_mut().storage_warned = 2;
+            self.show_status(&format!("{pct:.1}% storage left"), 5);
+        }
+    }
+
     // a lens covered: stock's warning and its buzz (every pass of the fast loop)
     fn lens_check(&self) {
         let mask = self.blocked.load(Ordering::Relaxed);
         let (shown, warn) = (self.st.borrow().lens_mask, self.st.borrow().lens_warning);
-        let mask = if warn { mask } else { 0 };
+        let mask = if warn > 0 { mask } else { 0 };
         if mask != shown {
             self.st.borrow_mut().lens_mask = mask;
             self.lens_badge.set_visible(mask != 0);
             self.lens_badge.queue_draw();
-            if shown == 0 {
+            if shown == 0 && warn == 2 {
                 self.buzz(30);
             }
         }
     }
 
     fn poll(self: &Rc<Self>) {
+        let n = {
+            let mut st = self.st.borrow_mut();
+            st.polls = st.polls.wrapping_add(1);
+            st.polls
+        };
+        if n % 10 == 1 {
+            self.update_battery();
+        }
+        if n % 100 == 1 {
+            self.update_storage(n == 1);
+        }
         // the metered exposure, which the driver mirrors into its controls
         if self.st.borrow().mode != Mode::Manual && !self.st.borrow().busy {
             let iso = self.metered[0].load(Ordering::Relaxed);
@@ -2340,6 +2439,49 @@ impl App {
     }
 }
 
+// where photos go (as the capture's out path)
+fn photos_dir() -> PathBuf {
+    glib::user_special_dir(glib::UserDirectory::Pictures)
+        .unwrap_or_else(|| glib::home_dir().join("Pictures"))
+        .join("L16")
+}
+
+// free and total bytes where photos go
+fn photos_space() -> Option<(u64, u64)> {
+    let dir = photos_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = std::ffi::CString::new(dir.to_string_lossy().as_bytes()).ok()?;
+    let mut fs: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(path.as_ptr(), &mut fs) } != 0 {
+        return None;
+    }
+    let block = fs.f_frsize as u64;
+    Some((fs.f_bavail as u64 * block, fs.f_blocks as u64 * block))
+}
+
+fn photos_free() -> Option<u64> {
+    photos_space().map(|(free, _)| free)
+}
+
+// a photo's size: the mean of the last ten LRIs, or stock's 180 MiB
+fn photo_size() -> u64 {
+    let mut v: Vec<(std::time::SystemTime, u64)> = std::fs::read_dir(photos_dir())
+        .map(|d| {
+            d.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "lri"))
+                .filter_map(|e| e.metadata().ok())
+                .filter_map(|m| Some((m.modified().ok()?, m.len())))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v.truncate(10);
+    if v.is_empty() {
+        return 180 << 20;
+    }
+    (v.iter().map(|x| x.1).sum::<u64>() / v.len() as u64).max(1 << 20)
+}
+
 fn rounded(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
     cr.new_path();
     cr.arc(x + w - r, y + r, r, -0.5 * PI, 0.0);
@@ -2649,9 +2791,42 @@ fn build(gapp: &gtk::Application) {
     lens_badge.set_can_target(false);
     lens_badge.set_visible(false);
 
+    // stock's device status: captures left and the battery, top left
+    let storage_label = gtk::Label::new(None);
+    let battery_label = gtk::Label::new(None);
+    storage_label.set_halign(gtk::Align::Start);
+    battery_label.set_halign(gtk::Align::Start);
+    let status_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    status_box.add_css_class("device-status");
+    status_box.append(&storage_label);
+    status_box.append(&battery_label);
+    status_box.set_halign(gtk::Align::Start);
+    status_box.set_valign(gtk::Align::Start);
+    status_box.set_margin_start(12);
+    status_box.set_margin_top(16);
+    status_box.set_can_target(false);
+    // stock's LowBatteryFragment: over everything (touches too) at 10% or less, until 12%
+    let battery_screen = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    battery_screen.add_css_class("battery-screen");
+    let battery_icon = icons::label(icons::BATTERY_ALERT);
+    battery_icon.set_markup(&format!(
+        "<span font_family=\"{}\" size=\"400%\">{}</span>",
+        icons::FAMILY,
+        icons::BATTERY_ALERT
+    ));
+    let battery_inner = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    battery_inner.set_valign(gtk::Align::Center);
+    battery_inner.set_vexpand(true);
+    battery_inner.append(&battery_icon);
+    battery_inner.append(&gtk::Label::new(Some("battery low")));
+    battery_screen.append(&battery_inner);
+    battery_screen.set_visible(false);
+    battery_screen.add_controller(gtk::GestureClick::new()); // swallows taps
+
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
     root.add_overlay(&lens_badge);
+    root.add_overlay(&status_box);
     root.add_overlay(&wheels);
     root.add_overlay(&status);
     root.add_overlay(&countdown);
@@ -2659,6 +2834,7 @@ fn build(gapp: &gtk::Application) {
     root.add_overlay(&mode_wheel);
     root.add_overlay(&mode_touch);
     root.add_overlay(&burst_screen);
+    root.add_overlay(&battery_screen);
     root.add_overlay(&settings_page);
     window.set_child(Some(&root));
 
@@ -2747,8 +2923,14 @@ fn build(gapp: &gtk::Application) {
             screen_off: false,
             fast_loop_on: false,
             tripod: false,
-            lens_warning: true,
+            polls: 0,
+            lens_warning: 2,
             lens_mask: 0,
+            device_status: true,
+            battery: (100, false),
+            battery_low: false,
+            captures_left: 0,
+            storage_warned: 0,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -2771,6 +2953,10 @@ fn build(gapp: &gtk::Application) {
         moved: moved.clone(),
         blocked: blocked.clone(),
         lens_badge,
+        status_box,
+        storage_label,
+        battery_label,
+        battery_screen,
         transfers: RefCell::new(None),
         transfer_turn: Arc::new(Mutex::new(())),
         pipeline,
