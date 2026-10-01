@@ -49,6 +49,9 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## Later
 
+- [ ] GPS / geotagging: the receiver is in the modem DSP (MPSS), never started on Linux;
+      hardware only proven on Android (a test app tracked one satellite, no fix)
+
 - [ ] CLI and Python library for scripting the camera (astro, timelapse)
 - [ ] The ToF laser (ST VL53L0X on ASIC1's own I2C): stock never ranges with it; its CCB
       command (process_tof_cmd in ASIC1.bin) is unknown
