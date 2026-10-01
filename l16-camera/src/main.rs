@@ -224,6 +224,9 @@ struct State {
     battery_low: bool,
     captures_left: u64,
     storage_warned: u8,
+    // stock's in-pocket check: on (the settings screen's), and since when it has looked so
+    pocket: bool,
+    pocket_since: Option<Instant>,
     live_iso: i32,
     live_secs: f64,
     strip_down: bool,
@@ -240,7 +243,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warn={}\ndevice_status={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warn={}\ndevice_status={}\npocket={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -262,6 +265,7 @@ impl State {
             self.tool_cycle as u8,
             self.lens_warning,
             self.device_status as u8,
+            self.pocket as u8,
         )
     }
 
@@ -295,6 +299,7 @@ impl State {
         self.tool_cycle = flag("tool_cycle", self.tool_cycle);
         self.lens_warning = num("lens_warn").map_or(self.lens_warning, |v| (v as u8).min(2));
         self.device_status = flag("device_status", self.device_status);
+        self.pocket = flag("pocket", self.pocket);
     }
 }
 
@@ -362,6 +367,11 @@ const SETTINGS: &[SettingRow] = &[
         title: "Device status",
         sub: "Battery and captures left in the corner of the viewfinder",
         kind: SettingKind::Switch(|s| s.device_status, |s, v| s.device_status = v),
+    },
+    SettingRow {
+        title: "Pocket detection",
+        sub: "Close the camera after 30 s in a pocket (the lenses covered, in the dark)",
+        kind: SettingKind::Switch(|s| s.pocket, |s, v| s.pocket = v),
     },
     SettingRow {
         title: "Lens blocked warning",
@@ -474,6 +484,8 @@ struct App {
     lens_badge: gtk::DrawingArea,
     // stock's device status (top left) and its battery-low screen
     status_box: gtk::Box,
+    // iio-sensor-proxy, for the ambient light (claimed while the app runs)
+    light: Option<gtk::gio::DBusProxy>,
     storage_label: gtk::Label,
     battery_label: gtk::Label,
     battery_screen: gtk::Box,
@@ -1981,6 +1993,30 @@ impl App {
             let _ = self.ctl_tx.send((ccb::TRIPOD, still as i32));
             self.tripod_badge.set_visible(still);
         }
+        // stock's in-pocket check (BasePreviewFragment): two or more lenses covered and under
+        // 2 lux for 30 s: say so and close
+        let lux = self
+            .light
+            .as_ref()
+            .and_then(|l| l.cached_property("LightLevel"))
+            .and_then(|v| v.get::<f64>())
+            .unwrap_or(f64::MAX);
+        let pocketed = self.blocked.load(Ordering::Relaxed).count_ones() >= 2 && lux < 2.0;
+        let since = {
+            let mut st = self.st.borrow_mut();
+            st.pocket_since = if pocketed && st.pocket { Some(st.pocket_since.unwrap_or_else(Instant::now)) } else { None };
+            st.pocket_since
+        };
+        if since.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
+            self.st.borrow_mut().pocket_since = None;
+            self.show_status("Entering pocket power save due to inactivity.", 3);
+            let w = self.view.root().and_downcast::<gtk::Window>();
+            glib::timeout_add_local_once(Duration::from_secs(2), move || {
+                if let Some(w) = w {
+                    w.close();
+                }
+            });
+        }
         // stock's hand-shake assist: the photo's exposure longer than 1/70 s (1/150 s on the
         // 70 and 150 mm modules); not while tripod mode is on
         let shake = {
@@ -2447,6 +2483,24 @@ impl App {
         cr.arc(cx, cy, r - 7.0, 0.0, 2.0 * PI);
         let _ = cr.fill();
     }
+}
+
+// iio-sensor-proxy's ambient light (lux), claimed for as long as the app runs
+fn light_proxy() -> Option<gtk::gio::DBusProxy> {
+    let proxy = gtk::gio::DBusProxy::for_bus_sync(
+        gtk::gio::BusType::System,
+        gtk::gio::DBusProxyFlags::NONE,
+        None,
+        "net.hadess.SensorProxy",
+        "/net/hadess/SensorProxy",
+        "net.hadess.SensorProxy",
+        None::<&gtk::gio::Cancellable>,
+    )
+    .ok()?;
+    proxy
+        .call_sync("ClaimLight", None, gtk::gio::DBusCallFlags::NONE, 2000, None::<&gtk::gio::Cancellable>)
+        .ok()?;
+    Some(proxy)
 }
 
 // where photos go (as the capture's out path)
@@ -2946,6 +3000,8 @@ fn build(gapp: &gtk::Application) {
             battery_low: false,
             captures_left: 0,
             storage_warned: 0,
+            pocket: true,
+            pocket_since: None,
             live_iso: 0,
             live_secs: 0.0,
             strip_down: false,
@@ -2969,6 +3025,7 @@ fn build(gapp: &gtk::Application) {
         blocked: blocked.clone(),
         lens_badge,
         status_box,
+        light: light_proxy(),
         storage_label,
         battery_label,
         battery_screen,

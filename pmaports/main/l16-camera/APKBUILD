@@ -41,5 +41,5 @@ package() {
 	install -Dm644 l16-camera.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/l16-camera.svg
 }
 sha512sums="
-beba6182bc8d0a75c8383c3594a80f56e95439ce0c579b5a0fbcd57751d120cd7eb395e7eb938028cd2e9c793ecb5092dc183acca6fc4bb595d45595e7c6d417  l16-camera-src.tar.gz
+2bb6348e8497a28ca9199af63163a230330ed5f6f4f2c4c366c3b51d760fc36c7aaaf1c19d4f998ea9cb00112f71f28454d42a49ef9fc75930f7d82960ccc1dd  l16-camera-src.tar.gz
 "
