@@ -32,3 +32,8 @@ ACTION=="add", SUBSYSTEM=="module", KERNEL=="qcom_camss", RUN+="/bin/chgrp video
 # l16-camera (group video): the SLPI gyroscope (BMI160 via qcom_smgr), read while the preview
 # runs to tell when the camera is still (tripod mode); its buffer and scan settings too
 SUBSYSTEM=="iio", KERNEL=="iio:device*", ATTR{name}=="qcom-smgr-gyro", GROUP="video", MODE="0660", RUN+="/bin/sh -c 'chgrp video /sys%p/buffer/enable /sys%p/buffer/length /sys%p/scan_elements/*_en && chmod g+w /sys%p/buffer/enable /sys%p/buffer/length /sys%p/scan_elements/*_en'"
+
+# l16-camera (group video): the five PA224 proximity sensors around the camera modules (the
+# lens-blocked warning), read through i2c-dev: blsp1 I2C6's mux channels and blsp1 I2C5
+SUBSYSTEM=="i2c-dev", DEVPATH=="*/757a000.i2c/i2c-*/i2c-*/i2c-dev/*", GROUP="video", MODE="0660"
+SUBSYSTEM=="i2c-dev", DEVPATH=="*/7579000.i2c/i2c-*/i2c-dev/*", GROUP="video", MODE="0660"
