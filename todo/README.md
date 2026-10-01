@@ -10,8 +10,9 @@ them, keep Android, and not lose the camera to a bad state.
 
 - [ ] Install path: a release image from CI, release notes (releases/0.1.0.md) and a tested
       dual-boot install/upgrade from scratch, following only the notes
-- [ ] CI green with every package (the last run lost its runner after 71 min: watch memory)
-- [ ] Lens-blocked warning: the five proximity sensors ([proximity-sensors.md](proximity-sensors.md))
+- [x] CI green with every package (2026-10-01: ~54 min, the kernel ~42 of it)
+- [x] Lens-blocked warning: the five proximity sensors ([proximity-sensors.md](proximity-sensors.md));
+      later maybe the in-pocket check
 - [ ] Low battery and low storage: warn before a shot that can't be saved
 - [ ] GPU freeze when changing ISO in continuous mode: retest (A530 preemption is off since r64)
 - [ ] Camera module (ASIC) stalls: none seen lately; keep the UART logs running while testing
@@ -20,6 +21,7 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## Camera app (Viewfinder)
 
+- [x] AF-D as stock's: motion-then-settle (gyro) and zoom, with the marks
 - [ ] AF-D: faces as a trigger (stock refocuses on face count/size/position changes)
 - [ ] Shutter sound choice (stock has several)
 - [ ] Portrait UI rotation
