@@ -26,6 +26,7 @@ pub const FLASH: char = '\u{f0241}';
 pub const FLASH_AUTO: char = '\u{f0242}';
 pub const FLASH_OFF: char = '\u{f0243}';
 pub const FOCUS_AUTO: char = '\u{f0f4e}';
+pub const CAMERA_LOCK: char = '\u{f1a15}'; // camera-lock-outline: tripod mode on
 pub const MOON: char = '\u{f0594}'; // weather-night: stock's low-light assist (a stacked capture)
 pub const CHEVRON_DOWN: char = '\u{f0140}';
 // white balance presets, in wb::PRESETS' order: auto, incandescent, fluorescent, daylight, cloudy

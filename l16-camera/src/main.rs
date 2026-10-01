@@ -455,7 +455,7 @@ struct App {
     burst_badge: gtk::Label,
     // stock's assist icons: tripod mode on (the camera still), a stacked capture ahead (the
     // moon, stock's "low-light assist")
-    tripod_badge: gtk::DrawingArea,
+    tripod_badge: gtk::Label,
     moon_badge: gtk::Label,
     mode_label: gtk::Label,
     toolbar: gtk::Revealer,
@@ -2182,27 +2182,6 @@ impl App {
     }
 }
 
-// stock's tripod assist icon (tripod_detected.png): a camera, its lenses as dots, on three
-// legs, in 24 x 24
-fn draw_tripod(cr: &cairo::Context) {
-    cr.set_source_rgb(1.0, 1.0, 1.0);
-    cr.set_line_width(1.6);
-    cr.rectangle(3.5, 3.5, 17.0, 9.0);
-    for (x, y) in [(13.0, 6.5), (16.5, 6.5), (11.5, 9.5), (15.0, 9.5)] {
-        cr.new_sub_path();
-        cr.arc(x, y, 1.1, 0.0, 2.0 * PI);
-    }
-    let _ = cr.stroke_preserve();
-    let _ = cr.fill();
-    cr.move_to(12.0, 12.5);
-    cr.line_to(5.0, 22.0);
-    cr.move_to(12.0, 12.5);
-    cr.line_to(12.0, 22.0);
-    cr.move_to(12.0, 12.5);
-    cr.line_to(19.0, 22.0);
-    let _ = cr.stroke();
-}
-
 fn hud_item(value: &gtk::Label, unit: &str) -> gtk::Box {
     let b = gtk::Box::new(gtk::Orientation::Vertical, 0);
     value.add_css_class("hud-value");
@@ -2483,11 +2462,10 @@ fn build(gapp: &gtk::Application) {
     burst_badge.set_halign(gtk::Align::Center);
     burst_badge.set_visible(false);
     left.prepend(&burst_badge);
-    let tripod_badge = gtk::DrawingArea::new();
-    tripod_badge.set_size_request(24, 24);
+    let tripod_badge = icons::label(icons::CAMERA_LOCK);
+    tripod_badge.add_css_class("assist-badge");
     tripod_badge.set_halign(gtk::Align::Center);
     tripod_badge.set_visible(false);
-    tripod_badge.set_draw_func(|_, cr, _, _| draw_tripod(cr));
     left.prepend(&tripod_badge);
     let moon_badge = icons::label(icons::MOON);
     moon_badge.add_css_class("assist-badge");
