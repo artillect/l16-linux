@@ -13,10 +13,10 @@ index 821146b2a..5d43ea50e 100644
 +dtb-$(CONFIG_ARCH_QCOM)	+= apq8096-light-l16.dtb
 diff --git a/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
 new file mode 100644
-index 000000000..ccf05e482
+index 000000000..fbee30f6f
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/apq8096-light-l16.dts
-@@ -0,0 +1,1269 @@
+@@ -0,0 +1,1327 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera (APQ8096 v3.1 + PM8994 + PMI8996), board "LFC P2 PVT".
@@ -327,6 +327,18 @@ index 000000000..ccf05e482
 +		};
 +
 +		/* Wi-Fi/BT crystal: stock vdd-wlan-xtal = pm8994_l30, 0x1B7740 = 1800000 uV */
++		/*
++		 * The five PA224 proximity sensors around the camera modules (lens blocked):
++		 * stock vdd-supply = pm8994_l29, 0x2DC6C0 = 3000000 uV. Always on: they are
++		 * read from userspace (i2c-dev), no driver holds it; idle they draw microamps.
++		 */
++		vreg_l29a_3p0: l29 {
++			regulator-name = "vreg_l29a_3p0";
++			regulator-min-microvolt = <3000000>;
++			regulator-max-microvolt = <3000000>;
++			regulator-always-on;
++		};
++
 +		vreg_l30a_1p8: l30 {
 +			regulator-name = "vreg_l30a_1p8";
 +			regulator-min-microvolt = <1800000>;
@@ -961,6 +973,51 @@ index 000000000..ccf05e482
 +};
 +
 +/*
++ * blsp1 I2C6 (stock i2c@757a000, 400 kHz): a TI TCA9545A 4-channel I2C mux at 0x70 (stock
++ * reset GPIO 131, irq GPIO 50, vdd LVS1), a PA224 proximity sensor at 0x1e behind each
++ * channel (stock ch3, ch0, ch4, ch1 on mux channels 0-3; the fifth, ch2, is on blsp1
++ * I2C5). The sensors are read from userspace through i2c-dev, one at a time as stock's HAL
++ * does (their IR emitters see each other), so no device nodes behind the mux.
++ */
++&blsp1_i2c6 {
++	clock-frequency = <400000>;
++	status = "okay";
++
++	i2c-mux@70 {
++		compatible = "nxp,pca9545";
++		reg = <0x70>;
++		reset-gpios = <&tlmm 131 GPIO_ACTIVE_LOW>;
++		vdd-supply = <&vreg_lvs1a_1p8>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		i2c@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++
++		i2c@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++
++		i2c@2 {
++			reg = <2>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++
++		i2c@3 {
++			reg = <3>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++	};
++};
++
++/*
 + * blsp1 I2C5 (stock i2c@7579000: qup irq 0x63 = 99, dmas 0x14/0x15 = 20/21,
 + * qcom,clk-freq-out 0x61A80 = 400 kHz). Not in msm8996.dtsi, so defined here
 + * following its blsp1_i2c3 node.
@@ -985,7 +1042,8 @@ index 000000000..ccf05e482
 +		 * TI TMP112 board temperature sensors (stock tmp112@48/4a/4b; stock's @49 is
 +		 * not fitted), vdd pm8994_l13. The bus pull-ups need LVS1. The TMP112 is
 +		 * register-compatible with the TMP102, which is the only compatible mainline's
-+		 * tmp102 driver lists. Stock's pa224@1e ("ch2") on this bus is left out for now.
++		 * tmp102 driver lists. Stock's pa224@1e ("ch2", a proximity sensor) is on this
++		 * bus too, read from userspace (i2c-dev) as the others behind blsp1 I2C6's mux.
 +		 */
 +		temp-sensor@48 {
 +			compatible = "ti,tmp102";
