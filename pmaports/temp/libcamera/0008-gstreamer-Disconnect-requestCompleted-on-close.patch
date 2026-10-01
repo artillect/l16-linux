@@ -1,0 +1,38 @@
+From 58d4342ab0c5f5239108d30efa5ad2990879e037 Mon Sep 17 00:00:00 2001
+From: Riley <oreo4455@gmail.com>
+Date: Wed, 30 Sep 2026 23:50:19 -0700
+Subject: [PATCH] gstreamer: Disconnect requestCompleted on close
+
+The source connects to the camera's requestCompleted signal on every open
+and never disconnects. When the camera manager (and so the camera) outlives
+a close, reopening adds a second connection: each request completes twice,
+the second call pops the next RequestWrap (assertion
+'wrap->request_.get() == request'), and the pipeline crashes on a freed
+request. Disconnect when the camera is released.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/gstreamer/gstlibcamerasrc.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/gstreamer/gstlibcamerasrc.cpp b/src/gstreamer/gstlibcamerasrc.cpp
+index 3055f0d..c101976 100644
+--- a/src/gstreamer/gstlibcamerasrc.cpp
++++ b/src/gstreamer/gstlibcamerasrc.cpp
+@@ -1001,6 +1001,13 @@ gst_libcamera_src_close(GstLibcameraSrc *self)
+ 
+ 	state->config_.reset();
+ 
++	/*
++	 * Connected on every open: the camera outlives a close whenever the
++	 * camera manager does, and a second connection completes each request
++	 * twice (the second pops the wrong RequestWrap, then a use after free).
++	 */
++	state->cam_->requestCompleted.disconnect(state);
++
+ 	ret = state->cam_->release();
+ 	if (ret) {
+ 		GST_ELEMENT_WARNING(self, RESOURCE, BUSY,
+-- 
+2.47.1.windows.1
+

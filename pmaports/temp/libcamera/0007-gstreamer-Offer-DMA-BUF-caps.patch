@@ -1,0 +1,85 @@
+From 02b3279314664a5a6669fe78c7dbe78d63638b25 Mon Sep 17 00:00:00 2001
+From: L16 Linux <oreo4455@gmail.com>
+Date: Wed, 30 Sep 2026 21:54:11 -0700
+Subject: [PATCH] gstreamer: Offer DMA-BUF caps when downstream accepts them
+
+libcamerasrc's buffers already come from a GstDmaBufAllocator, but it
+only ever announced system-memory caps, so a GL sink mapped every frame
+and copied it on the CPU (with cache maintenance each time). Once the
+stream is configured, ask the peer whether it accepts the same frames
+as video/x-raw(memory:DMABuf),format=DMA_DRM with the stream's DRM
+fourcc and modifier, and push those caps if it does.
+---
+ src/gstreamer/gstlibcamerasrc.cpp | 34 ++++++++++++++++++++++++++++++-
+ 1 file changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/src/gstreamer/gstlibcamerasrc.cpp b/src/gstreamer/gstlibcamerasrc.cpp
+index 7a3e1d9..3055f0d 100644
+--- a/src/gstreamer/gstlibcamerasrc.cpp
++++ b/src/gstreamer/gstlibcamerasrc.cpp
+@@ -31,7 +31,9 @@
+ #include <libcamera/camera_manager.h>
+ #include <libcamera/control_ids.h>
+ 
++#include <gst/allocators/allocators.h>
+ #include <gst/base/base.h>
++#include <gst/video/video.h>
+ 
+ #include "gstlibcamera-controls.h"
+ #include "gstlibcamera-utils.h"
+@@ -166,7 +168,7 @@ G_DEFINE_TYPE_WITH_CODE(GstLibcameraSrc, gst_libcamera_src, GST_TYPE_ELEMENT,
+ 			GST_DEBUG_CATEGORY_INIT(source_debug, "libcamerasrc", 0,
+ 						"libcamera Source"))
+ 
+-#define TEMPLATE_CAPS GST_STATIC_CAPS("video/x-raw; image/jpeg; video/x-bayer")
++#define TEMPLATE_CAPS GST_STATIC_CAPS("video/x-raw; video/x-raw(memory:DMABuf); image/jpeg; video/x-bayer")
+ 
+ /* For the simple case, we have a src pad that is always present. */
+ GstStaticPadTemplate src_template = {
+@@ -591,6 +593,29 @@ gst_libcamera_create_video_pool(GstLibcameraSrc *self, GstPad *srcpad,
+ }
+ 
+ /* Must be called with stream_lock held. */
++/*
++ * The stream's caps as DMA-BUF (format DMA_DRM, the DRM fourcc and modifier, which
++ * libcamera's pixel formats are): the allocator's memory already is DMA-BUF, so a peer that
++ * takes these imports the frames without copying them (a GL sink: no CPU copy, no cache
++ * maintenance per frame).
++ */
++static GstCaps *
++gst_libcamera_dmabuf_caps(const GstCaps *caps, const StreamConfiguration &stream_cfg)
++{
++	const PixelFormat &format = stream_cfg.pixelFormat;
++	g_autofree gchar *drm = gst_video_dma_drm_fourcc_to_string(format.fourcc(),
++								     format.modifier());
++	if (!drm)
++		return nullptr;
++
++	GstCaps *dma = gst_caps_copy(caps);
++	GstStructure *s = gst_caps_get_structure(dma, 0);
++	gst_structure_set(s, "format", G_TYPE_STRING, "DMA_DRM",
++			  "drm-format", G_TYPE_STRING, drm, nullptr);
++	gst_caps_set_features(dma, 0, gst_caps_features_new_single_static_str(GST_CAPS_FEATURE_MEMORY_DMABUF));
++	return dma;
++}
++
+ static bool
+ gst_libcamera_src_negotiate(GstLibcameraSrc *self)
+ {
+@@ -648,6 +673,13 @@ gst_libcamera_src_negotiate(GstLibcameraSrc *self)
+ 		g_autoptr(GstCaps) caps = gst_libcamera_stream_configuration_to_caps(stream_cfg, transfer[i]);
+ 		gst_libcamera_framerate_to_caps(caps, element_caps);
+ 
++		/* zero-copy when downstream takes DMA-BUF */
++		g_autoptr(GstCaps) dma = gst_libcamera_dmabuf_caps(caps, stream_cfg);
++		if (dma && gst_pad_peer_query_accept_caps(srcpad, dma)) {
++			GST_INFO_OBJECT(self, "Using DMA-BUF caps %" GST_PTR_FORMAT, dma);
++			gst_caps_replace(&caps, dma);
++		}
++
+ 		if (status == CameraConfiguration::Adjusted &&
+ 		    !gst_pad_peer_query_accept_caps(srcpad, caps))
+ 			return false;
+-- 
+2.47.1.windows.1
+
