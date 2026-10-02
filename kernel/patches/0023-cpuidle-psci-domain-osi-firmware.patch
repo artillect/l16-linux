@@ -1,0 +1,39 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] cpuidle: psci: OSI on firmware that cannot set the mode; idle registered after the deferred probes
+
+---
+diff --git a/drivers/cpuidle/cpuidle-psci-domain.c b/drivers/cpuidle/cpuidle-psci-domain.c
+index 37c41209e..a360f7608 100644
+--- a/drivers/cpuidle/cpuidle-psci-domain.c
++++ b/drivers/cpuidle/cpuidle-psci-domain.c
+@@ -162,6 +162,15 @@ static int psci_cpuidle_domain_probe(struct platform_device *pdev)
+ 
+ 	/* let's try to enable OSI. */
+ 	ret = psci_set_osi_mode(use_osi);
++	/*
++	 * L16: msm8996's firmware runs OS-initiated from boot (Qualcomm's own kernel picks the
++	 * last CPU of a cluster itself and never sets the mode) and does not implement
++	 * SET_SUSPEND_MODE: carry on in OSI.
++	 */
++	if (ret == -EOPNOTSUPP && use_osi) {
++		pr_info("firmware cannot set the suspend mode, assuming OSI\n");
++		ret = 0;
++	}
+ 	if (ret)
+ 		goto remove_pd;
+ 
+diff --git a/drivers/cpuidle/cpuidle-psci.c b/drivers/cpuidle/cpuidle-psci.c
+index dcf20ea5e..ce61cf31a 100644
+--- a/drivers/cpuidle/cpuidle-psci.c
++++ b/drivers/cpuidle/cpuidle-psci.c
+@@ -489,4 +489,9 @@ static int __init psci_idle_init(void)
+ 
+ 	return 0;
+ }
+-device_initcall(psci_idle_init);
++/*
++ * L16: after the deferred probes. The CPU PM domains hang from the MPM (system power
++ * collapse), which probes after this would at device_initcall; the faux device cannot defer,
++ * so the CPUs were left without idle states.
++ */
++late_initcall_sync(psci_idle_init);

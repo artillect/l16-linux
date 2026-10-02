@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=73
+pkgrel=83
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -50,6 +50,7 @@ source="
 	0020-tty-serial-msm-fourth-port.patch
 	0021-media-qcom-camss-l16-capture.patch
 	0022-drm-msm-a5xx-a530-no-preemption.patch
+	0023-cpuidle-psci-domain-osi-firmware.patch
 	"
 builddir="$srcdir/linux-$_tag"
 
@@ -80,8 +81,8 @@ package() {
 }
 sha512sums="
 dd30dd113ad9f0b4ab3771ea655de2becce7ddaf5066d2f860b7bb1eb78573137313191d9da740b152348f9f89894ace2bb94fb195e340f7b6dabedeebbc929f  linux-v6.19.5-msm8996.tar.gz
-3b548e6004cee36ba4c6448ebc173431f707287814d3d0ab215d4ec49f53df6c83c99d57ffa39bbe4ad3bc19edebdf56a9956b15372e32e8100ff1aa15209735  config-light-lfc.aarch64
-4c334a3ae3a2fd72f522f9cc21d1cc1fcfb1a261682a7ab45b73cebeea81e37b683d7e60c28d420dd9127c569675fcc376f6d84a35135e9540b5ee922aa38265  0001-arm64-dts-qcom-add-light-l16.patch
+a5ab1223f6342f0b5da22a16359ba3a631869306489e248c6f86de4a85ee7cad36089c67de6138c7148263fd054f9516214d1874427f00fe0c059c092f684b5a  config-light-lfc.aarch64
+699d5a327684f3e98eca5f2d34da2443eb2bf23aa1abc7f240b97af0029e91747767bf7b7749cbbf6128937e1792ba30d252d51104eb5048fc93dabba193df65  0001-arm64-dts-qcom-add-light-l16.patch
 728f52d2e5159989f4216a54be4bfde81495080eb14c72b7993e37906ac4a4317166a4a798a2f374ba5dbf0644c89fc5765c78eb6251c4ea042502580df65638  0002-drm-panel-add-innolux-nt35695-l16.patch
 bc0767edd3df6550d6d8be31712940a133691477c74d552cfe7a48bcdcf70991dd1d7b9248f6a9a816cc84df74f9d78e5fcd6c5f243cf799cee8b9fb37c782c5  0003-backlight-add-lm3630-l16.patch
 6f5bb909296e6c2b341e9b4fe25d7da0dc2217b9e701247f320764aef3a1a00c7c7f522865288cff3a38028b40d277e4597a0920c757633da8b9d56ffb257b63  0004-input-add-l16-touchstrip-and-dw7800.patch
@@ -103,4 +104,5 @@ e3ed7b18db4bae18e05e549fd6ea654ee7fd74118f5a5cf826aabb5a9cdcc33c64d72a17c7b0b1da
 772c2c3989297c736c2780816aae40c2c987f9130184ff306d3d6403c8b4e801c089969755ee0f11595d37f7ccf83a4825107982f1e9334cf761631780ccf529  0020-tty-serial-msm-fourth-port.patch
 422b982fcc859a88f34e343859064f9e914e8e677851aadb8ae52dcbbf1a713161b189b269c0804473239cda681ffa65bcf020fa88259a29fdd673b23d685b32  0021-media-qcom-camss-l16-capture.patch
 c1a8ca7f21e94425fa24276e8e49a086b25f4569a227f75f88255f1bdfaaea1380bbfb0aa56e46f3d731e77b729dd71562406d7a88a8c0dae2f974695e40a8b4  0022-drm-msm-a5xx-a530-no-preemption.patch
+e07fc7e719a8762dd6ffd14307daf8ae2d24c9f56061cef0b432bd06a4b111a192903a1fbb07191ec9b659ef965246a5aa73573e5c8b6a7eac97ab0d1b170613  0023-cpuidle-psci-domain-osi-firmware.patch
 "
