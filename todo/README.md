@@ -51,8 +51,6 @@ them, keep Android, and not lose the camera to a bad state.
       didn't know before; watch whether it comes back
 - [x] Photos' capture time was 1970 (the ASICs' uptime): fixed in r86 (SET_TIME as stock's)
 - [x] Lightbox dates photos by the LRI's capture time (it showed the file time)
-- [ ] Viewfinder's sleep inhibitor during a capture is refused (logind AccessDenied): a
-      suspend mid-transfer could lose the photo
 - [ ] Deep sleep (vdd-min): Wi-Fi's PCIe link stays up through suspend (mainline's PCIe
       driver keeps a linked controller powered), so the crystal stays on; the modem and the
       sensor DSP now sleep
