@@ -3634,6 +3634,9 @@ fn build(gapp: &gtk::Application) {
     if let Some(c) = &app.ccb {
         let st = app.st.borrow();
         c.set(ccb::MODULE, 0);
+        // the photos are dated in local time, as stock's (the driver's SET_TIME at each start)
+        let offset = glib::DateTime::now_local().map_or(0, |d| (d.utc_offset().as_seconds()) as i32);
+        c.set(ccb::UTC_OFFSET, offset);
         c.set(ccb::FLASH, st.flash as i32);
         c.set(ccb::METERING, st.metering as i32);
         c.set(ccb::ZOOM, 1000);

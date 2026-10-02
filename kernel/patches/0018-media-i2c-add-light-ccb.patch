@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..6ff913267
+index 000000000..478bfd4b5
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1777 @@
+@@ -0,0 +1,1797 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -174,6 +174,7 @@ index 000000000..6ff913267
 +#define V4L2_CID_LIGHT_TRIPOD		(V4L2_CID_LIGHT_BASE + 15)
 +#define V4L2_CID_LIGHT_STACKED		(V4L2_CID_LIGHT_BASE + 16)
 +#define V4L2_CID_LIGHT_AF_RESULT	(V4L2_CID_LIGHT_BASE + 17)
++#define V4L2_CID_LIGHT_UTC_OFFSET	(V4L2_CID_LIGHT_BASE + 18)
 +
 +static const s64 ccb_link_freqs[] = { CCB_LINK_FREQ };
 +
@@ -241,6 +242,7 @@ index 000000000..6ff913267
 +	struct v4l2_ctrl *tripod;	/* the camera is still: auto photos may take longer */
 +	struct v4l2_ctrl *stacked;	/* read-only: the next photo will be stacked (low light) */
 +	struct v4l2_ctrl *af_result;	/* read-only: the last focus run, 0 running, 1 focused, 2 not */
++	struct v4l2_ctrl *utc_offset;	/* local time's offset from UTC (s), for SET_TIME */
 +
 +	/*
 +	 * ASIC1's telemetry (type 3, event 4, every ~10 s while previewing): the camera
@@ -797,15 +799,18 @@ index 000000000..6ff913267
 +	static const u8 ae3b[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xa0, 0x90, 0x40,
 +				   0x8c, 0xcc, 0x02, 0x01, 0, 0, 0, 0, 0, 0 };
 +	int mod = c->module->val;
-+	u8 on[6], time[16], z[4];
++	u8 on[6], time[12], z[4];
 +	struct timespec64 now;
 +	int ret;
 +
++	/*
++	 * SET_TIME as stock's ccb_set_time: u32 sec, u32 usec, s32 tm_gmtoff (12 bytes; the
++	 * ASICs ignored the 16 sent before, and the photos were dated by their uptime, 1970)
++	 */
 +	ktime_get_real_ts64(&now);
 +	put_unaligned_le32(now.tv_sec, time);
 +	put_unaligned_le32(now.tv_nsec / 1000, time + 4);
-+	put_unaligned_le32(0, time + 8);
-+	put_unaligned_le32(-sys_tz.tz_minuteswest * 60, time + 12);
++	put_unaligned_le32(c->utc_offset->val, time + 8);
 +	ret = ccb_send(c, ccb_tid(c, CCB_KIND_CMD), 0x0201, time, sizeof(time));
 +	if (ret)
 +		return ret;
@@ -1209,6 +1214,20 @@ index 000000000..6ff913267
 +	.max = 2,
 +	.step = 1,
 +	.flags = V4L2_CTRL_FLAG_READ_ONLY,
++};
++
++/*
++ * the local time's offset from UTC, set by userspace (the kernel's sys_tz is rarely set):
++ * SET_TIME's tm_gmtoff, so the photos' time (the LRIs' image_time_stamp) is local, as stock's
++ */
++static const struct v4l2_ctrl_config ccb_ctrl_utc_offset = {
++	.ops = &ccb_ctrl_ops,
++	.id = V4L2_CID_LIGHT_UTC_OFFSET,
++	.name = "UTC Offset (s)",
++	.type = V4L2_CTRL_TYPE_INTEGER,
++	.min = -14 * 3600,
++	.max = 14 * 3600,
++	.step = 1,
 +};
 +
 +static const struct v4l2_ctrl_config ccb_ctrl_ev = {
@@ -1618,6 +1637,7 @@ index 000000000..6ff913267
 +	c->tripod = v4l2_ctrl_new_custom(h, &ccb_ctrl_tripod, NULL);
 +	c->stacked = v4l2_ctrl_new_custom(h, &ccb_ctrl_stacked, NULL);
 +	c->af_result = v4l2_ctrl_new_custom(h, &ccb_ctrl_af_result, NULL);
++	c->utc_offset = v4l2_ctrl_new_custom(h, &ccb_ctrl_utc_offset, NULL);
 +	if (h->error)
 +		return h->error;
 +
