@@ -1,0 +1,30 @@
+name: Bug
+description: Something doesn't work, or works wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, and whether it happens every time.
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: "Output of: `apk info -v | grep -E 'linux-light|device-light|l16-|libcamera|glycin'`"
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        Anything relevant: `dmesg`, or the app's output when started from a terminal
+        (`l16-camera`, `l16-gallery`). Photos (LRI files) only if they show the problem.
+      render: text

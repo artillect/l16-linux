@@ -1,0 +1,15 @@
+name: Idea
+description: A feature, something stock does that this doesn't, or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it's for. If stock LightOS does it, how it behaves there.
