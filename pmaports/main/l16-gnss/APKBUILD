@@ -1,0 +1,26 @@
+# Maintainer: Riley <oreo4455@gmail.com>
+# The Light L16's GNSS for geoclue: the modem DSP's receiver (QMI LOC over QRTR) served as
+# NMEA on a socket geoclue reads, running only while something wants a location. From this
+# repository (pmaports/sync.sh packs l16-gnss/ into $pkgname-src.tar.gz here).
+pkgname=l16-gnss
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Light L16 GNSS for geoclue"
+url="https://github.com/artillect/l16-linux"
+arch="noarch"
+license="MIT"
+depends="geoclue libqmi libqrtr-glib py3-gobject3 python3 rmtfs"
+install="$pkgname.post-install"
+options="!check"
+source="$pkgname-src.tar.gz"
+builddir="$srcdir/l16-gnss"
+
+package() {
+	install -Dm755 l16-gnss -t "$pkgdir"/usr/bin
+	install -Dm755 l16-gnss.initd "$pkgdir"/etc/init.d/l16-gnss
+	install -Dm644 90-l16-gnss.conf -t "$pkgdir"/etc/geoclue/conf.d
+	install -dm755 "$pkgdir"/var/lib/l16-gnss
+}
+sha512sums="
+4694e9d3df629bf85839c43ca89624b74b23ccb35193313c1b4e920771fe022fce7a03e4dc94c732322eebd4471a5127ede7bcd79699122999561ff5bffcf2e9  l16-gnss-src.tar.gz
+"

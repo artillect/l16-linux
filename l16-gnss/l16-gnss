@@ -1,0 +1,212 @@
+#!/usr/bin/python3
+# l16-gnss: the Light L16's GNSS for geoclue. The receiver is the modem DSP's (QMI LOC over
+# QRTR, node 0); ModemManager doesn't take this modem (it has no cellular services), so this
+# holds the one LOC client and serves the engine's NMEA on a socket geoclue's network-nmea
+# source reads. The engine runs only while a reader is connected. Each start injects the time
+# and the last fix (kept in /var/lib/l16-gnss/last) so the engine knows roughly where to look.
+
+import os
+import socket
+import sys
+import time
+
+import gi
+gi.require_version('Qmi', '1.0')
+gi.require_version('Qrtr', '1.0')
+from gi.repository import GLib, Qmi, Qrtr
+
+SOCKET = '/run/l16-gnss.sock'
+LAST = '/var/lib/l16-gnss/last'
+SESSION = 1
+
+loop = GLib.MainLoop()
+readers = []       # connected sockets
+state = {'device': None, 'client': None, 'running': False, 'saved': 0.0}
+
+
+def log(*a):
+    print('l16-gnss:', *a, file=sys.stderr, flush=True)
+
+
+# --- the modem -------------------------------------------------------------------------------
+
+def connect_modem():
+    def got_bus(src, res):
+        bus = Qrtr.Bus.new_finish(res)
+        state['bus'] = bus
+        # the modem boots ~20 s into the system's start
+        bus.wait_for_node(0, 120000, None, got_node)
+
+    def got_node(bus, res):
+        try:
+            node = bus.wait_for_node_finish(res)
+        except GLib.Error as e:
+            log('no modem:', e.message)
+            loop.quit()
+            return
+        Qmi.Device.new_from_node(node, None, got_device)
+
+    def got_device(src, res):
+        device = Qmi.Device.new_from_node_finish(res)
+        device.open(Qmi.DeviceOpenFlags.NONE, 10, None, opened)
+        state['device'] = device
+
+    def opened(device, res):
+        device.open_finish(res)
+        device.allocate_client(Qmi.Service.LOC, Qmi.CID_NONE, 10, None, allocated)
+
+    def allocated(device, res):
+        client = device.allocate_client_finish(res)
+        client.connect('nmea', on_nmea)
+        client.connect('position-report', on_position)
+        inp = Qmi.MessageLocRegisterEventsInput()
+        inp.set_event_registration_mask(Qmi.LocEventRegistrationFlag.NMEA |
+                                        Qmi.LocEventRegistrationFlag.POSITION_REPORT)
+        client.register_events(inp, 10, None, registered)
+        state['client'] = client
+
+    def registered(client, res):
+        client.register_events_finish(res)
+        log('modem ready')
+        if readers:
+            start()
+
+    Qrtr.Bus.new(1000, None, got_bus)
+
+
+def on_nmea(client, out):
+    try:
+        line = out.get_nmea_string().strip()
+    except GLib.Error:
+        return
+    data = (line + '\r\n').encode()
+    for r in list(readers):
+        try:
+            r.sendall(data)
+        except OSError:
+            drop(r)
+
+
+def on_position(client, out):
+    # the last fix, for the next start's injection (at most once a minute)
+    try:
+        if out.get_session_status() != Qmi.LocSessionStatus.SUCCESS:
+            return
+        lat, lon = out.get_latitude(), out.get_longitude()
+        unc = out.get_horizontal_uncertainty_circular()
+    except GLib.Error:
+        return
+    now = time.monotonic()
+    if now - state['saved'] < 60:
+        return
+    state['saved'] = now
+    try:
+        os.makedirs(os.path.dirname(LAST), exist_ok=True)
+        with open(LAST + '.new', 'w') as f:
+            f.write(f'{lat} {lon} {unc} {int(time.time())}\n')
+        os.replace(LAST + '.new', LAST)
+    except OSError as e:
+        log('saving the fix:', e)
+
+
+def ignore(client, res, finish):
+    try:
+        finish(res)
+    except GLib.Error as e:
+        log(e.message)
+
+
+def inject():
+    client = state['client']
+    # the time (the system's, from NTP over Wi-Fi), within a second
+    t = Qmi.MessageLocInjectUtcTimeInput()
+    t.set_utc_time(int(time.time() * 1000))
+    t.set_time_uncertainty(1000)
+    client.inject_utc_time(t, 10, None, lambda c, r: ignore(c, r, c.inject_utc_time_finish))
+    # the last fix, its uncertainty grown by how old it is (a camera moves on foot or by car)
+    try:
+        lat, lon, unc, when = open(LAST).read().split()
+        age = max(0, time.time() - int(when))
+        unc = min(float(unc) + age * 30, 500000.0)
+    except (OSError, ValueError):
+        return
+    p = Qmi.MessageLocInjectPositionInput()
+    p.set_latitude(float(lat))
+    p.set_longitude(float(lon))
+    p.set_horizontal_uncertainty_circular(unc)
+    client.inject_position(p, 10, None, lambda c, r: ignore(c, r, c.inject_position_finish))
+
+
+def start():
+    client = state['client']
+    if client is None or state['running']:
+        return
+    inject()
+    inp = Qmi.MessageLocStartInput()
+    inp.set_session_id(SESSION)
+    inp.set_fix_recurrence_type(Qmi.LocFixRecurrenceType.PERIODIC_FIXES)
+    inp.set_intermediate_report_state(Qmi.LocIntermediateReportState.ENABLE)
+    inp.set_minimum_interval_between_position_reports(1000)
+    client.start(inp, 10, None, lambda c, r: ignore(c, r, c.start_finish))
+    state['running'] = True
+    log('started')
+
+
+def stop():
+    client = state['client']
+    if client is None or not state['running']:
+        return
+    inp = Qmi.MessageLocStopInput()
+    inp.set_session_id(SESSION)
+    client.stop(inp, 10, None, lambda c, r: ignore(c, r, c.stop_finish))
+    state['running'] = False
+    log('stopped')
+
+
+# --- the readers -----------------------------------------------------------------------------
+
+def drop(r):
+    if r in readers:
+        readers.remove(r)
+        r.close()
+    if not readers:
+        stop()
+
+
+def on_reader_data(fd, cond, r):
+    # readers send nothing; this is their hangup
+    try:
+        if cond & (GLib.IO_HUP | GLib.IO_ERR) or not r.recv(256):
+            drop(r)
+            return False
+    except OSError:
+        drop(r)
+        return False
+    return True
+
+
+def on_accept(fd, cond, server):
+    r, _ = server.accept()
+    r.setblocking(False)
+    readers.append(r)
+    GLib.io_add_watch(r.fileno(), GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, on_reader_data, r)
+    start()
+    return True
+
+
+def main():
+    try:
+        os.unlink(SOCKET)
+    except FileNotFoundError:
+        pass
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(SOCKET)
+    os.chmod(SOCKET, 0o666)
+    server.listen(4)
+    GLib.io_add_watch(server.fileno(), GLib.IO_IN, on_accept, server)
+    connect_modem()
+    loop.run()
+
+
+if __name__ == '__main__':
+    main()

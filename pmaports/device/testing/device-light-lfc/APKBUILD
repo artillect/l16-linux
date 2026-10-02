@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=26
+pkgrel=27
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -12,10 +12,13 @@ options="!check !archcheck"
 # shutdown-clear-rtc-wakealarm: the PMIC's RTC alarm can power on a switched-off
 # device, and suspend-on-blank arms it;
 # reboot-mode: "reboot-mode bootloader" reboots into fastboot;
-# openssl, python3: light-lfc-bootsig
+# openssl, python3: light-lfc-bootsig;
+# l16-gnss: the modem (GNSS; its never-started state also kept the RPM from vdd-min) and
+# location for geoclue
 depends="
 	linux-firmware-ath10k
 	linux-firmware-qca
+	l16-gnss
 	linux-firmware-qcom
 	linux-light-lfc
 	mkbootimg

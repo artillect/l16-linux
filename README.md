@@ -35,12 +35,13 @@ installs get updates from the [package repository](https://artillect.github.io/l
 |---|---|
 | Display, touchscreen, GPU (Adreno 530) | Video recording |
 | Cameras: live preview and full 16-module photos (see below) | 3.5 mm microphone jack |
-| The five proximity sensors around the lenses (lens-blocked warning) | GPS |
+| The five proximity sensors around the lenses (lens-blocked warning) | Geotagging |
 | Touch strip (volume outside the camera app), haptics | USB OTG, DisplayPort (ANX7688) |
 | Speaker, front and rear microphones | Proximity sensor beside the screen |
 | Battery and charging, charging light | Deep sleep: standby drains about 4-5% an hour |
 | Accelerometer, gyroscope, magnetometer, light sensor (sensor DSP) | |
 | Wi-Fi, Bluetooth, USB networking | |
+| GPS (the modem's receiver, for apps through geoclue) | |
 | Suspend, screen rotation (including the lock screen) | |
 | Rebooting to Android from a quick setting; forced restarts stay in Linux | |
 
