@@ -4,7 +4,7 @@
 # repository (pmaports/sync.sh packs l16-gnss/ into $pkgname-src.tar.gz here).
 pkgname=l16-gnss
 pkgver=0.1.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Light L16 GNSS for geoclue"
 url="https://github.com/artillect/l16-linux"
 arch="noarch"
@@ -22,5 +22,5 @@ package() {
 	install -dm755 "$pkgdir"/var/lib/l16-gnss
 }
 sha512sums="
-4694e9d3df629bf85839c43ca89624b74b23ccb35193313c1b4e920771fe022fce7a03e4dc94c732322eebd4471a5127ede7bcd79699122999561ff5bffcf2e9  l16-gnss-src.tar.gz
+5b02f8154c17d16e9697308c7c72645b7ee629e96363c0df7c8ba18118cdba277a847b01c0c8358529f00c09d2443d491ea4484cbc443a4492dd0d634584b8f2  l16-gnss-src.tar.gz
 "

@@ -3,12 +3,17 @@
 # QRTR, node 0); ModemManager doesn't take this modem (it has no cellular services), so this
 # holds the one LOC client and serves the engine's NMEA on a socket geoclue's network-nmea
 # source reads. The engine runs only while a reader is connected. Each start injects the time
-# and the last fix (kept in /var/lib/l16-gnss/last) so the engine knows roughly where to look.
+# and the last fix (kept in /var/lib/l16-gnss/last) so the engine knows roughly where to look;
+# and the modem gets XTRA, Qualcomm's predicted orbits (a week's worth, from the servers the
+# modem names), refreshed over Wi-Fi, so a first fix takes seconds rather than minutes.
 
+import math
 import os
 import socket
 import sys
+import threading
 import time
+import urllib.request
 
 import gi
 gi.require_version('Qmi', '1.0')
@@ -17,11 +22,18 @@ from gi.repository import GLib, Qmi, Qrtr
 
 SOCKET = '/run/l16-gnss.sock'
 LAST = '/var/lib/l16-gnss/last'
+XTRA = '/var/lib/l16-gnss/xtra3grc.bin'
+XTRA_AHEAD = 86400          # refresh when the modem's data runs out within this
+XTRA_RETRY = 1800           # after every server failed (no network yet, say)
+PART = 1024                 # stock's QMI_LOC_MAX_PREDICTED_ORBITS_PART_LEN
 SESSION = 1
 
 loop = GLib.MainLoop()
 readers = []       # connected sockets
 state = {'device': None, 'client': None, 'running': False, 'saved': 0.0}
+# XTRA: the modem's servers, its data's end (unix s, 0 for none), a refresh under way (the
+# server being tried, the file, whether its injection is being checked)
+xtra = {'urls': [], 'valid_until': None, 'busy': False, 'job': None}
 
 
 def log(*a):
@@ -70,6 +82,11 @@ def connect_modem():
         log('modem ready')
         if readers:
             start()
+        client.connect('get-predicted-orbits-data-source', on_xtra_source)
+        client.connect('get-predicted-orbits-data-validity', on_xtra_validity)
+        client.connect('inject-predicted-orbits-data', on_xtra_injected)
+        xtra_query()
+        GLib.timeout_add_seconds(6 * 3600, lambda: (xtra_query(), True)[1])
 
     Qrtr.Bus.new(1000, None, got_bus)
 
@@ -161,6 +178,132 @@ def stop():
     client.stop(inp, 10, None, lambda c, r: ignore(c, r, c.stop_finish))
     state['running'] = False
     log('stopped')
+
+
+# --- XTRA ------------------------------------------------------------------------------------
+#
+# Each of the modem's servers serves its own xtra3grc.bin, and not all suit this modem's 2016
+# firmware: xtrapath1's is refused at the last part, older formats are taken but never dated
+# (validity 1980). xtrapath3's is what stock's Android injects (seen in an strace of it), and
+# xtrapath2's works too. So: try the servers in the modem's order and believe only the
+# modem's validity afterwards. A refused injection wipes the modem's XTRA, so refresh only
+# when its own runs out.
+
+def xtra_query():
+    client = state['client']
+    client.get_predicted_orbits_data_source(None, 10, None,
+        lambda c, r: ignore(c, r, c.get_predicted_orbits_data_source_finish))
+    client.get_predicted_orbits_data_validity(None, 10, None,
+        lambda c, r: ignore(c, r, c.get_predicted_orbits_data_validity_finish))
+
+
+def on_xtra_source(client, out):
+    try:
+        xtra['urls'] = list(out.get_server_list())
+    except GLib.Error as e:
+        log('XTRA source:', e.message)
+        return
+    xtra_check()
+
+
+def on_xtra_validity(client, out):
+    try:
+        start, hours = out.get_validity_info()
+    except GLib.Error:
+        start, hours = 0, 0
+    # undated data (start at the GPS epoch) is none: the modem took a file it can't use
+    xtra['valid_until'] = start + hours * 3600 if start > 946684800 else 0
+    left = (xtra['valid_until'] - time.time()) / 3600
+    job = xtra['job']
+    if job and job.get('verify'):
+        if left > 0:
+            log(f'XTRA injected from {job["url"]}: valid {left:.0f} h')
+            xtra['job'], xtra['busy'] = None, False
+        else:
+            log(f'XTRA from {job["url"]}: taken but not dated')
+            xtra_try(job['i'] + 1)
+        return
+    log(f'XTRA in the modem: {left:.0f} h left' if left > 0 else 'XTRA in the modem: none valid')
+    xtra_check()
+
+
+def xtra_check():
+    if not xtra['urls'] or xtra['valid_until'] is None or xtra['busy']:
+        return
+    if xtra['valid_until'] - time.time() < XTRA_AHEAD:
+        xtra['busy'] = True
+        xtra_try(0)
+
+
+def xtra_try(i):
+    """The modem's server i: download (in a thread: the network may be slow), then inject."""
+    if i >= len(xtra['urls']):
+        log(f'XTRA: no server\'s file taken; again in {XTRA_RETRY // 60} min')
+        xtra['job'], xtra['busy'] = None, False
+        GLib.timeout_add_seconds(XTRA_RETRY, lambda: (xtra_query(), False)[1])
+        return
+    url = xtra['urls'][i]
+
+    def download():
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'l16-gnss'})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read()
+            if not data:
+                raise ValueError('empty')
+        except Exception as e:
+            log(f'XTRA from {url}: {e}')
+            data = None
+        GLib.idle_add(lambda: (downloaded(data), False)[1])
+
+    def downloaded(data):
+        if data is None:
+            xtra_try(i + 1)
+            return
+        try:
+            os.makedirs(os.path.dirname(XTRA), exist_ok=True)
+            with open(XTRA, 'wb') as f:
+                f.write(data)
+        except OSError:
+            pass
+        xtra['job'] = {'i': i, 'url': url, 'data': data, 'parts': math.ceil(len(data) / PART)}
+        xtra_send(1)
+    threading.Thread(target=download, daemon=True).start()
+
+
+def xtra_send(n):
+    job = xtra['job']
+    inp = Qmi.MessageLocInjectPredictedOrbitsDataInput()
+    inp.set_total_size(len(job['data']))
+    inp.set_total_parts(job['parts'])
+    inp.set_part_number(n)
+    inp.set_part_data(list(job['data'][(n - 1) * PART:n * PART]))
+    state['client'].inject_predicted_orbits_data(inp, 10, None,
+        lambda c, r: ignore(c, r, c.inject_predicted_orbits_data_finish))
+
+
+def on_xtra_injected(client, out):
+    job = xtra['job']
+    if job is None or job.get('verify'):
+        return
+    try:
+        status = out.get_indication_status()
+    except GLib.Error:
+        status = None
+    try:
+        n = out.get_part_number()
+    except GLib.Error:
+        n = 0
+    if status != Qmi.LocIndicationStatus.SUCCESS:
+        log(f'XTRA from {job["url"]}: refused ({status.value_nick if status else "?"})')
+        xtra_try(job['i'] + 1)
+        return
+    if n < job['parts']:
+        xtra_send(n + 1)
+        return
+    job['verify'] = True
+    client.get_predicted_orbits_data_validity(None, 10, None,
+        lambda c, r: ignore(c, r, c.get_predicted_orbits_data_validity_finish))
 
 
 # --- the readers -----------------------------------------------------------------------------
