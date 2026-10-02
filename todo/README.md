@@ -49,10 +49,8 @@ them, keep Android, and not lose the camera to a bad state.
       SLPI (remoteproc stop/start) brings them all back. Cause unknown; not reproduced on
       demand. Kernel r85 tells the SLPI when the CPUs suspend (stock's sleepstate), which it
       didn't know before; watch whether it comes back
-- [ ] Photos' capture time is 1970 inside the processed JPEG (EXIF DateTimeOriginal, from
-      the LRI's time, which comes from the ASICs' clocks): photo libraries on a PC would file
-      them under 1970. Find how stock sets it; then Lightbox can use it too (it shows the
-      LRI's file time, which a copy can change)
+- [x] Photos' capture time was 1970 (the ASICs' uptime): fixed in r86 (SET_TIME as stock's)
+- [ ] Lightbox shows the LRI's file time (a copy can change it); use the LRI's capture time
 - [ ] Viewfinder's sleep inhibitor during a capture is refused (logind AccessDenied): a
       suspend mid-transfer could lose the photo
 - [ ] Deep sleep (vdd-min): Wi-Fi's PCIe link stays up through suspend (mainline's PCIe
