@@ -35,13 +35,13 @@ installs get updates from the [package repository](https://artillect.github.io/l
 |---|---|
 | Display, touchscreen, GPU (Adreno 530) | Video recording |
 | Cameras: live preview and full 16-module photos (see below) | 3.5 mm microphone jack |
-| The five proximity sensors around the lenses (lens-blocked warning) | Geotagging |
+| The five proximity sensors around the lenses (lens-blocked warning) | |
 | Touch strip (volume outside the camera app), haptics | USB OTG, DisplayPort (ANX7688) |
 | Speaker, front and rear microphones | Proximity sensor beside the screen |
 | Battery and charging, charging light | Deep sleep: standby drains about 4-5% an hour |
 | Accelerometer, gyroscope, magnetometer, light sensor (sensor DSP) | |
 | Wi-Fi, Bluetooth, USB networking | |
-| GPS (the modem's receiver, for apps through geoclue) | |
+| GPS (the modem's receiver, with XTRA assistance, for apps through geoclue) | |
 | Suspend, screen rotation (including the lock screen) | |
 | Rebooting to Android from a quick setting; forced restarts stay in Linux | |
 
@@ -62,14 +62,16 @@ Two apps, from the package repository (`apk add l16-camera l16-gallery`):
 - timer, burst, grid, histogram, and zoom on the touch strip;
 - white balance presets taken from each camera's own factory calibration;
 - stock's assists: tripod mode and stacked shots (the moon) from the gyro, a hand-shake
-  warning, the lens-blocked warning, overheating, battery and storage status.
+  warning, the lens-blocked warning, overheating, battery and storage status;
+- geotagging (a setting): the camera's own GPS, while the preview runs.
 
 The preview stops while it can't be seen (screen off, another app in front).
 
 **Lightbox** ([l16-gallery](l16-gallery)) shows the photos by day. It opens a quick look
 straight from the LRI, and renders the full photo with Light's own renderer on request
 ([l16-render](l16-render): Light's library, taken from the stock partitions). The JPEG
-goes next to the LRI. [glycin-lri](glycin-lri) also gives LRIs thumbnails in the file
+goes next to the LRI. A geotagged photo's info gives the nearest town, looked up on the
+camera from a table of GeoNames' places. [glycin-lri](glycin-lri) also gives LRIs thumbnails in the file
 manager and opens them in Loupe. Photos can also be rendered on a PC with Light's Lumen,
 or with [chiaro](pmaports/main/chiaro) (packaged here).
 
@@ -86,4 +88,5 @@ display without copying them, and survives the preview being stopped and started
 ## License
 
 Kernel changes are GPL-2.0-only, docs CC BY-SA 4.0, everything else MIT; see
-[LICENSE](LICENSE).
+[LICENSE](LICENSE). Lightbox's place names come from [GeoNames](https://www.geonames.org/)
+(CC BY 4.0).

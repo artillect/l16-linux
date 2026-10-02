@@ -43,8 +43,19 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## System
 
-- [ ] Ambient light (the SLPI's stk3x1x via iio-sensor-proxy) is stuck: it read a flat
-      11.99 lux while covered, so the camera's in-pocket check never fires
+- [ ] The SLPI stops answering sensor requests after a while (2026-10-02, ~8 h into a boot
+      with suspends, the modem and GPS tests): enabling any of its sensors times out, and
+      the accelerometer, gyro and light sensor freeze on their last values. Restarting the
+      SLPI (remoteproc stop/start) brings them all back. Cause unknown; not reproduced on
+      demand. Kernel r85 tells the SLPI when the CPUs suspend (stock's sleepstate), which it
+      didn't know before; watch whether it comes back
+- [ ] Photos' capture time is 1970 (DateTimeOriginal in the processed JPEG): the LRI's time
+      comes from the ASICs' clocks; find how stock sets it
+- [ ] Viewfinder's sleep inhibitor during a capture is refused (logind AccessDenied): a
+      suspend mid-transfer could lose the photo
+- [ ] Deep sleep (vdd-min): Wi-Fi's PCIe link stays up through suspend (mainline's PCIe
+      driver keeps a linked controller powered), so the crystal stays on; the modem and the
+      sensor DSP now sleep
 
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
       not seen on a short hold since
@@ -52,9 +63,8 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## Later
 
-- [ ] Geotagging in Viewfinder (GPS works through geoclue: l16-gnss)
-- [ ] GPS assistance: XTRA (Qualcomm's predicted orbits; the modem names its source) so a
-      first fix takes seconds, not minutes
+- [x] Geotagging in Viewfinder (GPS through geoclue: l16-gnss), the place in Lightbox
+- [x] XTRA: l16-gnss injects it (stock's way, from the server whose file this modem dates)
 
 - [ ] CLI and Python library for scripting the camera (astro, timelapse)
 - [ ] The ToF laser (ST VL53L0X on ASIC1's own I2C): stock never ranges with it; its CCB
