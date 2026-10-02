@@ -10,6 +10,7 @@
 mod icons;
 #[path = "../../glycin-lri/src/lri.rs"]
 mod lri;
+mod places;
 
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -383,6 +384,10 @@ impl Gallery {
             ("Taken", stamp(&path)),
         ];
         if let Some((_, i)) = self.info.borrow().as_ref().filter(|(p, _)| *p == path) {
+            // where it was taken (geotagging): the nearest town
+            if let Some(place) = i.location.and_then(|(lat, lon)| places::near(lat, lon)) {
+                rows.insert(2, ("Place", place));
+            }
             if let Some(f) = i.focal_length {
                 rows.push(("Focal length", format!("{f} mm")));
             }

@@ -30,6 +30,7 @@ pub struct Info {
     pub exposure_ns: Option<u64>,
     pub iso: Option<u32>,
     pub awb_mode: Option<u64>, // ViewPreferences' AWBMode: 0 auto, 1 daylight, 3 cloudy, 4 tungsten, 5 fluorescent
+    pub location: Option<(f64, f64)>, // gps_data's latitude and longitude (degrees)
 }
 
 // the view preferences (LightHeader 19, or a block of their own)
@@ -132,6 +133,20 @@ fn f32_of(v: &Val) -> Option<f32> {
         Val::Bytes(b) if b.len() == 4 => Some(f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
         _ => None,
     }
+}
+
+fn f64_of(v: &Val) -> Option<f64> {
+    match v {
+        Val::Bytes(b) if b.len() == 8 => Some(f64::from_le_bytes((*b).try_into().ok()?)),
+        _ => None,
+    }
+}
+
+// a LightHeader's gps_data (25): latitude 1, longitude 2
+fn location(v: &Val) -> Option<(f64, f64)> {
+    let g = sub(v);
+    let get = |n| g.iter().find(|(f, _)| *f == n).and_then(|(_, v)| f64_of(v));
+    Some((get(1)?, get(2)?))
 }
 
 fn sub<'a>(v: &Val<'a>) -> Vec<(u64, Val<'a>)> {
@@ -261,6 +276,7 @@ fn bad(what: &str) -> io::Error {
 pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
     let mut kept: Option<(Vec<u8>, Vec<Module>, Option<u64>)> = None;
     let mut vp = View::default();
+    let mut place = None;
     let mut focal_length = None;
     let mut colours = Vec::new();
     loop {
@@ -306,6 +322,8 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
                 for (f, v) in fields(msg) {
                     if f == 19 {
                         view(&sub(&v), &mut vp);
+                    } else if f == 25 {
+                        place = location(&v).or(place);
                     } else if f == 13 {
                         colour_cal(&v, &mut colours);
                     }
@@ -341,6 +359,7 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
         exposure_ns: vp.integration_ns.or(times.get(times.len() / 2).copied()),
         iso: Some((target * 100.0).round() as u32).filter(|i| *i > 0),
         awb_mode: vp.awb_mode,
+        location: place,
     };
     let mut p = render(&buf[(pick.surface.offset - 32) as usize..], pick, vp.wb, exposure, &colours);
     p.info = info;

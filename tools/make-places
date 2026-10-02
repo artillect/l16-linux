@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+# make-places CITIES1000.zip ADMIN1CODES.txt COUNTRYINFO.txt > l16-gallery/places.tsv
+#
+# Lightbox's place names: every town of 1000 people or more, its first-level division (a US
+# state, a province...) and country, for the nearest-town lookup of a photo's location, done
+# on the camera (a photo's location isn't sent anywhere). From GeoNames
+# (https://download.geonames.org/export/dump/: cities1000.zip, admin1CodesASCII.txt,
+# countryInfo.txt), CC BY 4.0. Each line: name, latitude, longitude (4 decimals: ~11 m),
+# division, country, tab-separated.
+import csv
+import io
+import sys
+import zipfile
+
+cities_zip, admin1_path, country_path = sys.argv[1:4]
+admin1 = {}
+for line in open(admin1_path, encoding='utf-8'):
+    code, name, *_ = line.rstrip('\n').split('\t')
+    admin1[code] = name
+countries = {}
+for line in open(country_path, encoding='utf-8'):
+    if line.startswith('#'):
+        continue
+    f = line.rstrip('\n').split('\t')
+    if len(f) > 4:
+        countries[f[0]] = f[4]
+sys.stdout.reconfigure(encoding='utf-8')
+out = csv.writer(sys.stdout, delimiter='\t', lineterminator='\n')
+with zipfile.ZipFile(cities_zip) as z:
+    for line in io.TextIOWrapper(z.open('cities1000.txt'), encoding='utf-8'):
+        f = line.rstrip('\n').split('\t')
+        name, lat, lon, cc, a1 = f[1], float(f[4]), float(f[5]), f[8], f[10]
+        out.writerow([name, f'{lat:.4f}', f'{lon:.4f}', admin1.get(f'{cc}.{a1}', ''), countries.get(cc, cc)])

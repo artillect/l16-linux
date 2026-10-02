@@ -4,7 +4,7 @@
 # repository (pmaports/sync.sh packs glycin-lri/ into $pkgname-src.tar.gz here).
 pkgname=glycin-lri
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Light L16 LRI photos in image viewers and file managers"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -36,5 +36,5 @@ package() {
 	install -Dm644 data/phosh-mimeapps.list "$pkgdir"/usr/share/applications/phosh-mimeapps.list
 }
 sha512sums="
-bb2567cbea55aed38406e064cfacbe1e1b6e4f8d47f1c814a110776e8d2f90c7b2acb6c9f04b34a465ed37258cdc0e7c855314a9142cc112d24a1fa3709a8348  glycin-lri-src.tar.gz
+5804170ba92f574785a73e7f48aefde15adbc58f79419c9c9782eea97116b20332fe8d86baf7d117c7180636205be8973e57d36ff2f7497d8be368c120cc5cf1  glycin-lri-src.tar.gz
 "
