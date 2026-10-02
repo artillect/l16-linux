@@ -1,0 +1,95 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] soc: qcom: smp2p-sleepstate: tell the SLPI when the CPUs suspend
+
+---
+diff --git a/drivers/soc/qcom/smp2p_sleepstate.c b/drivers/soc/qcom/smp2p_sleepstate.c
+new file mode 100755
+index 000000000..f5abfb64f
+--- /dev/null
++++ b/drivers/soc/qcom/smp2p_sleepstate.c
+@@ -0,0 +1,85 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Tell a remote processor whether the application processors are awake, through an SMP2P
++ * "sleepstate" entry, as Qualcomm's downstream smp2p_sleepstate (which the L16's stock
++ * kernel runs): the bit set at probe, cleared when suspend begins, set again after resume.
++ * Without it the L16's sensor DSP (SLPI) keeps sending sensor reports into a suspended
++ * system: they are lost, and its QMI link can stall until the SLPI is restarted.
++ */
++#include <linux/bits.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/soc/qcom/smem_state.h>
++#include <linux/suspend.h>
++
++struct smp2p_sleepstate {
++	struct qcom_smem_state *state;
++	unsigned int bit;
++	struct notifier_block nb;
++};
++
++static void smp2p_sleepstate_set(struct smp2p_sleepstate *s, bool awake)
++{
++	qcom_smem_state_update_bits(s->state, BIT(s->bit), awake ? BIT(s->bit) : 0);
++}
++
++static int smp2p_sleepstate_notify(struct notifier_block *nb, unsigned long event,
++				   void *unused)
++{
++	struct smp2p_sleepstate *s = container_of(nb, struct smp2p_sleepstate, nb);
++
++	switch (event) {
++	case PM_SUSPEND_PREPARE:
++		smp2p_sleepstate_set(s, false);
++		break;
++	case PM_POST_SUSPEND:
++		smp2p_sleepstate_set(s, true);
++		break;
++	}
++	return NOTIFY_DONE;
++}
++
++static int smp2p_sleepstate_probe(struct platform_device *pdev)
++{
++	struct smp2p_sleepstate *s;
++
++	s = devm_kzalloc(&pdev->dev, sizeof(*s), GFP_KERNEL);
++	if (!s)
++		return -ENOMEM;
++
++	s->state = devm_qcom_smem_state_get(&pdev->dev, NULL, &s->bit);
++	if (IS_ERR(s->state))
++		return dev_err_probe(&pdev->dev, PTR_ERR(s->state), "no sleepstate entry\n");
++
++	smp2p_sleepstate_set(s, true);
++	s->nb.notifier_call = smp2p_sleepstate_notify;
++	platform_set_drvdata(pdev, s);
++	return register_pm_notifier(&s->nb);
++}
++
++static void smp2p_sleepstate_remove(struct platform_device *pdev)
++{
++	struct smp2p_sleepstate *s = platform_get_drvdata(pdev);
++
++	unregister_pm_notifier(&s->nb);
++}
++
++static const struct of_device_id smp2p_sleepstate_of_match[] = {
++	{ .compatible = "qcom,smp2p-sleepstate" },
++	{}
++};
++MODULE_DEVICE_TABLE(of, smp2p_sleepstate_of_match);
++
++static struct platform_driver smp2p_sleepstate_driver = {
++	.probe = smp2p_sleepstate_probe,
++	.remove = smp2p_sleepstate_remove,
++	.driver = {
++		.name = "smp2p-sleepstate",
++		.of_match_table = smp2p_sleepstate_of_match,
++	},
++};
++module_platform_driver(smp2p_sleepstate_driver);
++
++MODULE_DESCRIPTION("Qualcomm SMP2P sleepstate: the application processors' suspend, for a remote processor");
++MODULE_LICENSE("GPL");

@@ -15,7 +15,7 @@ git add -N arch/arm64/boot/dts/qcom/apq8096-light-l16.dts \
 	drivers/input/misc/dw7800-haptics.c drivers/input/misc/l16-touchstrip.c \
 	drivers/soc/qcom/l16_canary.c include/linux/l16_canary.h \
 	drivers/usb/misc/anx7688 drivers/video/backlight/lm3630_bl.c \
-	drivers/media/i2c/light-ccb.c
+	drivers/media/i2c/light-ccb.c drivers/soc/qcom/smp2p_sleepstate.c
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -86,6 +86,7 @@ patch media-qcom-camss-l16-capture "media: qcom: camss: L16 captures (virtual ch
 	drivers/media/platform/qcom/camss/camss-video.h
 patch drm-msm-a5xx-a530-no-preemption "drm/msm/a5xx: no preemption on the A530" \n	drivers/gpu/drm/msm/adreno/a5xx_gpu.c
 patch cpuidle-psci-domain-osi-firmware "cpuidle: psci: OSI on firmware that cannot set the mode; idle registered after the deferred probes" \n	drivers/cpuidle/cpuidle-psci-domain.c drivers/cpuidle/cpuidle-psci.c
+patch soc-qcom-smp2p-sleepstate "soc: qcom: smp2p-sleepstate: tell the SLPI when the CPUs suspend" \n	drivers/soc/qcom/smp2p_sleepstate.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)
