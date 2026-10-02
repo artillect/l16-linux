@@ -50,17 +50,41 @@ fn photos_dir() -> PathBuf {
 
 // the LRIs, newest first
 fn scan() -> Vec<PathBuf> {
-    let mut v: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(photos_dir())
+    let mut v: Vec<(i64, PathBuf)> = std::fs::read_dir(photos_dir())
         .map(|d| {
             d.flatten()
                 .map(|e| e.path())
                 .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("lri")))
-                .filter_map(|p| Some((p.metadata().ok()?.modified().ok()?, p)))
+                .map(|p| (taken(&p).map_or(0, |t| t.to_unix()), p))
                 .collect()
         })
         .unwrap_or_default();
     v.sort_by(|a, b| b.0.cmp(&a.0));
     v.into_iter().map(|(_, p)| p).collect()
+}
+
+thread_local! {
+    static TAKEN: RefCell<HashMap<PathBuf, Option<glib::DateTime>>> = RefCell::new(HashMap::new());
+}
+
+// when a photo was taken, in the time where it was taken: the LRI's own time (kept, it
+// doesn't change)
+fn taken(p: &Path) -> Option<glib::DateTime> {
+    if let Some(t) = TAKEN.with(|c| c.borrow().get(p).cloned()) {
+        return t;
+    }
+    let t = std::fs::File::open(p)
+        .ok()
+        .and_then(|f| lri::taken(&mut std::io::BufReader::new(f)).ok().flatten())
+        .and_then(|t| {
+            let z = glib::TimeZone::from_offset(t.utc_offset);
+            glib::DateTime::new(&z, t.year, t.month, t.day, t.hour, t.minute, t.second as f64).ok()
+        });
+    // a file not there (yet) isn't kept
+    if t.is_some() {
+        TAKEN.with(|c| c.borrow_mut().insert(p.to_path_buf(), t.clone()));
+    }
+    t
 }
 
 // the freedesktop thumbnail (large, 256 px) of a file: ~/.cache/thumbnails/large/md5(uri).png
@@ -76,10 +100,7 @@ fn render_path(p: &Path) -> PathBuf {
 }
 
 fn stamp(p: &Path) -> String {
-    p.metadata()
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| glib::DateTime::from_unix_local(t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64).ok())
+    taken(p)
         .and_then(|d| d.format("%-d %B %Y, %H:%M").ok())
         .map(|s| s.to_string())
         .unwrap_or_default()
@@ -87,13 +108,7 @@ fn stamp(p: &Path) -> String {
 
 // the grid's heading for the day a photo was taken
 fn day_of(p: &Path) -> String {
-    let t = p
-        .metadata()
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|t| glib::DateTime::from_unix_local(t.as_secs() as i64).ok());
-    let (Some(t), Ok(now)) = (t, glib::DateTime::now_local()) else { return String::new() };
+    let (Some(t), Ok(now)) = (taken(p), glib::DateTime::now_local()) else { return String::new() };
     let ymd = |d: &glib::DateTime| (d.year(), d.day_of_year());
     let fmt = if ymd(&t) == ymd(&now) {
         return "Today".into();

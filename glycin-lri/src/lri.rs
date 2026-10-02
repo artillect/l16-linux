@@ -8,7 +8,7 @@
 // is (field 12, sensor_data_surface). Images go round by round (one frame of every module,
 // then the next), so the reference's first frame is always among a block's first records.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 
 // the first bytes of the reference's block kept while waiting for its header: a round of
 // frames (at most 6 modules on ASIC1, 16-17 MB each)
@@ -267,6 +267,49 @@ fn skip(r: &mut impl Read, mut n: u64) -> io::Result<()> {
         n -= k as u64;
     }
     Ok(())
+}
+
+// when a photo was taken, in the time where it was taken
+pub struct Taken {
+    pub year: i32,
+    pub month: i32,
+    pub day: i32,
+    pub hour: i32,
+    pub minute: i32,
+    pub second: i32,
+    pub utc_offset: i32, // s
+}
+
+// the first block's image_time_stamp (LightHeader 3: year 1 ... second 6, tz_offset 7 in
+// minutes, sint32)
+pub fn taken(r: &mut (impl Read + Seek)) -> io::Result<Option<Taken>> {
+    let mut h = [0u8; 32];
+    r.read_exact(&mut h)?;
+    if &h[..4] != b"LELR" {
+        return Err(bad("not an LRI"));
+    }
+    let off = u64::from_le_bytes(h[12..20].try_into().unwrap());
+    let n = u32::from_le_bytes(h[20..24].try_into().unwrap());
+    if n > 1 << 20 {
+        return Err(bad("damaged LRI block"));
+    }
+    let mut m = vec![0u8; n as usize];
+    r.seek(SeekFrom::Start(off))?;
+    r.read_exact(&mut m)?;
+    let Some((_, ts)) = fields(&m).into_iter().find(|(f, _)| *f == 3) else { return Ok(None) };
+    let t = sub(&ts);
+    let get = |n| t.iter().find(|(f, _)| *f == n).and_then(|(_, v)| int(v));
+    let (Some(year), Some(month), Some(day)) = (get(1), get(2), get(3)) else { return Ok(None) };
+    let tz = get(7).map_or(0, |z| (z >> 1) as i64 ^ -((z & 1) as i64));
+    Ok(Some(Taken {
+        year: year as i32,
+        month: month as i32,
+        day: day as i32,
+        hour: get(4).unwrap_or(0) as i32,
+        minute: get(5).unwrap_or(0) as i32,
+        second: get(6).unwrap_or(0) as i32,
+        utc_offset: tz as i32 * 60,
+    }))
 }
 
 fn bad(what: &str) -> io::Error {

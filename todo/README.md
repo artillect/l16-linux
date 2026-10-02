@@ -50,7 +50,7 @@ them, keep Android, and not lose the camera to a bad state.
       demand. Kernel r85 tells the SLPI when the CPUs suspend (stock's sleepstate), which it
       didn't know before; watch whether it comes back
 - [x] Photos' capture time was 1970 (the ASICs' uptime): fixed in r86 (SET_TIME as stock's)
-- [ ] Lightbox shows the LRI's file time (a copy can change it); use the LRI's capture time
+- [x] Lightbox dates photos by the LRI's capture time (it showed the file time)
 - [ ] Viewfinder's sleep inhibitor during a capture is refused (logind AccessDenied): a
       suspend mid-transfer could lose the photo
 - [ ] Deep sleep (vdd-min): Wi-Fi's PCIe link stays up through suspend (mainline's PCIe
