@@ -35,33 +35,47 @@ installs get updates from the [package repository](https://artillect.github.io/l
 |---|---|
 | Display, touchscreen, GPU (Adreno 530) | Video recording |
 | Cameras: live preview and full 16-module photos (see below) | 3.5 mm microphone jack |
-| Touch strip (volume outside the camera app), haptics | GPS |
-| Speaker, front and rear microphones | USB OTG, DisplayPort (ANX7688) |
-| Battery and charging, charging light | Proximity sensor |
+| The five proximity sensors around the lenses (lens-blocked warning) | GPS |
+| Touch strip (volume outside the camera app), haptics | USB OTG, DisplayPort (ANX7688) |
+| Speaker, front and rear microphones | Proximity sensor beside the screen |
+| Battery and charging, charging light | Deep sleep: standby drains about 4-5% an hour |
 | Accelerometer, gyroscope, magnetometer, light sensor (sensor DSP) | |
 | Wi-Fi, Bluetooth, USB networking | |
 | Suspend, screen rotation (including the lock screen) | |
+| Rebooting to Android from a quick setting; forced restarts stay in Linux | |
 
 ## Camera
 
 The `light-ccb` kernel driver talks to Light's camera ASICs the way the stock camera
 does. The preview comes from one module at a time: 28 mm, then 70 mm, with the zoom
 cropped in between up to 150 mm. It works in any libcamera app (Snapshot, Megapixels).
-Photos capture every module for the zoom and are saved as LRI files, like stock. They
-can be rendered with [chiaro](pmaports/main/chiaro) (packaged here) or Light's Lumen.
+Photos capture every module for the zoom and are saved as LRI files, like stock.
 
-[l16-camera](l16-camera) is a camera app laid out after OpenLight:
+Two apps, from the package repository (`apk add l16-camera l16-gallery`):
+
+**Viewfinder** ([l16-camera](l16-camera)), a camera app laid out after OpenLight:
 - auto, ISO priority, shutter priority and manual modes, with EV, all on stock's mode
   wheel;
-- flash, touch or centre metering, tap focus and continuous focus;
-- timer, burst, and zoom on the touch strip;
-- white balance presets taken from each camera's own factory calibration.
+- flash; whole-frame, centre or touch metering; tap focus, and AF-D (stock's refocus once
+  the camera has moved and settled, or zoomed) with stock's focus marks;
+- timer, burst, grid, histogram, and zoom on the touch strip;
+- white balance presets taken from each camera's own factory calibration;
+- stock's assists: tripod mode and stacked shots (the moon) from the gyro, a hand-shake
+  warning, the lens-blocked warning, overheating, battery and storage status.
 
-It isn't packaged yet: build it from its folder with `cargo build --release`, and put
-`l16-shoot` and `l16-lri-assemble` from [tools](tools) on the PATH (it runs them).
+The preview stops while it can't be seen (screen off, another app in front).
+
+**Lightbox** ([l16-gallery](l16-gallery)) shows the photos by day. It opens a quick look
+straight from the LRI, and renders the full photo with Light's own renderer on request
+([l16-render](l16-render): Light's library, taken from the stock partitions). The JPEG
+goes next to the LRI. [glycin-lri](glycin-lri) also gives LRIs thumbnails in the file
+manager and opens them in Loupe. Photos can also be rendered on a PC with Light's Lumen,
+or with [chiaro](pmaports/main/chiaro) (packaged here).
 
 The package repository carries a patched libcamera. Its software ISP takes manual white
-balance, and `libcamerasrc` no longer drops controls set while streaming.
+balance and gives the preview stock's tone (digital gain and stock's gamma), and
+`libcamerasrc` no longer drops controls set while streaming, passes frames to the
+display without copying them, and survives the preview being stopped and started.
 
 ## Community
 
