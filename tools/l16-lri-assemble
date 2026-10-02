@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-# l16-lri-assemble [--wb R,B] [--awb-mode N] [--iso ISO] [--exposure-us US] OUT.lri RAW...:
+# l16-lri-assemble [--wb R,B] [--awb-mode N] [--iso ISO] [--exposure-us US]
+#                  [--gps LAT,LON,ACCURACY,ALTITUDE,UNIX_SECONDS] OUT.lri RAW...:
 # build an LRI file from l16-capture's per-ASIC transfers (a burst: one per frame, OUT_1.lri ...).
 # --wb: white balance gains (red, blue) instead of gray-world ones; --awb-mode: ViewPreferences'
 # AWBMode (0 auto, 1 daylight, 3 cloudy, 4 tungsten, 5 fluorescent); --iso and --exposure-us: the
 # photo's exposure, recorded as the view preferences' image gain (ISO/100: above ISO 775 it is
-# only here, the modules' analog gain stops at 7.75) and integration time, as stock's.
+# only here, the modules' analog gain stops at 7.75) and integration time, as stock's; --gps:
+# where it was taken (the LightHeader's gps_data; ALTITUDE "nan" when unknown).
 #
 # Each ASIC sends its capture as one LRI block, cut into 16 228 352-byte records (the last one
 # holds the block's LightHeader protobuf). CAMSS receives every record as a 1408 x 9219 RAW10
@@ -177,10 +179,22 @@ def taken(header):
 	return max(gains), sorted(times)[len(times) // 2]
 
 
-def with_view(blocks, gains, awb_mode, gain, exposure_ns):
+def gps_data(lat, lon, accuracy, altitude, unix_s):
+	"""LightHeader's gps_data (field 25): GPSData {latitude 1, longitude 2 (doubles), timestamp
+	3 (unix seconds: Light's renderer writes them to the EXIF's GPS date as such), altitude 7 {value 1, ref 2: sea level}, processing_method 9: fused (geoclue's)}."""
+	msg = varint(1 << 3 | 1) + struct.pack("<d", lat) + varint(2 << 3 | 1) + struct.pack("<d", lon)
+	msg += varint(3 << 3) + varint(unix_s)
+	if altitude == altitude:	# not NaN
+		msg += length_field(7, varint(1 << 3 | 1) + struct.pack("<d", altitude) + varint(2 << 3) + varint(0))
+	msg += varint(9 << 3) + varint(5)
+	return length_field(25, msg)
+
+
+def with_view(blocks, gains, awb_mode, gain, exposure_ns, gps=b""):
 	"""The device blocks end with a LightHeader holding the view preferences (field 19).
 	Rewrite them with this photo's white balance (awb_mode 7, awb_gains 15) and exposure
-	(image_gain 10 / display_gain 18, integration time 11 / 19), keeping the other fields."""
+	(image_gain 10 / display_gain 18, integration time 11 / 19), keeping the other fields;
+	and the photo's location (gps_data 25), when there is one."""
 	o = last = 0
 	while o + 32 <= len(blocks):
 		sig, length = struct.unpack_from("<4sQ", blocks, o)
@@ -209,11 +223,11 @@ def with_view(blocks, gains, awb_mode, gain, exposure_ns):
 		# Point2F 1, size Point2F 2}; without one, Light's renderer crops in)
 		point = lambda x, y: struct.pack("<BfBf", 0x0d, x, 0x15, y)
 		new = length_field(14, length_field(1, point(0.0, 0.0)) + length_field(2, point(1.0, 1.0))) + new
-		msg = length_field(19, new)
+		msg = length_field(19, new) + gps
 		size = (32 + len(msg) + 1023) // 1024 * 1024
 		block = struct.pack("<4sQQIB", b"LELR", size, 32, len(msg), 0) + bytes(7)
 		return blocks + block + msg + bytes(size - 32 - len(msg))
-	msg = b"".join(f for n, f in header if n != 19) + length_field(19, new)
+	msg = b"".join(f for n, f in header if n not in (19, 25)) + length_field(19, new) + gps
 	size = max(length, msg_off + len(msg))
 	block = blocks[last:last + msg_off]
 	block = struct.pack("<4sQQIB", b"LELR", size, msg_off, len(msg), block[24]) + block[25:]
@@ -222,7 +236,7 @@ def with_view(blocks, gains, awb_mode, gain, exposure_ns):
 
 
 args = sys.argv[1:]
-wb, awb_mode, iso, exposure_us = None, 0, None, None
+wb, awb_mode, iso, exposure_us, gps = None, 0, None, None, b""
 while args and args[0].startswith("--"):
 	opt, val = args[0], args[1]
 	args = args[2:]
@@ -234,6 +248,9 @@ while args and args[0].startswith("--"):
 		iso = float(val)
 	elif opt == "--exposure-us":
 		exposure_us = int(val)
+	elif opt == "--gps":
+		lat, lon, acc, alt, secs = val.split(",")
+		gps = gps_data(float(lat), float(lon), float(acc), float(alt), int(secs))
 	else:
 		sys.exit("unknown option " + opt)
 out = args[0]
@@ -268,5 +285,5 @@ for i in range(count):
 		if gain is None or (iso and gain >= 7.74 and iso / 100 > gain):
 			gain = iso and iso / 100
 		ns = ns or (exposure_us and exposure_us * 1000)
-		o.write(with_view(device, gains, awb_mode, gain, ns))
+		o.write(with_view(device, gains, awb_mode, gain, ns, gps))
 	print("wrote", name)

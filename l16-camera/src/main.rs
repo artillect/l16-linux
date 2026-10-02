@@ -7,7 +7,9 @@
 // the driver's controls directly; the ASICs meter and focus themselves. Photos: the
 // preview stops and l16-capture takes an LRI with the modules for the zoom.
 
+mod canvas;
 mod ccb;
+mod geo;
 mod gyro;
 mod haptics;
 mod icons;
@@ -31,6 +33,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use canvas::Canvas;
 use zoomview::ZoomView;
 
 // OpenLight's value lists (res/values/arrays.xml)
@@ -229,6 +232,8 @@ struct State {
     // stock's in-pocket check: on (the settings screen's), and since when it has looked so
     pocket: bool,
     pocket_since: Option<Instant>,
+    // where photos are taken, in them (geo.rs)
+    geotag: bool,
     // stock's thermal levels from the camera modules' temperature: 0 safe, 1 warm (55 C,
     // clear under 45), 2 hot (65 C, clear under 56); while hot the preview is stopped
     // (cooling) until this, then started again for a new reading
@@ -250,7 +255,7 @@ impl State {
         let mode = self.mode.short();
         format!(
             "mode={mode}\niso={}\nshutter={}\nev={}\nflash={}\ntimer={}\ngrid={}\nhistogram={}\nburst={}\n\
-             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warn={}\ndevice_status={}\npocket={}\n",
+             wb={}\nmetering={}\ncaf={}\nstacked={}\nexposure_info={}\ninverse_wheel={}\nhaptics={}\ncontinuous={}\nstrip_zoom={}\ntoolbar={}\ntool_cycle={}\nlens_warn={}\ndevice_status={}\npocket={}\ngeotag={}\n",
             self.iso,
             self.shutter,
             self.ev,
@@ -273,6 +278,7 @@ impl State {
             self.lens_warning,
             self.device_status as u8,
             self.pocket as u8,
+            self.geotag as u8,
         )
     }
 
@@ -307,6 +313,7 @@ impl State {
         self.lens_warning = num("lens_warn").map_or(self.lens_warning, |v| (v as u8).min(2));
         self.device_status = flag("device_status", self.device_status);
         self.pocket = flag("pocket", self.pocket);
+        self.geotag = flag("geotag", self.geotag);
     }
 }
 
@@ -374,6 +381,11 @@ const SETTINGS: &[SettingRow] = &[
         title: "Device status",
         sub: "Battery and captures left in the corner of the viewfinder",
         kind: SettingKind::Switch(|s| s.device_status, |s, v| s.device_status = v),
+    },
+    SettingRow {
+        title: "Geotagging",
+        sub: "Record where photos are taken (the camera's GPS, through location services)",
+        kind: SettingKind::Switch(|s| s.geotag, |s, v| s.geotag = v),
     },
     SettingRow {
         title: "Pocket detection",
@@ -493,6 +505,7 @@ struct App {
     status_box: gtk::Box,
     // iio-sensor-proxy, for the ambient light (claimed while the app runs)
     light: Option<gtk::gio::DBusProxy>,
+    geo: RefCell<geo::Geo>,
     storage_label: gtk::Label,
     battery_label: gtk::Label,
     battery_screen: gtk::Box,
@@ -508,12 +521,13 @@ struct App {
     paintable: gdk::Paintable,
     _bus: gst::bus::BusWatchGuard,
     view: ZoomView,
-    marks: gtk::DrawingArea,
-    wheels: gtk::DrawingArea,
+    marks: Canvas,
+    hist_area: Canvas,
+    wheels: Canvas,
     hud: Vec<gtk::Label>,
-    top: gtk::DrawingArea,
-    bottom: gtk::DrawingArea,
-    shutter: gtk::DrawingArea,
+    top: Canvas,
+    bottom: Canvas,
+    shutter: Canvas,
     thumb: gtk::Image,
     thumb_spin: gtk::DrawingArea,
     blackout: gtk::Box,
@@ -825,7 +839,19 @@ impl App {
         }
         let saved = st.saved();
         let grid = st.grid | (st.histogram as u8) << 4;
+        let geotag = st.geotag && !st.asleep;
         drop(st);
+        // geotagging: the location client while it's on and the preview runs
+        {
+            let mut geo = self.geo.borrow_mut();
+            if geotag != geo.running() {
+                if geotag {
+                    geo.start();
+                } else {
+                    geo.stop();
+                }
+            }
+        }
         if *self.last_saved.borrow() != saved {
             settings::save(&saved);
             *self.last_saved.borrow_mut() = saved;
@@ -833,10 +859,12 @@ impl App {
         self.top.queue_draw();
         self.bottom.queue_draw();
         self.shutter.queue_draw();
-        // the marks layer covers the screen: only when the grid or histogram is switched (the
-        // histogram's updates and the focus marks redraw it themselves)
+        // the grid and the histogram: only when switched (the histogram's updates redraw it)
         if self.marks_grid.replace(grid) != grid {
+            self.marks.set_visible(grid & 0xf != 0);
             self.marks.queue_draw();
+            self.hist_area.set_visible(grid & 0x10 != 0);
+            self.hist_area.queue_draw();
         }
     }
 
@@ -888,7 +916,7 @@ impl App {
         };
         let _ = self.ctl_tx.send(ctl);
         self.refresh();
-        self.wheels.queue_draw();
+        self.update_wheels();
     }
 
     // white balance: libcamera's AWB (auto), or a preset's gains for the preview module
@@ -1396,9 +1424,9 @@ impl App {
         });
         self.st.borrow_mut().settle = Some(id);
         self.refresh();
-        self.wheels.queue_draw();
-        let wheels = self.wheels.clone();
-        glib::timeout_add_local_once(Duration::from_millis(750), move || wheels.queue_draw());
+        self.update_wheels();
+        let a = self.clone();
+        glib::timeout_add_local_once(Duration::from_millis(750), move || a.update_wheels());
     }
 
     fn step_prime(self: &Rc<Self>, up: bool) {
@@ -1630,6 +1658,11 @@ impl App {
             if let Some((r, b)) = self.cal.gains(st.wb, st.module) {
                 v.push("--wb".into());
                 v.push(format!("{r},{b}"));
+            }
+            if let Some(f) = st.geotag.then(|| self.geo.borrow().fix()).flatten() {
+                let alt = f.altitude.map_or("nan".to_string(), |a| a.to_string());
+                v.push("--gps".into());
+                v.push(format!("{},{},{},{alt},{}", f.lat, f.lon, f.accuracy, f.unix_secs));
             }
             v
         };
@@ -2116,7 +2149,7 @@ impl App {
         };
         if show && !asleep {
             self.update_histogram();
-            self.marks.queue_draw();
+            self.hist_area.queue_draw();
         }
         self.refresh();
     }
@@ -2384,9 +2417,6 @@ impl App {
             }
             let _ = cr.stroke();
         }
-        if st.histogram {
-            self.draw_histogram(cr);
-        }
     }
 
     // stock's lens-blocked warning (proximity_sensor_notification_layout): the camera's back
@@ -2473,6 +2503,18 @@ impl App {
         if yellow && !st.caf {
             cr.set_source_rgba(r, g, b, alpha);
             text(cr, &icons::LOCK.to_string(), cx, cy - s - 4.0, 22.0, 0.5);
+        }
+    }
+
+    // the wheels' layer, shown while there is a wheel
+    fn update_wheels(&self) {
+        let shown = {
+            let st = self.st.borrow();
+            st.wheel.is_some() || st.zoom_wheel_until.is_some_and(|t| Instant::now() < t)
+        };
+        self.wheels.set_visible(shown);
+        if shown {
+            self.wheels.queue_draw();
         }
     }
 
@@ -2722,8 +2764,16 @@ fn build(gapp: &gtk::Application) {
     let view = ZoomView::new(&paintable);
     view.set_hexpand(true);
     view.set_vexpand(true);
-    let marks = gtk::DrawingArea::new();
+    // the grid (only while it is on) and the histogram, as textures (canvas.rs)
+    let marks = Canvas::new();
     marks.set_can_target(false);
+    marks.set_visible(false);
+    let hist_area = Canvas::new();
+    hist_area.set_size_request(208, 88);
+    hist_area.set_halign(gtk::Align::Start);
+    hist_area.set_valign(gtk::Align::Start);
+    hist_area.set_can_target(false);
+    hist_area.set_visible(false);
     // the focus marks: a small layer of their own at the focus point (they animate, and a
     // full-screen Cairo layer redrawn every frame cost most of a core)
     let focus_area = gtk::DrawingArea::new();
@@ -2735,6 +2785,7 @@ fn build(gapp: &gtk::Application) {
     let preview = gtk::Overlay::new();
     preview.set_child(Some(&view));
     preview.add_overlay(&marks);
+    preview.add_overlay(&hist_area);
     preview.add_overlay(&focus_area);
     let blackout = gtk::Box::new(gtk::Orientation::Vertical, 0);
     blackout.add_css_class("blackout");
@@ -2789,7 +2840,7 @@ fn build(gapp: &gtk::Application) {
     });
     thumb_box.add_controller(open_gallery);
     let dial = |size: i32| {
-        let d = gtk::DrawingArea::new();
+        let d = Canvas::new();
         d.set_size_request(size, size);
         d.set_halign(gtk::Align::Center);
         d
@@ -2928,8 +2979,10 @@ fn build(gapp: &gtk::Application) {
     mode_touch.set_size_request(386, MODE_TOUCH_H);
     mode_touch.set_visible(false);
 
-    let wheels = gtk::DrawingArea::new();
+    // shown only while a wheel is (exposure, or zoom just changed)
+    let wheels = Canvas::new();
     wheels.set_can_target(false);
+    wheels.set_visible(false);
     wheels.set_halign(gtk::Align::End);
     wheels.set_size_request(560, -1);
     let status = gtk::Label::new(None);
@@ -3166,6 +3219,7 @@ fn build(gapp: &gtk::Application) {
             storage_warned: 0,
             pocket: true,
             pocket_since: None,
+            geotag: false,
             thermal: 0,
             thermal_pause_until: None,
             live_iso: 0,
@@ -3192,6 +3246,7 @@ fn build(gapp: &gtk::Application) {
         lens_badge,
         status_box,
         light: light_proxy(),
+        geo: RefCell::new(geo::Geo::default()),
         storage_label,
         battery_label,
         battery_screen,
@@ -3205,6 +3260,7 @@ fn build(gapp: &gtk::Application) {
         _bus: bus,
         view,
         marks,
+        hist_area,
         focus_area,
         wheels,
         hud,
@@ -3274,6 +3330,8 @@ fn build(gapp: &gtk::Application) {
     // drawing
     let a = app.clone();
     app.marks.set_draw_func(move |_, cr, w, h| a.draw_marks(cr, w as f64, h as f64));
+    let a = app.clone();
+    app.hist_area.set_draw_func(move |_, cr, _, _| a.draw_histogram(cr));
     let a = app.clone();
     app.focus_area.set_draw_func(move |_, cr, _, _| {
         let st = a.st.borrow();
@@ -3370,7 +3428,7 @@ fn build(gapp: &gtk::Application) {
             drop(st);
             a.buzz(15);
             a.refresh();
-            a.wheels.queue_draw();
+            a.update_wheels();
         });
         let a = app.clone();
         drag.connect_drag_update(move |_, _, dy| {
@@ -3395,7 +3453,7 @@ fn build(gapp: &gtk::Application) {
                 st.wheel = None;
                 drop(st);
                 b.refresh();
-                b.wheels.queue_draw();
+                b.update_wheels();
             });
             if let Some(old) = a.st.borrow_mut().wheel_close.replace(id) {
                 old.remove();
@@ -3550,6 +3608,7 @@ fn build(gapp: &gtk::Application) {
                 t.stop();
             }
             a.stop_preview();
+            a.geo.borrow_mut().stop();
             eprintln!("l16-camera: closed in {:.2} s", t.elapsed().as_secs_f64());
             // quit outright: started from the app grid, the application is registered on the
             // session bus and stayed running (hidden) once its window was gone
@@ -3589,6 +3648,11 @@ fn build(gapp: &gtk::Application) {
 }
 
 fn main() -> glib::ExitCode {
+    // GTK redraws the whole window each frame: redrawing only what changed (the preview)
+    // left the badges over it as flickering black bars
+    if std::env::var_os("GSK_DEBUG").is_none() {
+        std::env::set_var("GSK_DEBUG", "full-redraw");
+    }
     gst::init().expect("gstreamer");
     let app = gtk::Application::builder().application_id("org.l16linux.Camera").build();
     // launched again while running (the gallery's camera button): back to the window there is
