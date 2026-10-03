@@ -56,6 +56,8 @@ pack_tree() {
 		cp -r "$REPO/$f" "$S/$f"
 	done
 	rm -rf "$S/$pkg/target"
+	# Python's caches: git-ignored, so not in CI's checkout (a checksum made here failed there)
+	find "$S" -name __pycache__ -type d -prune -exec rm -rf {} +
 	# (built programs, in build/, as they are)
 	find "$S" -type f ! -path "*/build/*" -exec sed -i 's/\r$//' {} +
 	find "$S" -type d -exec chmod 755 {} +
