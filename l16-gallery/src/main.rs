@@ -156,6 +156,8 @@ struct Gallery {
     photos: RefCell<Vec<PathBuf>>,
     days: gtk::Box,
     thumbs: RefCell<HashMap<PathBuf, gtk::Picture>>,
+    // the grid's cells: width, height, how many a row (fit_grid)
+    cell: RefCell<(i32, i32, u32)>,
     stack: gtk::Stack,
     empty: gtk::Label,
     picture: gtk::Picture,
@@ -202,8 +204,9 @@ impl Gallery {
                 let f = gtk::FlowBox::new();
                 f.set_selection_mode(gtk::SelectionMode::None);
                 f.set_homogeneous(true);
-                f.set_min_children_per_line(3);
-                f.set_max_children_per_line(8);
+                let n = self.cell.borrow().2;
+                f.set_min_children_per_line(n);
+                f.set_max_children_per_line(n);
                 f.set_activate_on_single_click(true);
                 let a = self.clone();
                 f.connect_child_activated(move |_, c| {
@@ -218,7 +221,7 @@ impl Gallery {
             let pic = gtk::Picture::new();
             // whole in its cell (4:3, as a landscape photo): a portrait one isn't cropped
             pic.set_content_fit(gtk::ContentFit::Contain);
-            pic.set_size_request(248, 186);
+            pic.set_size_request(-1, self.cell.borrow().1);
             self.bind_thumb(&pic, p);
             let child = gtk::FlowBoxChild::new();
             child.set_child(Some(&pic));
@@ -227,6 +230,35 @@ impl Gallery {
             self.thumbs.borrow_mut().insert(p.clone(), pic);
         }
         *self.photos.borrow_mut() = photos;
+    }
+
+    // the grid's cells for its width: 4 a row in landscape, 3 in portrait, 4:3 each (a fixed
+    // 248 px made a portrait window's grid wider than the screen, the bar with it)
+    fn fit_grid(&self, width: f64) {
+        if width < 1.0 {
+            return;
+        }
+        let n = if width >= 900.0 { 4 } else { 3 };
+        // each cell's padding and spacing, about 8 px
+        let w = ((width - 8.0 * n as f64) / n as f64).floor() as i32;
+        let h = w * 3 / 4;
+        if *self.cell.borrow() == (w, h, n) {
+            return;
+        }
+        *self.cell.borrow_mut() = (w, h, n);
+        // the height only: the row shares its width out, and a width here held a rotated
+        // window at its old width (the grid never saw the new one)
+        for pic in self.thumbs.borrow().values() {
+            pic.set_size_request(-1, h);
+        }
+        let mut c = self.days.first_child();
+        while let Some(w) = c {
+            if let Some(f) = w.downcast_ref::<gtk::FlowBox>() {
+                f.set_min_children_per_line(n);
+                f.set_max_children_per_line(n);
+            }
+            c = w.next_sibling();
+        }
     }
 
     // the thumbnail when it's cached; otherwise it's asked for (a placeholder meanwhile)
@@ -528,6 +560,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     let back = icons::button(icons::ARROW_LEFT, "");
     let title = gtk::Label::new(None);
     title.set_hexpand(true);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
     title.set_xalign(0.0);
     let process = icons::button(icons::PROCESS, "process");
     let info = gtk::ToggleButton::new();
@@ -620,6 +653,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         photos: RefCell::new(Vec::new()),
         days,
         thumbs: RefCell::new(HashMap::new()),
+        cell: RefCell::new((248, 186, 3)),
         stack,
         empty,
         picture,
@@ -641,6 +675,8 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         window: window.clone(),
     });
 
+    let a = g.clone();
+    grid_scroll.hadjustment().connect_changed(move |adj| a.fit_grid(adj.page_size()));
     let a = g.clone();
     back.connect_clicked(move |_| a.close_viewer());
     let a = g.clone();

@@ -4,7 +4,7 @@
 # and LRI reader it shares with l16-camera and glycin-lri, into $pkgname-src.tar.gz here).
 pkgname=l16-gallery
 pkgver=0.1.0
-pkgrel=4
+pkgrel=5
 pkgdesc="Gallery for the Light L16's photos"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -40,5 +40,5 @@ package() {
 	gunzip -c places.tsv.gz > "$pkgdir"/usr/share/l16-gallery/places.tsv
 }
 sha512sums="
-7dfdef6266c921abcbaf0eeb3899689a8dcfc5b3949ede4b8c8304e723ef563abf20dbdd59390ff74f6627298e3481c2ebb7b647b8b8067ae0c05dc2be78fe44  l16-gallery-src.tar.gz
+73f0bd76aeb7c0963109246074205cc0209a549837703112eeb32f97fccd3e9846dd5a4eb85397662a7fbffffb8600ba9a244c521f35b6c4eabf0d945ec75625  l16-gallery-src.tar.gz
 "
