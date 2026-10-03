@@ -10,6 +10,14 @@ on:
       - "pmaports/**"
       - "kernel/**"
       - "l16-render/**"
+      # our programs' sources, which pmaports/sync.sh packs into their packages
+      - "l16-camera/**"
+      - "l16-gallery/**"
+      - "glycin-lri/**"
+      - "l16-gnss/**"
+      - "l16-phosh/**"
+      - "tools/l16-shoot"
+      - "tools/l16-lri-assemble"
       - "tools/ci/**"
       - ".github/workflows/build.yml"
   workflow_dispatch:
