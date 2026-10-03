@@ -175,7 +175,7 @@ index d9105f73f..3e1fb9977 100644
  		fmt->field = V4L2_FIELD_NONE;
  		fmt->colorspace = V4L2_COLORSPACE_SRGB;
 diff --git a/drivers/media/platform/qcom/camss/camss-video.c b/drivers/media/platform/qcom/camss/camss-video.c
-index 831486e14..d42bf9608 100644
+index 831486e14..0e9ebf740 100644
 --- a/drivers/media/platform/qcom/camss/camss-video.c
 +++ b/drivers/media/platform/qcom/camss/camss-video.c
 @@ -21,7 +21,7 @@
@@ -254,19 +254,45 @@ index 831486e14..d42bf9608 100644
  	if (ret < 0) {
  		dev_err(video->camss->dev, "Failed to start media pipeline: %d\n", ret);
  		goto flush_buffers;
-@@ -272,15 +323,16 @@ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
+@@ -272,15 +323,41 @@ static int video_start_streaming(struct vb2_queue *q, unsigned int count)
  		entity = pad->entity;
  		subdev = media_entity_to_v4l2_subdev(entity);
  
 -		ret = v4l2_subdev_call(subdev, video, s_stream, 1);
 -		if (ret < 0 && ret != -ENOIOCTLCMD)
+-			goto error;
 +		ret = video_subdev_stream(video->camss, subdev, 1);
 +		if (ret < 0)
- 			goto error;
++			goto unwind;
  	}
  
  	return 0;
  
++unwind:
++	/*
++	 * L16: the subdevs started before the one that failed (the sensor, last, when the
++	 * ASICs don't boot) are stopped again: vb2 doesn't call stop_streaming after a failed
++	 * start, and their start counts stayed up for good, the hardware never stopped.
++	 */
++	{
++		struct v4l2_subdev *failed = subdev;
++
++		entity = &vdev->entity;
++		while (1) {
++			pad = &entity->pads[0];
++			if (!(pad->flags & MEDIA_PAD_FL_SINK))
++				break;
++			pad = media_pad_remote_pad_first(pad);
++			if (!pad || !is_media_entity_v4l2_subdev(pad->entity))
++				break;
++			entity = pad->entity;
++			subdev = media_entity_to_v4l2_subdev(entity);
++			if (subdev == failed)
++				break;
++			video_subdev_stream(video->camss, subdev, 0);
++		}
++	}
++
  error:
 -	video_device_pipeline_stop(vdev);
 +	if (!video->joined)
@@ -274,7 +300,7 @@ index 831486e14..d42bf9608 100644
  
  flush_buffers:
  	video->ops->flush_buffers(video, VB2_BUF_STATE_QUEUED);
-@@ -310,7 +362,7 @@ static void video_stop_streaming(struct vb2_queue *q)
+@@ -310,7 +387,7 @@ static void video_stop_streaming(struct vb2_queue *q)
  		entity = pad->entity;
  		subdev = media_entity_to_v4l2_subdev(entity);
  
@@ -283,7 +309,7 @@ index 831486e14..d42bf9608 100644
  
  		if (ret) {
  			dev_err(video->camss->dev, "Video pipeline stop failed: %d\n", ret);
-@@ -318,7 +370,8 @@ static void video_stop_streaming(struct vb2_queue *q)
+@@ -318,7 +395,8 @@ static void video_stop_streaming(struct vb2_queue *q)
  		}
  	}
  

@@ -159,7 +159,7 @@ impl Mode {
 // a photo's way from the shutter to the LRI (threads report on App::stage_tx)
 enum Stage {
     Captured(Result<PathBuf, String>), // the ASICs hold it (records in DIR)
-    Transferred(Result<PathBuf, String>), // in DIR/asic*.raw
+    Transferred(Result<PathBuf, (PathBuf, String)>), // in DIR/asic*.raw (or DIR and what failed)
     Saved(Result<PathBuf, String>),       // the LRI
 }
 
@@ -1843,7 +1843,7 @@ impl App {
             let mut q = queue.lock().unwrap();
             if let Some(i) = q.iter().position(|p| p.dir == dir) {
                 q.remove(i);
-                let _ = tx.send(Stage::Transferred(Err(err.unwrap_or("records missing".into()))));
+                let _ = tx.send(Stage::Transferred(Err((dir.clone(), err.unwrap_or("records missing".into())))));
             } else {
                 eprintln!("l16-camera: transferred {} in {:.2} s", dir.display(), t.elapsed().as_secs_f64());
             }
@@ -2047,7 +2047,13 @@ impl App {
                             let _ = tx.send(Stage::Saved(r.map(|_| out)));
                         });
                     }
-                    Err(e) => {
+                    Err((dir, e)) => {
+                        // its records (up to ~300 MB, in /tmp's RAM) go too, or the space
+                        // check refuses every later photo
+                        self.photo_args.borrow_mut().remove(&dir);
+                        thread::spawn(move || {
+                            let _ = std::fs::remove_dir_all(&dir);
+                        });
                         self.saved();
                         self.show_status(&format!("capture failed: {e}"), 6);
                     }
@@ -3894,8 +3900,8 @@ fn build(gapp: &gtk::Application) {
                 eprintln!("l16-camera: giving up the app's name: {e}");
             }
         }
-        let (a, w) = (a.clone(), w.clone());
-        glib::idle_add_local_once(move || {
+        let (a, w, waiting) = (a.clone(), w.clone(), a.clone());
+        let finish = move || {
             let t = Instant::now();
             if let Some(t) = a.transfers.borrow_mut().as_mut() {
                 t.stop();
@@ -3910,6 +3916,27 @@ fn build(gapp: &gtk::Application) {
             if let Some(gapp) = gapp {
                 gapp.quit();
             }
+        };
+        // photos on their way (being taken, transferred or put together) are finished first:
+        // stopping the transfer streams, or quitting under the threads, lost them (a minute
+        // at most)
+        let since = Instant::now();
+        let mut finish = Some(finish);
+        glib::timeout_add_local(Duration::from_millis(200), move || {
+            let left = {
+                let st = waiting.st.borrow();
+                st.saving + st.busy as u32
+            };
+            if left > 0 && since.elapsed() < Duration::from_secs(60) {
+                return glib::ControlFlow::Continue;
+            }
+            if left > 0 {
+                eprintln!("l16-camera: closing with {left} photo(s) still on their way");
+            }
+            if let Some(finish) = finish.take() {
+                finish();
+            }
+            glib::ControlFlow::Break
         });
         glib::Propagation::Stop
     });
@@ -3918,14 +3945,26 @@ fn build(gapp: &gtk::Application) {
     // CAMSS unable to start it again until a reboot)
     for sig in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
         let w = window.clone();
+        // kept for the whole close: removed, a second TERM during it was a plain kill
         glib::unix_signal_add_local(sig, move || {
-            w.close();
-            glib::ControlFlow::Break
+            if !CLOSING.load(Ordering::Relaxed) {
+                w.close();
+            }
+            glib::ControlFlow::Continue
         });
     }
 
     let a = app.clone();
     let start = move || {
+        // records left in /tmp by a camera that died mid-photo (its own are saved by now:
+        // a closing camera keeps the lock until they are)
+        if let Ok(d) = std::fs::read_dir("/tmp") {
+            for e in d.flatten() {
+                if e.file_name().to_string_lossy().starts_with("l16-shot-") {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+            }
+        }
         if let Some(c) = &a.ccb {
             let st = a.st.borrow();
             c.set(ccb::MODULE, 0);

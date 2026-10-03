@@ -192,8 +192,8 @@ struct Gallery {
     pinch_at: RefCell<(f64, f64)>,
     scroll_to: RefCell<Option<(f64, f64)>>,
     thumb_tx: mpsc::Sender<PathBuf>,
+    quick_tx: mpsc::Sender<PathBuf>,
     render_tx: mpsc::Sender<PathBuf>,
-    done_tx: mpsc::Sender<Done>,
     window: gtk::ApplicationWindow,
 }
 
@@ -480,15 +480,8 @@ impl Gallery {
             self.picture.set_paintable(gdk::Texture::from_filename(thumb_path(&path)).ok().as_ref());
         }
         self.show_info();
-        // the quick look (and the photo's details) either way
-        let tx = self.done_tx.clone();
-        let p = path.clone();
-        thread::spawn(move || {
-            let r = std::fs::File::open(&p)
-                .and_then(|f| lri::quick(&mut std::io::BufReader::with_capacity(1 << 20, f)))
-                .map_err(|e| e.to_string());
-            let _ = tx.send(Done::Quick(p, r));
-        });
+        // the quick look (and the photo's details) either way, from its worker
+        let _ = self.quick_tx.send(path.clone());
     }
 
     // the full picture, by Light's renderer (about 15 s); queued, so several can be asked for
@@ -845,6 +838,21 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
             let _ = tx.send(Done::Thumb(p));
         }
     });
+    // quick looks, one at a time and only the newest asked for: each reads the whole LRI with
+    // ~150 MB of buffers, and swiping through photos started one for every photo passed
+    let (quick_tx, quick_rx) = mpsc::channel::<PathBuf>();
+    let tx = done_tx.clone();
+    thread::spawn(move || {
+        while let Ok(mut p) = quick_rx.recv() {
+            while let Ok(newer) = quick_rx.try_recv() {
+                p = newer;
+            }
+            let r = std::fs::File::open(&p)
+                .and_then(|f| lri::quick(&mut std::io::BufReader::with_capacity(1 << 20, f)))
+                .map_err(|e| e.to_string());
+            let _ = tx.send(Done::Quick(p, r));
+        }
+    });
     let (render_tx, render_rx) = mpsc::channel::<PathBuf>();
     let tx = done_tx.clone();
     thread::spawn(move || {
@@ -899,8 +907,8 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         pinch_at: RefCell::new((0.0, 0.0)),
         scroll_to: RefCell::new(None),
         thumb_tx,
+        quick_tx,
         render_tx,
-        done_tx,
         window: window.clone(),
     });
 
@@ -939,6 +947,28 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     delete.connect_clicked(move |_| a.delete());
     camera.connect_clicked(|_| launch("org.l16linux.Camera.desktop", None));
     grid_camera.connect_clicked(|_| launch("org.l16linux.Camera.desktop", None));
+
+    // a tap on the photo hides the bar (and the info) for an unobstructed view, or brings it
+    // back; a drag, swipe or pinch isn't a tap (the click gesture stops once the finger moves)
+    let tap = gtk::GestureClick::new();
+    let (b, i) = (bar.clone(), info.clone());
+    tap.connect_released(move |_, n, _, _| {
+        if n == 1 {
+            let show = !b.is_visible();
+            b.set_visible(show);
+            if !show {
+                i.set_active(false);
+            }
+        }
+    });
+    g.scroller.add_controller(tap);
+    // the bar back each time a photo is opened from the grid
+    let b = bar.clone();
+    g.stack.connect_visible_child_name_notify(move |s| {
+        if s.visible_child_name().as_deref() == Some("viewer") {
+            b.set_visible(true);
+        }
+    });
 
     // swipe between photos (when not zoomed in); pinch to zoom
     let swipe = gtk::GestureSwipe::new();

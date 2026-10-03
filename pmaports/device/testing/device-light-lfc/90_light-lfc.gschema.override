@@ -5,6 +5,8 @@ screen-keyboard-enabled=true
 
 [sm.puri.phosh]
 enable-suspend=true
+# a camera's favourites: Viewfinder, Lightbox, the browser (not postmarketos-ui-phosh's phone apps)
+favorites=['org.l16linux.Camera.desktop', 'org.l16linux.Gallery.desktop', 'firefox-esr.desktop']
 
 # Phosh's own quick settings plus "Android" (dual boot: reboot to the stock system;
 # l16-phosh-plugins, hidden on a Linux-only install)

@@ -7,6 +7,7 @@
 # and the modem gets XTRA, Qualcomm's predicted orbits (a week's worth, from the servers the
 # modem names), refreshed over Wi-Fi, so a first fix takes seconds rather than minutes.
 
+import grp
 import math
 import os
 import socket
@@ -29,7 +30,7 @@ PART = 1024                 # stock's QMI_LOC_MAX_PREDICTED_ORBITS_PART_LEN
 SESSION = 1
 
 loop = GLib.MainLoop()
-readers = []       # connected sockets
+readers = {}       # connected sockets: their GLib watch
 state = {'device': None, 'client': None, 'running': False, 'saved': 0.0}
 # XTRA: the modem's servers, its data's end (unix s, 0 for none), a refresh under way (the
 # server being tried, the file, whether its injection is being checked)
@@ -278,8 +279,19 @@ def xtra_send(n):
     inp.set_total_parts(job['parts'])
     inp.set_part_number(n)
     inp.set_part_data(list(job['data'][(n - 1) * PART:n * PART]))
-    state['client'].inject_predicted_orbits_data(inp, 10, None,
-        lambda c, r: ignore(c, r, c.inject_predicted_orbits_data_finish))
+    state['client'].inject_predicted_orbits_data(inp, 10, None, xtra_sent)
+
+
+def xtra_sent(client, res):
+    """A part's request answered: an error (a timeout, a modem hiccup) brings no indication,
+    and the job never moved on (busy for good, XTRA never refreshed): the next server."""
+    try:
+        client.inject_predicted_orbits_data_finish(res)
+    except GLib.Error as e:
+        job = xtra['job']
+        log(f'XTRA: inject: {e.message}')
+        if job is not None and not job.get('verify'):
+            xtra_try(job['i'] + 1)
 
 
 def on_xtra_injected(client, out):
@@ -308,9 +320,13 @@ def on_xtra_injected(client, out):
 
 # --- the readers -----------------------------------------------------------------------------
 
-def drop(r):
+def drop(r, from_watch=False):
+    """A reader gone: its watch removed (unless it is the watch's own doing: it returns False)
+    before the socket is closed. A watch left on a closed fd spun the main loop."""
     if r in readers:
-        readers.remove(r)
+        watch = readers.pop(r)
+        if not from_watch:
+            GLib.source_remove(watch)
         r.close()
     if not readers:
         stop()
@@ -320,10 +336,10 @@ def on_reader_data(fd, cond, r):
     # readers send nothing; this is their hangup
     try:
         if cond & (GLib.IO_HUP | GLib.IO_ERR) or not r.recv(256):
-            drop(r)
+            drop(r, True)
             return False
     except OSError:
-        drop(r)
+        drop(r, True)
         return False
     return True
 
@@ -331,8 +347,7 @@ def on_reader_data(fd, cond, r):
 def on_accept(fd, cond, server):
     r, _ = server.accept()
     r.setblocking(False)
-    readers.append(r)
-    GLib.io_add_watch(r.fileno(), GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, on_reader_data, r)
+    readers[r] = GLib.io_add_watch(r.fileno(), GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, on_reader_data, r)
     start()
     return True
 
@@ -344,7 +359,13 @@ def main():
         pass
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(SOCKET)
-    os.chmod(SOCKET, 0o666)
+    # geoclue's alone: it gives the location to the apps it allows, and any process
+    # connecting here had it unasked (and kept the receiver running)
+    try:
+        os.chown(SOCKET, 0, grp.getgrnam('geoclue').gr_gid)
+        os.chmod(SOCKET, 0o660)
+    except (KeyError, OSError) as e:
+        log('the socket for geoclue:', e)
     server.listen(4)
     GLib.io_add_watch(server.fileno(), GLib.IO_IN, on_accept, server)
     connect_modem()

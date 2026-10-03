@@ -287,10 +287,10 @@ index 000000000..80cae732f
 +#endif /* __ANX7688_H__ */
 diff --git a/drivers/usb/misc/anx7688/anx7688_driver.c b/drivers/usb/misc/anx7688/anx7688_driver.c
 new file mode 100755
-index 000000000..d9ffdaabb
+index 000000000..42f959d32
 --- /dev/null
 +++ b/drivers/usb/misc/anx7688/anx7688_driver.c
-@@ -0,0 +1,877 @@
+@@ -0,0 +1,882 @@
 +/*
 + * Analogix ANX7688 (OHIO) USB Type-C / PD controller - Light L16 driver.
 + *
@@ -722,13 +722,18 @@ index 000000000..d9ffdaabb
 +	__ATTR(wrreg, S_IWUSR, NULL, anx7688_wr_reg),
 +	__ATTR(addr, S_IWUSR, NULL, anx7688_chg_addr),
 +	__ATTR(rdoidx, S_IWUSR, NULL, anx7688_select_rdo_index),
-+	__ATTR(dumpreg, S_IRUGO, anx7688_dump_register, NULL),
++	/*
++	 * L16: reading these acts (role swaps, Try.SRC/SNK, 512 I2C reads): root's only.
++	 * World-readable, any grep through sysfs swapped USB roles (USB networking gone,
++	 * charging stopped).
++	 */
++	__ATTR(dumpreg, S_IRUSR, anx7688_dump_register, NULL),
 +	__ATTR(prole, S_IRUGO, anx7688_get_power_role, NULL),
 +	__ATTR(drole, S_IRUGO, anx7688_get_data_role, NULL),
-+	__ATTR(trysrc, S_IRUGO, anx7688_try_source, NULL),
-+	__ATTR(trysink, S_IRUGO, anx7688_try_sink, NULL),
-+	__ATTR(pswap, S_IRUGO, anx7688_send_pswap, NULL),
-+	__ATTR(dswap, S_IRUGO, anx7688_send_dswap, NULL),
++	__ATTR(trysrc, S_IRUSR, anx7688_try_source, NULL),
++	__ATTR(trysink, S_IRUSR, anx7688_try_sink, NULL),
++	__ATTR(pswap, S_IRUSR, anx7688_send_pswap, NULL),
++	__ATTR(dswap, S_IRUSR, anx7688_send_dswap, NULL),
 +	__ATTR(cmd, S_IWUSR, NULL, anx7688_debug),
 +	__ATTR(chip_version, S_IRUGO, anx7688_chip_version, NULL),
 +	__ATTR(fw_version, S_IRUGO, anx7688_fw_version, NULL),

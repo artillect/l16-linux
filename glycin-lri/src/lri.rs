@@ -338,7 +338,7 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
         let u64_at = |p: usize| u64::from_le_bytes(h[p..p + 8].try_into().unwrap());
         let (len, off) = (u64_at(4), u64_at(12));
         let n = u32::from_le_bytes(h[20..24].try_into().unwrap()) as u64;
-        if len < 32 || off < 32 || off + n > len {
+        if len < 32 || off < 32 || off.checked_add(n).map_or(true, |e| e > len) {
             return Err(bad("damaged LRI block"));
         }
         // the first block with images: keep its first round, then read its header
@@ -381,11 +381,16 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
     }
     let Some((buf, mods, refcam)) = kept else { return Err(bad("no images in the LRI")) };
     // the reference module's first frame, or else any colour frame that was kept
+    // a surface the file's sizes keep within the frame read (a damaged or crafted one could
+    // ask for a huge allocation or read past the buffer): each 10-bit row within its stride
     let usable = |m: &&Module| {
+        let s = &m.surface;
+        let end = s.stride.checked_mul(s.height).and_then(|n| n.checked_add(s.offset.checked_sub(32)? as usize));
         m.red.is_some()
-            && m.surface.stride > 0
-            && m.surface.offset >= 32
-            && (m.surface.offset - 32) as usize + m.surface.stride * m.surface.height <= buf.len()
+            && (1..=16384).contains(&s.width)
+            && (1..=16384).contains(&s.height)
+            && s.width * 10 <= s.stride * 8
+            && end.is_some_and(|e| e <= buf.len())
     };
     let pick = mods
         .iter()

@@ -6,7 +6,7 @@
 # build into $pkgname-src.tar.gz here.
 pkgname=l16-render
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Light L16 photos rendered by Light's own renderer, from the stock partitions"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -24,5 +24,5 @@ package() {
 	install -Dm755 l16-render-orient "$pkgdir"/usr/libexec/l16-render-orient
 }
 sha512sums="
-c0f179e065d962b45695cf47aa776e8f5da35dc103f16ebe60735a1cc9b2ffa8953c2039ea80e36d54c2a6b8a0e9b95346f2ebd4fab6ea521ee67375f52be2db  l16-render-src.tar.gz
+f604b1a2c906b2f8dc7133d5a6454bf7e5194b9becbe29e4c467dfd0e74a7eda6b5b54db8734565b275cc83860b3b935e08d025e7b7b9e2ee3e8c763a0b6338a  l16-render-src.tar.gz
 "

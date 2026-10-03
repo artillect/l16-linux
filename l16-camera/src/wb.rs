@@ -10,7 +10,10 @@ pub const PRESETS: [&str; 5] = ["auto", "incandescent", "fluorescent", "daylight
 // the LRI view preferences' AWBMode for each (auto, tungsten, fluorescent, daylight, cloudy)
 pub const AWB_MODE: [u8; 5] = [0, 4, 5, 1, 3];
 
-const DEVICE_BLOCKS: &str = "/var/lib/l16/lri-device-blocks.bin";
+// the camera's factory calibration: lightcal's calibration.lri (gathered at boot by
+// light-lfc-android-libs), or blocks cut from one of its stock LRIs by hand (older installs),
+// as l16-lri-assemble reads them
+const DEVICE_BLOCKS: [&str; 2] = ["/var/lib/l16/calibration.lri", "/var/lib/l16/lri-device-blocks.bin"];
 // ColorCalibration's IlluminantType
 const ILLUM_A: u64 = 0;
 const ILLUM_D65: u64 = 2;
@@ -92,7 +95,7 @@ fn color_calibration(b: &[u8]) -> Option<(u64, f32, f32)> {
 impl Calibration {
     pub fn load() -> Self {
         let mut cal = Calibration::default();
-        let Ok(data) = std::fs::read(DEVICE_BLOCKS) else { return cal };
+        let Some(data) = DEVICE_BLOCKS.iter().find_map(|p| std::fs::read(p).ok()) else { return cal };
         // LELR blocks: {"LELR", u64 length, u64 message offset, u32 message length, ...}
         let mut o = 0;
         while o + 32 <= data.len() && &data[o..o + 4] == b"LELR" {

@@ -86,8 +86,17 @@ class FileBuf : public std::streambuf {
 	char buf_[1 << 16];
 public:
 	FileBuf(const char *path, const char *mode) : f_(std::fopen(path, mode)) {}
-	~FileBuf() override { sync(); if (f_) std::fclose(f_); }
+	~FileBuf() override { if (f_) { sync(); std::fclose(f_); } }
 	bool ok() const { return f_ != nullptr; }
+	// the file closed: true only if everything written reached it (a full disk failed the
+	// last flush or the close, and the truncated JPEG was taken for the render)
+	bool close() {
+		bool good = f_ && std::fflush(f_) == 0 && !std::ferror(f_);
+		if (f_ && std::fclose(f_) != 0)
+			good = false;
+		f_ = nullptr;
+		return good;
+	}
 protected:
 	int_type underflow() override {
 		size_t n = std::fread(buf_, 1, sizeof(buf_), f_);
@@ -189,7 +198,13 @@ int main(int argc, char **argv)
 	bool ok = r.writeImage(os, size, dng ? DNG : JPEG,
 			       [](int p) { std::fprintf(stderr, "%d%%\n", p); });
 	os->flush();
+	bool written = os->good() && file->fb.close();
 	r.cancelRenderRequests();
 	r.setInputDataStream(std::shared_ptr<std::istream>());
+	if (ok && !written) {
+		std::fprintf(stderr, "can't write %s\n", out.c_str());
+		std::remove(out.c_str());
+		return 1;
+	}
 	return ok ? 0 : 3;
 }

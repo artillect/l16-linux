@@ -44,8 +44,10 @@ start() {
 		printf recovery > /sys/module/reboot_mode/parameters/default_mode
 		misc_command boot-recovery || ewarn "Can't set misc: forced restarts will boot Android"
 		# "Reboot to Android" runs as the user; the setting only picks which of the
-		# two installed systems the next reboot starts
-		chmod 666 /sys/module/reboot_mode/parameters/default_mode
+		# two installed systems the next reboot starts. The admin group's (as rtc0's
+		# wakealarm), not any process's: anything else could send reboots to fastboot
+		chgrp wheel /sys/module/reboot_mode/parameters/default_mode
+		chmod 664 /sys/module/reboot_mode/parameters/default_mode
 		# shows the "Android" quick setting (l16-phosh-plugins)
 		ln -s /usr/bin/light-lfc-reboot-android /run/light-lfc-dual-boot
 	else

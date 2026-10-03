@@ -51,7 +51,8 @@ pub struct Transfers {
 impl Transfers {
     // links and formats the paths, starts the streams; @done gets each photo's directory
     // once all its records are in
-    pub fn start(done: mpsc::Sender<Result<PathBuf, String>>) -> Result<Transfers, String> {
+    // done: a photo's directory once all its records are in, or the directory and what failed
+    pub fn start(done: mpsc::Sender<Result<PathBuf, (PathBuf, String)>>) -> Result<Transfers, String> {
         let o = Command::new("l16-shoot").arg("setup").output().map_err(|e| e.to_string())?;
         if !o.status.success() {
             return Err(String::from_utf8_lossy(&o.stderr).trim().to_string());
@@ -91,7 +92,8 @@ impl Transfers {
                     ph.left[a] -= 1;
                     if let Some(Err(e)) = r {
                         let dir = q.remove(i).unwrap().dir;
-                        let _ = done.send(Err(format!("{}: {e}", dir.display())));
+                        let msg = format!("{}: {e}", dir.display());
+                        let _ = done.send(Err((dir, msg)));
                     } else if ph.left.iter().all(|&n| n == 0) {
                         let _ = done.send(Ok(q.remove(i).unwrap().dir));
                     }
