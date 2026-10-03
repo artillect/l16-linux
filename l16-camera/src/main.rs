@@ -15,6 +15,7 @@ mod haptics;
 mod icons;
 mod input;
 mod prox;
+mod rotate;
 mod settings;
 mod transfer;
 mod wb;
@@ -34,6 +35,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use canvas::Canvas;
+use rotate::Rotator;
 use zoomview::ZoomView;
 
 // OpenLight's value lists (res/values/arrays.xml)
@@ -104,6 +106,9 @@ window.camera { background: #000; }
 .chooser-card list { background: none; }
 .chooser-title { color: rgba(255,255,255,0.6); font-size: 15px; padding: 16px 32px 8px 32px; }
 .chooser-check { color: #00B1ED; font-size: 18px; font-weight: 700; }
+.spin { transition: transform 50ms ease-in; }
+window.rot-cw .spin { transform: rotate(90deg); }
+window.rot-ccw .spin { transform: rotate(-90deg); }
 ";
 
 #[derive(Clone, Copy, PartialEq)]
@@ -505,6 +510,11 @@ struct App {
     status_box: gtk::Box,
     // iio-sensor-proxy, for the ambient light (claimed while the app runs)
     light: Option<gtk::gio::DBusProxy>,
+    // and the accelerometer's orientation, for portrait: the UI's quarter turns clockwise
+    // (-1, 0, 1; as stock, none upside down) and what turns with it re-laid out
+    accel: Option<gtk::gio::DBusProxy>,
+    quarter: Cell<i32>,
+    rotators: Vec<Rotator>,
     geo: RefCell<geo::Geo>,
     storage_label: gtk::Label,
     battery_label: gtk::Label,
@@ -705,6 +715,18 @@ fn text(cr: &cairo::Context, s: &str, x: f64, y: f64, size: f64, align: f64) {
         y - ink.height() as f64 / 2.0 - ink.y() as f64,
     );
     pangocairo::functions::show_layout(cr, &layout);
+}
+
+// text() turned @q quarters clockwise for portrait, on the same side of (x, y)
+fn text_q(cr: &cairo::Context, s: &str, x: f64, y: f64, size: f64, align: f64, q: i32) {
+    if q == 0 {
+        return text(cr, s, x, y, size, align);
+    }
+    cr.save().ok();
+    cr.translate(x - (align - 0.5) * size * 1.2, y);
+    cr.rotate(q as f64 * PI / 2.0);
+    text(cr, s, 0.0, 0.0, size, 0.5);
+    cr.restore().ok();
 }
 
 fn make_pipeline() -> (gst::Pipeline, gdk::Paintable) {
@@ -1229,6 +1251,7 @@ impl App {
         let (choices, now) = self.choices(o);
         for (k, (icon, name)) in choices.into_iter().enumerate() {
             let b = icons::button(icon, &name);
+            b.add_css_class("spin");
             if k == now {
                 b.add_css_class("on");
             }
@@ -1298,14 +1321,45 @@ impl App {
 
     // stock's ModeWheel (landscape) in this screen's units (its pixels / 1.75): the modes as
     // text on a drum down the right edge, the chosen one level with a white bar at the edge
-    fn mode_item_y(pos: f64, idx: usize, h: f64) -> f64 {
+    fn mode_item_y(pos: f64, idx: usize, h: f64, step: f64) -> f64 {
         let max = (MODES.len() - 1) as f64;
-        let th = 6f64.to_radians() * (idx as f64 - max * pos);
+        let th = step.to_radians() * (idx as f64 - max * pos);
         h / 2.0 - th.sin() * h * th.cos().powi(5)
+    }
+
+    // portrait or landscape, from iio-sensor-proxy: the window's class turns the icons in
+    // place ("spin"), the rotators re-lay their text out, the wheels turn their labels
+    fn follow_orientation(&self, accel: &gtk::gio::DBusProxy) {
+        let o = accel.cached_property("AccelerometerOrientation").and_then(|v| v.get::<String>());
+        let Some(q) = o.as_deref().and_then(quarter_for) else { return };
+        if self.quarter.replace(q) == q {
+            return;
+        }
+        if let Some(w) = self.view.root() {
+            w.remove_css_class("rot-cw");
+            w.remove_css_class("rot-ccw");
+            match q {
+                1 => w.add_css_class("rot-cw"),
+                -1 => w.add_css_class("rot-ccw"),
+                _ => {}
+            }
+        }
+        for r in &self.rotators {
+            r.set_quarter(q);
+        }
+        self.wheels.queue_draw();
+        self.mode_wheel.queue_draw();
+    }
+
+    // degrees between the mode wheel's labels (stock's 2 and 4 dip, as angles)
+    fn mode_step(&self) -> f64 {
+        if self.quarter.get() == 0 { 6.0 } else { 12.0 }
     }
 
     fn draw_mode_wheel(&self, cr: &cairo::Context, w: f64, h: f64) {
         let pos = self.st.borrow().mode_pos;
+        let (q, step) = (self.quarter.get(), self.mode_step());
+        let label_of = |m: Mode| if q == 0 { m.label() } else { m.short() };
         // the strip's shade: clear at its left, a quarter black at the edge
         let g = cairo::LinearGradient::new(0.0, 0.0, w, 0.0);
         g.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, 0.0);
@@ -1323,25 +1377,37 @@ impl App {
         cr.set_font_size(55.0);
         let widest = MODES
             .iter()
-            .filter_map(|m| cr.text_extents(m.label()).ok())
+            .filter_map(|m| cr.text_extents(label_of(*m)).ok())
             .map(|e| e.width())
             .fold(0.0, f64::max);
-        let size = 55.0 * ((w - 48.0 - 16.0) / widest).min(1.0);
+        // turned, a label's length runs along the wheel: within the gap to the next one
+        let room = if q == 0 { w - 48.0 - 16.0 } else { 0.85 * step.to_radians().sin() * h };
+        let size = 55.0 * (room / widest).min(1.0);
         for i in -2i64..=2 {
             let idx = base + i;
             if idx < 0 || idx > max as i64 {
                 continue;
             }
-            let th = 6f64.to_radians() * (idx as f64 - max * pos);
-            let y = Self::mode_item_y(pos, idx as usize, h);
+            let th = step.to_radians() * (idx as f64 - max * pos);
+            let y = Self::mode_item_y(pos, idx as usize, h, step);
             // stock's perspective: the slot's exponent, and neighbours at 3/4 alpha
             let k = if i == 0 { 26 } else { 52 / i.abs() as i32 };
             let alpha = th.cos() * if i == 0 { 1.0 } else { 0.75 };
-            let label = MODES[idx as usize].label();
+            let label = label_of(MODES[idx as usize]);
             cr.set_font_size(size * th.cos().powi(k));
             let Ok(e) = cr.text_extents(label) else { continue };
-            cr.move_to(w - e.width() - 48.0 - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
-            cr.text_path(label);
+            if q == 0 {
+                cr.move_to(w - e.width() - 48.0 - e.x_bearing(), y - e.height() / 2.0 - e.y_bearing());
+                cr.text_path(label);
+            } else {
+                // turned about its centre, a text height in from the edge mark
+                cr.save().ok();
+                cr.translate(w - 48.0 - e.height() / 2.0, y);
+                cr.rotate(q as f64 * PI / 2.0);
+                cr.move_to(-e.width() / 2.0 - e.x_bearing(), -e.height() / 2.0 - e.y_bearing());
+                cr.text_path(label);
+                cr.restore().ok();
+            }
             cr.set_source_rgba(0.0, 0.0, 0.0, alpha);
             cr.set_line_width(2.0);
             let _ = cr.stroke_preserve();
@@ -1658,6 +1724,11 @@ impl App {
             if let Some((r, b)) = self.cal.gains(st.wb, st.module) {
                 v.push("--wb".into());
                 v.push(format!("{r},{b}"));
+            }
+            match self.quarter.get() {
+                -1 => v.extend(["--orientation".into(), "1".into()]),
+                1 => v.extend(["--orientation".into(), "2".into()]),
+                _ => {}
             }
             if let Some(f) = st.geotag.then(|| self.geo.borrow().fix()).flatten() {
                 let alt = f.altitude.map_or("nan".to_string(), |a| a.to_string());
@@ -2123,6 +2194,10 @@ impl App {
         };
         if since.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
             self.st.borrow_mut().pocket_since = None;
+            eprintln!(
+                "l16-camera: in a pocket (lenses covered {:#04b}, {lux:.1} lux, 30 s): closing",
+                self.blocked.load(Ordering::Relaxed)
+            );
             self.show_status("Entering pocket power save due to inactivity.", 3);
             let w = self.view.root().and_downcast::<gtk::Window>();
             glib::timeout_add_local_once(Duration::from_secs(2), move || {
@@ -2520,6 +2595,7 @@ impl App {
 
     fn draw_wheels(&self, cr: &cairo::Context, w: f64, h: f64) {
         let st = self.st.borrow();
+        let q = self.quarter.get();
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
         // the exposure wheel: the value lists as ticks on an arc beside the dials, turning
         // with the (continuous) value, which sits on the pointer
@@ -2557,14 +2633,14 @@ impl App {
                 cr.arc(x, y, 3.0, 0.0, 2.0 * PI);
                 let _ = cr.fill();
                 if d.abs() > 0.06 {
-                    text(cr, l, x - 18.0, y, 20.0, 1.0);
+                    text_q(cr, l, x - 18.0, y, 20.0, 1.0, q);
                 }
             }
             let (x, y) = (cx - r, cy);
             cr.set_source_rgb(ACCENT.0, ACCENT.1, ACCENT.2);
             cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
             let _ = cr.fill();
-            text(cr, &value, x - 18.0, y, 34.0, 1.0);
+            text_q(cr, &value, x - 18.0, y, 34.0, 1.0, q);
         }
         // the zoom wheel: an arc of dots from 28 (bottom) to 150 mm (top), primes labelled
         if st.zoom_wheel_until.is_some_and(|t| Instant::now() < t) {
@@ -2587,13 +2663,13 @@ impl App {
                 cr.set_source_rgb(1.0, 1.0, 1.0);
                 cr.arc(x, y, 4.0, 0.0, 2.0 * PI);
                 let _ = cr.fill();
-                text(cr, &format!("{p:.0}"), x + 12.0, y, 14.0, 0.0);
+                text_q(cr, &format!("{p:.0}"), x + 12.0, y, 14.0, 0.0, q);
             }
             let (x, y) = point(st.zoom);
             cr.set_source_rgb(ACCENT.0, ACCENT.1, ACCENT.2);
             cr.arc(x, y, 7.0, 0.0, 2.0 * PI);
             let _ = cr.fill();
-            text(cr, &format!("{:.0} mm", st.zoom), x - 18.0, y, 30.0, 1.0);
+            text_q(cr, &format!("{:.0} mm", st.zoom), x - 18.0, y, 30.0, 1.0, q);
         }
     }
 
@@ -2657,6 +2733,37 @@ fn light_proxy() -> Option<gtk::gio::DBusProxy> {
         .call_sync("ClaimLight", None, gtk::gio::DBusCallFlags::NONE, 2000, None::<&gtk::gio::Cancellable>)
         .ok()?;
     Some(proxy)
+}
+
+// iio-sensor-proxy's accelerometer orientation, claimed for as long as the app runs
+fn accel_proxy() -> Option<gtk::gio::DBusProxy> {
+    let proxy = gtk::gio::DBusProxy::for_bus_sync(
+        gtk::gio::BusType::System,
+        gtk::gio::DBusProxyFlags::NONE,
+        None,
+        "net.hadess.SensorProxy",
+        "/net/hadess/SensorProxy",
+        "net.hadess.SensorProxy",
+        None::<&gtk::gio::Cancellable>,
+    )
+    .ok()?;
+    proxy
+        .call_sync("ClaimAccelerometer", None, gtk::gio::DBusCallFlags::NONE, 2000, None::<&gtk::gio::Cancellable>)
+        .ok()?;
+    Some(proxy)
+}
+
+// the UI's quarter turns for iio-sensor-proxy's orientation (relative to the panel, whose
+// own upright is portrait): held as a camera, right-up (or left-up, upside down: stock
+// doesn't turn for it); portrait with the shutter down, normal (stock's PORTRAIT, -90);
+// shutter up, bottom-up (PORTRAIT_REVERSE, +90). None: lying flat, unknown (keep the last)
+fn quarter_for(orientation: &str) -> Option<i32> {
+    match orientation {
+        "right-up" | "left-up" => Some(0),
+        "normal" => Some(-1),
+        "bottom-up" => Some(1),
+        _ => None,
+    }
 }
 
 // the camera modules' temperature (whole degrees C): the light-ccb driver's hwmon, from
@@ -2774,6 +2881,14 @@ fn build(gapp: &gtk::Application) {
     hist_area.set_valign(gtk::Align::Start);
     hist_area.set_can_target(false);
     hist_area.set_visible(false);
+    // what turns for portrait, re-laid out (rotate.rs)
+    let mut rotators: Vec<Rotator> = Vec::new();
+    let mut turn = |w: &gtk::Widget| {
+        let r = Rotator::wrap(w);
+        rotators.push(r.clone());
+        r
+    };
+    let hist_turn = turn(hist_area.upcast_ref());
     // the focus marks: a small layer of their own at the focus point (they animate, and a
     // full-screen Cairo layer redrawn every frame cost most of a core)
     let focus_area = gtk::DrawingArea::new();
@@ -2785,7 +2900,7 @@ fn build(gapp: &gtk::Application) {
     let preview = gtk::Overlay::new();
     preview.set_child(Some(&view));
     preview.add_overlay(&marks);
-    preview.add_overlay(&hist_area);
+    preview.add_overlay(&hist_turn);
     preview.add_overlay(&focus_area);
     let blackout = gtk::Box::new(gtk::Orientation::Vertical, 0);
     blackout.add_css_class("blackout");
@@ -2803,7 +2918,11 @@ fn build(gapp: &gtk::Application) {
     left.set_valign(gtk::Align::Center);
     let hud_box = gtk::Box::new(gtk::Orientation::Vertical, 16);
     for (l, unit) in hud.iter().zip(["ev", "iso", "s", "mm"]) {
-        hud_box.append(&hud_item(l, unit));
+        // centred in the column, as the badges above: turned, filling it put the
+        // readout against the screen's edge
+        let r = turn(hud_item(l, unit).upcast_ref());
+        r.set_halign(gtk::Align::Center);
+        hud_box.append(&r);
     }
     left.append(&hud_box);
 
@@ -2818,6 +2937,7 @@ fn build(gapp: &gtk::Application) {
     thumb_box.add_overlay(&thumb_spin);
     thumb_box.set_halign(gtk::Align::Center);
     thumb_box.set_margin_top(16);
+    thumb_box.add_css_class("spin");
     // the gallery, at the newest photo
     let open_gallery = gtk::GestureClick::new();
     open_gallery.connect_released(|_, _, _, _| {
@@ -2846,10 +2966,13 @@ fn build(gapp: &gtk::Application) {
         d
     };
     let (top, shutter, bottom) = (dial(54), dial(66), dial(54));
+    for d in [&top, &shutter, &bottom] {
+        d.add_css_class("spin");
+    }
     let mode_label = gtk::Label::new(Some("auto"));
     let opener_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     opener_box.append(&icons::label(icons::CHEVRON_UP));
-    opener_box.append(&mode_label);
+    opener_box.append(&turn(mode_label.upcast_ref()));
     let opener = gtk::Button::new();
     opener.set_child(Some(&opener_box));
     opener.add_css_class("flat-white");
@@ -2885,6 +3008,9 @@ fn build(gapp: &gtk::Application) {
     let settings_btn = icons::button(icons::COG, "");
     let close_btn = icons::button(icons::CLOSE, "");
     let afd_btn = icons::button(icons::FOCUS_AUTO, "");
+    for b in [&timer_btn, &grid_btn, &hist_btn, &burst_btn, &flash_btn, &wb_btn, &settings_btn, &close_btn, &afd_btn] {
+        b.add_css_class("spin");
+    }
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bar.add_css_class("toolbar");
     // the chosen buttons (layout_toolbar)
@@ -2912,7 +3038,7 @@ fn build(gapp: &gtk::Application) {
     settings_box.append(&settings_back);
     settings_box.append(&settings_scroll);
     let settings_page = gtk::Overlay::new();
-    settings_page.set_child(Some(&settings_box));
+    settings_page.set_child(Some(&turn(settings_box.upcast_ref())));
     settings_page.set_visible(false);
     // the list a setting's value is chosen from, over the settings screen
     let chooser_title = gtk::Label::new(None);
@@ -2930,8 +3056,8 @@ fn build(gapp: &gtk::Application) {
     chooser_card.append(&chooser_list);
     let chooser = gtk::Box::new(gtk::Orientation::Vertical, 0);
     chooser.add_css_class("chooser");
-    chooser.append(&chooser_card);
     chooser_card.set_vexpand(true);
+    chooser.append(&turn(chooser_card.upcast_ref()));
     chooser.set_visible(false);
     settings_page.add_overlay(&chooser);
     // the toolbar editor: which buttons, in what order
@@ -2950,7 +3076,7 @@ fn build(gapp: &gtk::Application) {
     editor.append(&editor_back);
     editor.append(&editor_scroll);
     editor.set_visible(false);
-    settings_page.add_overlay(&editor);
+    settings_page.add_overlay(&turn(editor.upcast_ref()));
     let options_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     options_row.add_css_class("toolbar");
     options_row.add_css_class("options");
@@ -2992,8 +3118,10 @@ fn build(gapp: &gtk::Application) {
     status.set_margin_top(14);
     status.set_visible(false);
     status.set_can_target(false);
+    let status_turn = turn(status.upcast_ref());
     let countdown = gtk::Label::new(None);
     countdown.add_css_class("countdown");
+    countdown.add_css_class("spin");
     countdown.set_visible(false);
     countdown.set_can_target(false);
 
@@ -3017,29 +3145,33 @@ fn build(gapp: &gtk::Application) {
     burst_inner.append(&burst_saving);
     let burst_screen = gtk::Box::new(gtk::Orientation::Vertical, 0);
     burst_screen.add_css_class("burst-screen");
-    burst_screen.append(&burst_inner);
     burst_inner.set_vexpand(true);
+    burst_screen.append(&turn(burst_inner.upcast_ref()));
     burst_screen.set_visible(false);
     burst_screen.add_controller(gtk::GestureClick::new()); // swallows taps
     let burst_badge = gtk::Label::new(None);
     burst_badge.add_css_class("burst-badge");
     burst_badge.set_halign(gtk::Align::Center);
     burst_badge.set_visible(false);
+    burst_badge.add_css_class("spin");
     left.prepend(&burst_badge);
     let tripod_badge = icons::label(icons::CAMERA_LOCK);
     tripod_badge.add_css_class("assist-badge");
     tripod_badge.set_halign(gtk::Align::Center);
     tripod_badge.set_visible(false);
+    tripod_badge.add_css_class("spin");
     left.prepend(&tripod_badge);
     let shake_badge = icons::label(icons::HAND_WAVE);
     shake_badge.add_css_class("assist-badge");
     shake_badge.set_halign(gtk::Align::Center);
     shake_badge.set_visible(false);
+    shake_badge.add_css_class("spin");
     left.prepend(&shake_badge);
     let moon_badge = icons::label(icons::MOON);
     moon_badge.add_css_class("assist-badge");
     moon_badge.set_halign(gtk::Align::Center);
     moon_badge.set_visible(false);
+    moon_badge.add_css_class("spin");
     left.prepend(&moon_badge);
 
     // stock's lens-blocked warning: the camera's back with the covered sensors, top centre
@@ -3050,6 +3182,7 @@ fn build(gapp: &gtk::Application) {
     lens_badge.set_margin_top(24);
     lens_badge.set_can_target(false);
     lens_badge.set_visible(false);
+    let lens_turn = turn(lens_badge.upcast_ref());
 
     // stock's device status: captures left and the battery, top left
     let storage_label = gtk::Label::new(None);
@@ -3065,6 +3198,7 @@ fn build(gapp: &gtk::Application) {
     status_box.set_margin_start(12);
     status_box.set_margin_top(16);
     status_box.set_can_target(false);
+    let status_box_turn = turn(status_box.upcast_ref());
     // stock's LowBatteryFragment: over everything (touches too) at 10% or less, until 12%
     let battery_screen = gtk::Box::new(gtk::Orientation::Vertical, 16);
     battery_screen.add_css_class("battery-screen");
@@ -3079,7 +3213,7 @@ fn build(gapp: &gtk::Application) {
     battery_inner.set_vexpand(true);
     battery_inner.append(&battery_icon);
     battery_inner.append(&gtk::Label::new(Some("battery low")));
-    battery_screen.append(&battery_inner);
+    battery_screen.append(&turn(battery_inner.upcast_ref()));
     battery_screen.set_visible(false);
     battery_screen.add_controller(gtk::GestureClick::new()); // swallows taps
 
@@ -3092,6 +3226,7 @@ fn build(gapp: &gtk::Application) {
     thermal_warning.set_margin_bottom(24);
     thermal_warning.set_can_target(false);
     thermal_warning.set_visible(false);
+    let thermal_turn = turn(thermal_warning.upcast_ref());
     let hot_screen = gtk::Box::new(gtk::Orientation::Vertical, 16);
     hot_screen.add_css_class("battery-screen");
     let hot_icon = gtk::Label::new(None);
@@ -3103,17 +3238,17 @@ fn build(gapp: &gtk::Application) {
     hot_inner.set_vexpand(true);
     hot_inner.append(&hot_icon);
     hot_inner.append(&hot_text);
-    hot_screen.append(&hot_inner);
+    hot_screen.append(&turn(hot_inner.upcast_ref()));
     hot_screen.set_visible(false);
     hot_screen.add_controller(gtk::GestureClick::new()); // swallows taps
 
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
-    root.add_overlay(&lens_badge);
-    root.add_overlay(&thermal_warning);
-    root.add_overlay(&status_box);
+    root.add_overlay(&lens_turn);
+    root.add_overlay(&thermal_turn);
+    root.add_overlay(&status_box_turn);
     root.add_overlay(&wheels);
-    root.add_overlay(&status);
+    root.add_overlay(&status_turn);
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
     root.add_overlay(&mode_wheel);
@@ -3246,6 +3381,9 @@ fn build(gapp: &gtk::Application) {
         lens_badge,
         status_box,
         light: light_proxy(),
+        accel: accel_proxy(),
+        quarter: Cell::new(0),
+        rotators,
         geo: RefCell::new(geo::Geo::default()),
         storage_label,
         battery_label,
@@ -3318,6 +3456,17 @@ fn build(gapp: &gtk::Application) {
         status,
         countdown,
     });
+    // portrait: follow the accelerometer's orientation
+    if let Some(accel) = &app.accel {
+        let a = app.clone();
+        accel.connect_local("g-properties-changed", false, move |v| {
+            if let Some(p) = v.first().and_then(|p| p.get::<gtk::gio::DBusProxy>().ok()) {
+                a.follow_orientation(&p);
+            }
+            None
+        });
+        app.follow_orientation(accel);
+    }
     {
         let mut st = app.st.borrow_mut();
         st.load(&settings::load());
@@ -3512,7 +3661,7 @@ fn build(gapp: &gtk::Application) {
         // the touch band sits centred on the wheel
         let y = y + (h - MODE_TOUCH_H as f64) / 2.0;
         let near = (0..MODES.len())
-            .map(|i| (i, (App::mode_item_y(pos, i, h) - y).abs()))
+            .map(|i| (i, (App::mode_item_y(pos, i, h, a.mode_step()) - y).abs()))
             .min_by(|p, q| p.1.total_cmp(&q.1));
         if let Some((i, d)) = near {
             if d < 30.0 {
@@ -3600,6 +3749,7 @@ fn build(gapp: &gtk::Application) {
     // closing: the window goes at once (the shell's close animation doesn't wait for the
     // camera), then the transfer streams and the preview stop in their order and the app ends
     window.connect_close_request(move |w| {
+        eprintln!("l16-camera: window closed");
         w.set_visible(false);
         let (a, w) = (a.clone(), w.clone());
         glib::idle_add_local_once(move || {

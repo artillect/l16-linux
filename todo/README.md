@@ -25,7 +25,10 @@ them, keep Android, and not lose the camera to a bad state.
 - [x] AF-D as stock's: motion-then-settle (gyro) and zoom, with the marks
 - [ ] AF-D: faces as a trigger (stock refocuses on face count/size/position changes)
 - [ ] Shutter sound choice (stock has several)
-- [ ] Portrait UI rotation
+- [x] Portrait UI rotation (as stock: icons turn in place, text re-laid out, the LRI's
+      orientation set)
+- [ ] In-pocket check: a longer warning before it acts (a countdown), and suspend instead of
+      closing the app (it closed on a leg in a dark room, as designed, with little warning)
 - [ ] Preview: denoising (stock's ABF) and local tone mapping (LTM): our dim previews are noisy
 - [ ] Preview digital gain: stock's ISP reached ~6.9-7.4x in a dim scene, more than the 4.13x
       boost we apply; pairing its log to frames was unreliable (see memory: stock preview tone)
@@ -54,9 +57,14 @@ them, keep Android, and not lose the camera to a bad state.
 - [x] Deep sleep (XO shutdown in suspend, kernel r94): Wi-Fi's PCIe controller and PHY
       powered down for suspend, the RPM clocks' unused handoff votes withdrawn, the modem's
       GPLL0 branch without a parent (as stock)
+- [ ] A camera stream left on (a crash mid-stream, 2026-10-02) keeps light-ccb's stream count
+      up: the preview never starts again and the ASICs stay powered until a reboot. The
+      driver's stream on/off logging is staged for the next kernel; WirePlumber's camera
+      monitors, which held the camera too, are off (device-light-lfc r28)
 - [ ] Measure the idle drain on battery overnight now that the crystal shuts off (was 4-5%/h)
-- [ ] UFS at boot: "dme-get: attr-id 0xa00b failed", "hw clk gating enabled failed" (seen
-      2026-10-02 on r93/r94, not looked for before; not caused by the RPM clock changes)
+- [ ] UFS at boot: "dme-get: attr-id 0xa00b failed", "hw clk gating enabled failed": the v2
+      controller has no UniPro clock gating attributes (stock enables only the UTP gating,
+      which works); harmless. Patch 0027 skips them on v2, uncommitted, for the next kernel bump
 - [ ] Kernel tracing (CONFIG_FTRACE) is on for debugging suspend; drop it if it costs anything
 
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
