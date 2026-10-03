@@ -4,6 +4,8 @@ Mainline Linux (msm8996-mainline 6.19) and postmarketOS v26.06 with Phosh on the
 Light L16 camera (codename `lfc`, APQ8096), dual-booted with the stock LightOS
 (Android 6).
 
+![The L16 running postmarketOS, on the grass](docs/images/l16-outdoors.jpg)
+
 > [!WARNING]
 > **This is an in-development port. Use it at your own risk.** Installing it rewrites
 > partitions on your camera, and a mistake can leave it unable to boot. It also runs
@@ -72,6 +74,11 @@ Two apps, from the package repository (`apk add l16-camera l16-gallery`):
 It keeps the screen on while it is in front, and its preview stops while it can't be seen
 (screen off, another app in front).
 
+| | |
+|---|---|
+| ![Viewfinder](docs/images/viewfinder.jpg) | ![Viewfinder with the EV wheel open](docs/images/viewfinder-ev-wheel.jpg) |
+| ![Viewfinder's settings](docs/images/viewfinder-settings.png) | |
+
 **Lightbox** ([l16-gallery](l16-gallery)) shows the photos by day. It opens a quick look
 straight from the LRI, and renders the full photo with Light's own renderer on request
 ([l16-render](l16-render): Light's library, taken from the stock partitions). The JPEG
@@ -81,6 +88,10 @@ either in its folder, and several photos can be chosen and deleted at once.
 [glycin-lri](glycin-lri) also gives LRIs thumbnails in the file manager and opens them in
 Loupe. Photos can also be rendered on a PC with Light's Lumen,
 or with [chiaro](pmaports/main/chiaro) (packaged here).
+
+| | |
+|---|---|
+| ![Lightbox's photos by day](docs/images/lightbox-grid.jpg) | ![A photo in Lightbox](docs/images/lightbox-preview.jpg) |
 
 The package repository carries a patched libcamera. Its software ISP takes manual white
 balance and gives the preview stock's tone (digital gain and stock's gamma), and
