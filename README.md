@@ -103,6 +103,19 @@ display without copying them, and survives the preview being stopped and started
 - XDA: [Light L16 Firmware](https://xdaforums.com/t/light-l16-firmware.4403267/)
 - [Light L16 community Discord](https://discord.gg/e3c2wEVDU4): Linux talk is in the tinkering forum
 
+## Thanks
+
+Much of what's known about the L16, and so much of the wiki, was gathered by the community
+in the XDA thread and the L16 community Discord. These projects helped a lot along the way:
+
+- [openlight-camera](https://github.com/ookami125/openlight-camera) by ookami125: Viewfinder
+  is laid out after it
+- [lri-rs](https://github.com/gennyble/lri-rs) by gennyble: reading the LRI format
+- [chiaro](https://github.com/shinf1x/chiaro) by shinf1x: an open replacement for Lumen,
+  packaged here
+- [Light-L16-Archive](https://github.com/helloavo/Light-L16-Archive) by helloavo: Light's
+  firmware and software, kept available
+
 ## License
 
 Kernel changes are GPL-2.0-only, docs CC BY-SA 4.0, everything else MIT; see
