@@ -90,7 +90,7 @@ display without copying them, and survives the preview being stopped and started
 ## Community
 
 - XDA: [Light L16 Firmware](https://xdaforums.com/t/light-l16-firmware.4403267/)
-- Discord: https://discord.gg/e3c2wEVDU4
+- [Light L16 community Discord](https://discord.gg/e3c2wEVDU4): Linux talk is in the tinkering forum
 
 ## License
 
