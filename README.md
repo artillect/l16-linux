@@ -24,7 +24,7 @@ Everything is in the **[wiki](https://github.com/artillect/l16-linux/wiki)**:
 
 - [Flash mode](https://github.com/artillect/l16-linux/wiki/Flash-mode), including the Windows driver
 - [Unlocking and backups](https://github.com/artillect/l16-linux/wiki/Unlocking-and-backups)
-- [Installation](https://github.com/artillect/l16-linux/wiki/Installation): prebuilt image or pmbootstrap
+- [Dual boot](https://github.com/artillect/l16-linux/wiki/Dual-boot) (keep Android) or [Installation](https://github.com/artillect/l16-linux/wiki/Installation) (replace Android): prebuilt image or pmbootstrap
 - [Using Linux](https://github.com/artillect/l16-linux/wiki/Using-Linux): switching to Android, updates
 - [Development](https://github.com/artillect/l16-linux/wiki/Development)
 
