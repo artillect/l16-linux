@@ -2399,8 +2399,10 @@ impl App {
         let Some(app) = window.application() else { return };
         if front && self.idle_cookie.get() == 0 {
             self.idle_cookie.set(app.inhibit(Some(&window), gtk::ApplicationInhibitFlags::IDLE, Some("Taking photos")));
+            front_marker(true);
         } else if !front && self.idle_cookie.get() != 0 {
             app.uninhibit(self.idle_cookie.replace(0));
+            front_marker(false);
         }
         let held = self.landscape_held.borrow().is_some();
         if front && !held {
@@ -2419,6 +2421,7 @@ impl App {
     }
 
     fn release_landscape(&self) {
+        front_marker(false);
         let Some((was, transform)) = self.landscape_held.borrow_mut().take() else { return };
         if was {
             // locked before: as it was locked
@@ -4001,6 +4004,17 @@ fn build(gapp: &gtk::Application) {
     }
     window.fullscreen();
     window.present();
+}
+
+// While in front, a marker in the runtime directory: the touch strip is the camera's zoom
+// then, and light-lfc-strip-volume leaves it alone (in the overview it is volume again)
+fn front_marker(front: bool) {
+    let path = glib::user_runtime_dir().join("l16-camera.front");
+    if front {
+        let _ = std::fs::write(&path, b"");
+    } else {
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 // The camera, one app at a time: a lock held from the start until the process ends (its
