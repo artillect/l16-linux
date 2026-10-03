@@ -26,6 +26,7 @@ python3 -c "import sys; sys.path.insert(0, '$HOME/pmbootstrap'); import pmb.conf
 cat > "$HOME/.config/pmbootstrap_v3.cfg" <<EOF
 [pmbootstrap]
 device = light-lfc
+extra_packages = l16-camera,l16-gallery
 hostname = light-lfc
 is_default_channel = False
 service_manager = openrc
