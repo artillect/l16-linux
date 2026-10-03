@@ -1,0 +1,85 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] clk: qcom: smd-rpm: withdraw the handoff votes of unused clocks
+
+---
+diff --git a/drivers/clk/qcom/clk-smd-rpm.c b/drivers/clk/qcom/clk-smd-rpm.c
+index 103db984a..ce9206c0d 100644
+--- a/drivers/clk/qcom/clk-smd-rpm.c
++++ b/drivers/clk/qcom/clk-smd-rpm.c
+@@ -166,6 +166,14 @@ struct clk_smd_rpm {
+ 	const bool active_only;
+ 	bool enabled;
+ 	bool branch;
++	/*
++	 * L16: still on from the handoff (voted on in both the active and the sleep
++	 * set at probe), as stock hands RPM clocks off. Reported by is_prepared, so
++	 * the clk core's unused pass withdraws the votes nobody took over, as stock
++	 * does at late init: left on, the XO buffers' sleep votes keep the crystal
++	 * on through suspend.
++	 */
++	bool handoff;
+ 	struct clk_smd_rpm *peer;
+ 	struct clk_hw hw;
+ 	unsigned long rate;
+@@ -264,6 +272,8 @@ static int clk_smd_rpm_prepare(struct clk_hw *hw)
+ 
+ 	mutex_lock(&rpm_smd_clk_lock);
+ 
++	r->handoff = false;
++
+ 	/* Don't send requests to the RPM if the rate has not been set. */
+ 	if (!r->rate)
+ 		goto out;
+@@ -312,6 +322,11 @@ static void clk_smd_rpm_unprepare(struct clk_hw *hw)
+ 
+ 	guard(mutex)(&rpm_smd_clk_lock);
+ 
++	if (r->handoff)
++		pr_info("clk-smd-rpm: %s: unused, handoff vote withdrawn\n",
++			clk_hw_get_name(hw));
++	r->handoff = false;
++
+ 	if (!r->rate)
+ 		return;
+ 
+@@ -423,9 +438,17 @@ static int clk_smd_rpm_enable_scaling(void)
+ 	return 0;
+ }
+ 
++static int clk_smd_rpm_is_prepared(struct clk_hw *hw)
++{
++	struct clk_smd_rpm *r = to_clk_smd_rpm(hw);
++
++	return r->enabled || r->handoff;
++}
++
+ static const struct clk_ops clk_smd_rpm_ops = {
+ 	.prepare	= clk_smd_rpm_prepare,
+ 	.unprepare	= clk_smd_rpm_unprepare,
++	.is_prepared	= clk_smd_rpm_is_prepared,
+ 	.set_rate	= clk_smd_rpm_set_rate,
+ 	.determine_rate = clk_smd_rpm_determine_rate,
+ 	.recalc_rate	= clk_smd_rpm_recalc_rate,
+@@ -434,6 +457,7 @@ static const struct clk_ops clk_smd_rpm_ops = {
+ static const struct clk_ops clk_smd_rpm_branch_ops = {
+ 	.prepare	= clk_smd_rpm_prepare,
+ 	.unprepare	= clk_smd_rpm_unprepare,
++	.is_prepared	= clk_smd_rpm_is_prepared,
+ 	.recalc_rate	= clk_smd_rpm_recalc_rate,
+ };
+ 
+@@ -1371,6 +1395,14 @@ static int rpm_smd_clk_probe(struct platform_device *pdev)
+ 		ret = clk_smd_rpm_handoff(rpm_smd_clks[i]);
+ 		if (ret)
+ 			goto err;
++		/*
++		 * Not ln_bb_clk: UFS (a module, loaded after the unused pass) runs on
++		 * it from the bootloader on, and lost its link state when its vote
++		 * went (dme-get failures, no PHY power-down in suspend). UFS and PCIe
++		 * take it over and release it as usual.
++		 */
++		if (!strstr(rpm_smd_clks[i]->hw.init->name, "ln_bb_clk"))
++			rpm_smd_clks[i]->handoff = true;
+ 	}
+ 
+ 	for (i = 0; i < desc->num_icc_clks; i++) {

@@ -59,8 +59,6 @@ patch drm-msm-mdp5-first-pairable-mixer "drm/msm/mdp5: use the first pair-able l
 	drivers/gpu/drm/msm/disp/mdp5/mdp5_mixer.c
 patch drm-msm-mdp5-stale-hwpipe "drm/msm/mdp5: drop hwpipes not registered in the global state" \
 	drivers/gpu/drm/msm/disp/mdp5/mdp5_plane.c
-patch clk-qcom-gcc-msm8996-pcie0-retention "clk: qcom: gcc-msm8996: keep PCIe0 GDSC in retention" \
-	drivers/clk/qcom/gcc-msm8996.c
 patch input-pm8941-pwrkey-abort-suspend "Input: pm8941-pwrkey: a press aborts suspend" \
 	drivers/input/misc/pm8941-pwrkey.c
 patch iio-qcom-smgr-metadata-array "iio: qcom_smgr: decode the report metadata as a per-item array" \
@@ -84,9 +82,18 @@ patch media-qcom-camss-l16-capture "media: qcom: camss: L16 captures (virtual ch
 	drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c drivers/media/platform/qcom/camss/camss-vfe-gen1.c \
 	drivers/media/platform/qcom/camss/camss-vfe.c drivers/media/platform/qcom/camss/camss-video.c \
 	drivers/media/platform/qcom/camss/camss-video.h
-patch drm-msm-a5xx-a530-no-preemption "drm/msm/a5xx: no preemption on the A530" \n	drivers/gpu/drm/msm/adreno/a5xx_gpu.c
-patch cpuidle-psci-domain-osi-firmware "cpuidle: psci: OSI on firmware that cannot set the mode; idle registered after the deferred probes" \n	drivers/cpuidle/cpuidle-psci-domain.c drivers/cpuidle/cpuidle-psci.c
-patch soc-qcom-smp2p-sleepstate "soc: qcom: smp2p-sleepstate: tell the SLPI when the CPUs suspend" \n	drivers/soc/qcom/smp2p_sleepstate.c
+patch drm-msm-a5xx-a530-no-preemption "drm/msm/a5xx: no preemption on the A530" \
+	drivers/gpu/drm/msm/adreno/a5xx_gpu.c
+patch cpuidle-psci-domain-osi-firmware "cpuidle: psci: OSI on firmware that cannot set the mode; idle registered after the deferred probes" \
+	drivers/cpuidle/cpuidle-psci-domain.c drivers/cpuidle/cpuidle-psci.c
+patch soc-qcom-smp2p-sleepstate "soc: qcom: smp2p-sleepstate: tell the SLPI when the CPUs suspend" \
+	drivers/soc/qcom/smp2p_sleepstate.c
+patch pci-qcom-power-down-linked "PCI: qcom: L16: power a linked controller down for suspend" \
+	drivers/pci/controller/dwc/pcie-qcom.c
+patch clk-qcom-smd-rpm-withdraw-unused-handoff "clk: qcom: smd-rpm: withdraw the handoff votes of unused clocks" \
+	drivers/clk/qcom/clk-smd-rpm.c
+patch clk-qcom-gcc-msm8996-mss-gpll0-no-parent "clk: qcom: gcc-msm8996: the modem's GPLL0 branch without a parent, as stock" \
+	drivers/clk/qcom/gcc-msm8996.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)

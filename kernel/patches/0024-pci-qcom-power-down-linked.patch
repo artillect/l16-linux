@@ -1,0 +1,109 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] PCI: qcom: L16: power a linked controller down for suspend
+
+---
+diff --git a/drivers/pci/controller/dwc/pcie-qcom.c b/drivers/pci/controller/dwc/pcie-qcom.c
+index 5a318487b..ce48cea5d 100644
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -284,6 +284,7 @@ struct qcom_pcie {
+ 	struct dentry *debugfs;
+ 	struct list_head ports;
+ 	bool suspended;
++	bool link_was_up;	/* L16: powered down with its link up, retrained on resume */
+ 	bool use_pm_opp;
+ };
+ 
+@@ -2011,6 +2012,7 @@ static int qcom_pcie_probe(struct platform_device *pdev)
+ 
+ static int qcom_pcie_suspend_noirq(struct device *dev)
+ {
++	struct qcom_pcie_port *port;
+ 	struct qcom_pcie *pcie;
+ 	int ret = 0;
+ 
+@@ -2050,6 +2052,37 @@ static int qcom_pcie_suspend_noirq(struct device *dev)
+ 	if (!dw_pcie_link_up(pcie->pci)) {
+ 		qcom_pcie_host_deinit(&pcie->pci->pp);
+ 		pcie->suspended = true;
++	} else if (pcie->cfg == &cfg_2_3_2 &&
++		   !regulator_enable(pcie->res.v2_3_2.supplies[1].consumer)) {
++		/*
++		 * L16: the only device is the Wi-Fi chip, which mac80211 has already
++		 * stopped (no wake-on-WLAN): power the controller down with it, or its
++		 * clocks keep the SoC out of its deepest sleep (vdd-min). Its link and
++		 * MSIs are set up again on resume, and the PCI core restores the chip's
++		 * config space.
++		 *
++		 * The chip itself stays powered, as stock keeps it: the extra hold on
++		 * vddpe-3v3 (its wlan-en) above. Switched off for the fraction of a
++		 * second a suspend can last, it trained its link on resume but never
++		 * answered a config request.
++		 *
++		 * Link training is stopped first, as dw_pcie_suspend_noirq does: the
++		 * GDSC keeps PARF in retention, and a LTSSM_EN left set trains the
++		 * link as soon as PERST is released on resume, before the controller
++		 * is set up (dw_pcie_setup_rc).
++		 */
++		writel(readl(pcie->parf + PARF_LTSSM) & ~LTSSM_EN, pcie->parf + PARF_LTSSM);
++		dev_info(dev, "suspend: link up, powering down\n");
++		qcom_pcie_host_deinit(&pcie->pci->pp);
++		/*
++		 * And the PHY's clocks: its ref clock (gcc_pcie_clkref_clk, from the
++		 * RPM's ln_bb_clk) is held from phy_init to phy_exit, and keeps the
++		 * crystal on through suspend.
++		 */
++		list_for_each_entry(port, &pcie->ports, list)
++			phy_exit(port->phy);
++		pcie->suspended = true;
++		pcie->link_was_up = true;
+ 	}
+ 
+ 	/*
+@@ -2071,6 +2104,7 @@ static int qcom_pcie_suspend_noirq(struct device *dev)
+ 
+ static int qcom_pcie_resume_noirq(struct device *dev)
+ {
++	struct qcom_pcie_port *port;
+ 	struct qcom_pcie *pcie;
+ 	int ret;
+ 
+@@ -2086,6 +2120,15 @@ static int qcom_pcie_resume_noirq(struct device *dev)
+ 		}
+ 	}
+ 
++	/* L16: the PHYs exited for suspend with their link up */
++	if (pcie->link_was_up) {
++		list_for_each_entry(port, &pcie->ports, list) {
++			ret = phy_init(port->phy);
++			if (ret)
++				return ret;
++		}
++	}
++
+ 	if (pcie->suspended) {
+ 		ret = qcom_pcie_host_init(&pcie->pci->pp);
+ 		if (ret)
+@@ -2094,6 +2137,22 @@ static int qcom_pcie_resume_noirq(struct device *dev)
+ 		pcie->suspended = false;
+ 	}
+ 
++	/* L16: as dw_pcie_resume_noirq: the iATU and MSIs, then the link */
++	if (pcie->link_was_up) {
++		pcie->link_was_up = false;
++		regulator_disable(pcie->res.v2_3_2.supplies[1].consumer);
++		dev_info(dev, "resume: PARF_LTSSM %#x, link %s before setup\n",
++			 readl(pcie->parf + PARF_LTSSM),
++			 dw_pcie_link_up(pcie->pci) ? "up" : "down");
++		dw_pcie_setup_rc(&pcie->pci->pp);
++		ret = dw_pcie_start_link(pcie->pci);
++		if (!ret)
++			ret = dw_pcie_wait_for_link(pcie->pci);
++		dev_info(dev, "resume: link %s (%d)\n", ret ? "down" : "up", ret);
++		if (ret)
++			return ret;
++	}
++
+ 	qcom_pcie_icc_opp_update(pcie);
+ 
+ 	return 0;

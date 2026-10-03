@@ -51,9 +51,13 @@ them, keep Android, and not lose the camera to a bad state.
       didn't know before; watch whether it comes back
 - [x] Photos' capture time was 1970 (the ASICs' uptime): fixed in r86 (SET_TIME as stock's)
 - [x] Lightbox dates photos by the LRI's capture time (it showed the file time)
-- [ ] Deep sleep (vdd-min): Wi-Fi's PCIe link stays up through suspend (mainline's PCIe
-      driver keeps a linked controller powered), so the crystal stays on; the modem and the
-      sensor DSP now sleep
+- [x] Deep sleep (XO shutdown in suspend, kernel r94): Wi-Fi's PCIe controller and PHY
+      powered down for suspend, the RPM clocks' unused handoff votes withdrawn, the modem's
+      GPLL0 branch without a parent (as stock)
+- [ ] Measure the idle drain on battery overnight now that the crystal shuts off (was 4-5%/h)
+- [ ] UFS at boot: "dme-get: attr-id 0xa00b failed", "hw clk gating enabled failed" (seen
+      2026-10-02 on r93/r94, not looked for before; not caused by the RPM clock changes)
+- [ ] Kernel tracing (CONFIG_FTRACE) is on for debugging suspend; drop it if it costs anything
 
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
       not seen on a short hold since

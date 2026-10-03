@@ -1,0 +1,27 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] clk: qcom: gcc-msm8996: the modem's GPLL0 branch without a parent, as stock
+
+---
+diff --git a/drivers/clk/qcom/gcc-msm8996.c b/drivers/clk/qcom/gcc-msm8996.c
+index aa3bd2777..fe23c652c 100644
+--- a/drivers/clk/qcom/gcc-msm8996.c
++++ b/drivers/clk/qcom/gcc-msm8996.c
+@@ -110,13 +110,13 @@ static struct clk_branch gcc_mss_gpll0_div_clk = {
+ 	.clkr = {
+ 		.enable_reg = 0x5200c,
+ 		.enable_mask = BIT(2),
++		/*
++		 * L16: no parent, as stock's gpll0_out_msscc: the modem votes GPLL0
++		 * itself. As gpll0's child, the modem held gpll0 and with it the RPM's
++		 * XO (bi_tcxo, voted for sleep too) all the time it ran: no XO shutdown.
++		 */
+ 		.hw.init = &(struct clk_init_data){
+ 			.name = "gcc_mss_gpll0_div_clk",
+-			.parent_hws = (const struct clk_hw*[]){
+-				&gpll0.clkr.hw,
+-			},
+-			.num_parents = 1,
+-			.flags = CLK_SET_RATE_PARENT,
+ 			.ops = &clk_branch2_ops
+ 		},
+ 	},
