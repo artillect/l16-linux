@@ -19,6 +19,12 @@ them, keep Android, and not lose the camera to a bad state.
 - [ ] Camera module (ASIC) stalls: none seen lately; keep the UART logs running while testing
 - [x] Gallery: quit didn't happen once (SIGTERM); not seen again
 - [ ] README/wiki: what works, what doesn't, how to get back to Android, the photo pipeline
+- [ ] Linux only (no Android): untested. The packages handle it (no `linux` partition: kernel
+      updates and reboots go to `boot`), but the root filesystem must go in `userdata`, not
+      `system`: firmware, Light's renderer and its runtime are loaded from `system` at every
+      boot (and the calibration from `lightcal`), so without them Wi-Fi, Bluetooth and
+      photo processing break. Going back: stock `boot` (and `system`, if it was touched) from
+      the backups or the OTA, `userdata` wiped
 
 ## Camera app (Viewfinder)
 
