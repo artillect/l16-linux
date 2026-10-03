@@ -216,7 +216,8 @@ impl Gallery {
                 day = d;
             }
             let pic = gtk::Picture::new();
-            pic.set_content_fit(gtk::ContentFit::Cover);
+            // whole in its cell (4:3, as a landscape photo): a portrait one isn't cropped
+            pic.set_content_fit(gtk::ContentFit::Contain);
             pic.set_size_request(248, 186);
             self.bind_thumb(&pic, p);
             let child = gtk::FlowBoxChild::new();

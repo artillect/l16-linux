@@ -2969,7 +2969,7 @@ fn build(gapp: &gtk::Application) {
     thumb_box.add_overlay(&thumb_spin);
     thumb_box.set_halign(gtk::Align::Center);
     thumb_box.set_margin_top(16);
-    thumb_box.add_css_class("spin");
+    // not turned for portrait: it is the preview's frame, upright as the preview is
     // the gallery, at the newest photo
     let open_gallery = gtk::GestureClick::new();
     open_gallery.connect_released(|_, _, _, _| {

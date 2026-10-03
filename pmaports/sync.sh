@@ -37,7 +37,8 @@ pack() {
 	cp -r "$REPO/$dir/." "$S/$pkg/"
 	rm -rf "$S/$pkg/target"
 	for f in "$@"; do cp "$REPO/$f" "$S/$pkg/tools/"; done
-	find "$S" -type f -exec sed -i 's/\r$//' {} +
+	# CRs off text files only: on a binary (places.tsv.gz) it corrupts the file
+	find "$S" -type f -exec grep -Iq . {} \; -exec sed -i 's/\r$//' {} \;
 	find "$S" -type d -exec chmod 755 {} +
 	find "$S" -type f -exec chmod 644 {} +
 	chmod 755 "$S/$pkg/tools" "$S/$pkg"/tools/* 2>/dev/null || true
@@ -59,7 +60,8 @@ pack_tree() {
 	# Python's caches: git-ignored, so not in CI's checkout (a checksum made here failed there)
 	find "$S" -name __pycache__ -type d -prune -exec rm -rf {} +
 	# (built programs, in build/, as they are)
-	find "$S" -type f ! -path "*/build/*" -exec sed -i 's/\r$//' {} +
+	# (CRs off text files only: on a binary, places.tsv.gz, it corrupted the file)
+	find "$S" -type f ! -path "*/build/*" -exec grep -Iq . {} \; -exec sed -i 's/\r$//' {} \;
 	find "$S" -type d -exec chmod 755 {} +
 	find "$S" -type f -exec chmod 644 {} +
 	tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$S" -cf - . |
@@ -73,7 +75,8 @@ pack_tree l16-phosh-plugins l16-phosh
 pack_tree l16-gnss l16-gnss
 # l16-render: with its NDK build (l16-render/build.sh), which isn't in the repository
 if [ -e "$REPO/l16-render/build/l16-render" ]; then
-	pack_tree l16-render l16-render/build.sh l16-render/l16-render.sh l16-render/render.cpp \
+	pack_tree l16-render l16-render/build.sh l16-render/l16-render.sh l16-render/l16-render-orient \
+		l16-render/render.cpp \
 		l16-render/libcp-stub.cpp l16-render/build/l16-render
 else
 	echo "no l16-render/build/l16-render (l16-render/build.sh): l16-render can't be packaged" >&2

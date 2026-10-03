@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+# l16-render-orient IN.lri: the photo's orientation, from its view preferences (LightHeader
+# 19 -> 9: 0 as taken, 1 ROT90_CW, 2 ROT90_CCW; stock's camera sets it held in portrait).
+# Light's renderer turns the photo by it, but sizes it as a landscape one: the l16-render
+# script tells it a turned photo's size (L16_TURNED).
+import struct
+import sys
+
+
+def varint(b, i):
+	v = sh = 0
+	while True:
+		v |= (b[i] & 0x7f) << sh
+		sh += 7
+		i += 1
+		if b[i - 1] < 0x80:
+			return v, i
+
+
+def fields(m):
+	out, i = [], 0
+	while i < len(m):
+		k, i = varint(m, i)
+		wt = k & 7
+		if wt == 0:
+			v, i = varint(m, i)
+		elif wt == 1:
+			v, i = m[i:i + 8], i + 8
+		elif wt == 2:
+			n, i = varint(m, i)
+			v, i = m[i:i + n], i + n
+		elif wt == 5:
+			v, i = m[i:i + 4], i + 4
+		else:
+			break
+		out.append((k >> 3, v))
+	return out
+
+
+def lri_orientation(path):
+	"""The view preferences' orientation, from the last block's LightHeader."""
+	with open(path, "rb") as f:
+		o, last = 0, None
+		while True:
+			f.seek(o)
+			h = f.read(32)
+			if len(h) < 32 or h[:4] != b"LELR":
+				break
+			length, moff, mlen = struct.unpack_from("<QQI", h, 4)
+			if length < 32:
+				break
+			last, o = (o + moff, mlen), o + length
+		if not last:
+			return 0
+		f.seek(last[0])
+		header = fields(f.read(last[1]))
+	for n, vp in header:
+		if n == 19 and isinstance(vp, bytes):
+			for m, v in fields(vp):
+				if m == 9 and isinstance(v, int):
+					return v
+	return 0
+
+
+print(lri_orientation(sys.argv[1]))

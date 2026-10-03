@@ -40,6 +40,8 @@ struct View {
     image_gain: Option<f32>,
     awb_mode: Option<u64>,
     integration_ns: Option<u64>,
+    // held in portrait: 1 ROT90_CW, 2 ROT90_CCW (turned so to be upright; stock's)
+    orientation: Option<u64>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -252,6 +254,7 @@ fn view(v: &[(u64, Val)], out: &mut View) {
                 }
             }
             10 => out.image_gain = f32_of(f).filter(|g| *g > 0.0),
+            9 => out.orientation = int(f),
             _ => {}
         }
     }
@@ -406,7 +409,29 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
     };
     let mut p = render(&buf[(pick.surface.offset - 32) as usize..], pick, vp.wb, exposure, &colours);
     p.info = info;
+    match vp.orientation {
+        Some(1) => turn(&mut p, true),
+        Some(2) => turn(&mut p, false),
+        _ => {}
+    }
     Ok(p)
+}
+
+// a quarter turn, clockwise or not: a photo taken in portrait, upright
+fn turn(p: &mut Picture, clockwise: bool) {
+    let (w, h) = (p.width as usize, p.height as usize);
+    let mut out = vec![0u8; p.rgb.len()];
+    for y in 0..h {
+        for x in 0..w {
+            // clockwise: (x, y) to (h-1-y, x) in the h-wide picture; else (y, w-1-x)
+            let (nx, ny) = if clockwise { (h - 1 - y, x) } else { (y, w - 1 - x) };
+            let (s, d) = ((y * w + x) * 3, (ny * h + nx) * 3);
+            out[d..d + 3].copy_from_slice(&p.rgb[s..s + 3]);
+        }
+    }
+    p.rgb = out;
+    p.width = h as u32;
+    p.height = w as u32;
 }
 
 // --- the picture ---------------------------------------------------------------------------

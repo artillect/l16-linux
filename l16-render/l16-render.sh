@@ -8,5 +8,9 @@ if [ ! -x $L/linker64 ] || [ ! -e $L/libcp.so ] || [ ! -e $L/libc++_shared.so ];
 		"(see: rc-service light-lfc-android-libs start)" >&2
 	exit 69
 fi
+# a photo taken in portrait: the renderer turns it, and is told its size the other way round
+case "$(/usr/libexec/l16-render-orient "$1" 2>/dev/null)" in
+1 | 2) export L16_TURNED=1 ;;
+esac
 export LD_LIBRARY_PATH=$L ANDROID_ROOT=$L ANDROID_DATA=$L
 exec /usr/libexec/l16-render "$@"

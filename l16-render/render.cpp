@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace CIAPI {
@@ -166,6 +167,12 @@ int main(int argc, char **argv)
 	// the full-size level (the gallery scales by transform().crop(), which only differs
 	// for another aspect ratio; its return convention isn't known yet)
 	Point<int> size{ pyr[0].width(), pyr[0].height() };
+	// a photo taken in portrait (the LRI's orientation; the l16-render script says so): the
+	// renderer turns it, but its pyramid keeps the landscape sizes, and a landscape size
+	// squeezed the turned photo into it
+	const char *turned = std::getenv("L16_TURNED");
+	if (turned && turned[0] == '1')
+		std::swap(size.x, size.y);
 	if (want > 0 && want < std::max(size.x, size.y)) {
 		float k = float(want) / std::max(size.x, size.y);
 		size = Point<int>{ int(size.x * k), int(size.y * k) };

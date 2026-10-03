@@ -6,12 +6,12 @@
 # build into $pkgname-src.tar.gz here.
 pkgname=l16-render
 pkgver=0.1.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Light L16 photos rendered by Light's own renderer, from the stock partitions"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
 license="MIT"
-depends="device-light-lfc"
+depends="device-light-lfc python3"
 # an Android (bionic) program: left as the NDK built it, and its libraries (bionic's, Light's)
 # come from the stock partitions, not packages
 options="!check !strip !tracedeps"
@@ -21,7 +21,8 @@ builddir="$srcdir/$pkgname"
 package() {
 	install -Dm755 build/l16-render "$pkgdir"/usr/libexec/l16-render
 	install -Dm755 l16-render.sh "$pkgdir"/usr/bin/l16-render
+	install -Dm755 l16-render-orient "$pkgdir"/usr/libexec/l16-render-orient
 }
 sha512sums="
-c5e0bb873425eda2ff8ed84049ab7a6bec4b4eb7f9ae0dab18463076f36da9516c24399f8bce19f83c4261214e5e59e4f7857d023168cbe2c94236ed566646a4  l16-render-src.tar.gz
+c0f179e065d962b45695cf47aa776e8f5da35dc103f16ebe60735a1cc9b2ffa8953c2039ea80e36d54c2a6b8a0e9b95346f2ebd4fab6ea521ee67375f52be2db  l16-render-src.tar.gz
 "
