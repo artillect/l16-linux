@@ -514,6 +514,12 @@ struct App {
     // (-1, 0, 1; as stock, none upside down) and what turns with it re-laid out
     accel: Option<gtk::gio::DBusProxy>,
     quarter: Cell<i32>,
+    // the status line, at the preview's top edge as the camera is held (place_status)
+    status_turn: Rotator,
+    // in front: the screen kept on (an idle inhibitor's cookie) and the display held in
+    // landscape (the rotation lock and transform it had, given back after)
+    idle_cookie: Cell<u32>,
+    landscape_held: RefCell<Option<(bool, Option<String>)>>,
     rotators: Vec<Rotator>,
     geo: RefCell<geo::Geo>,
     storage_label: gtk::Label,
@@ -1351,8 +1357,25 @@ impl App {
         for r in &self.rotators {
             r.set_quarter(q);
         }
+        self.place_status(q);
         self.wheels.queue_draw();
         self.mode_wheel.queue_draw();
+    }
+
+    // the status line along the preview's top edge as the camera is held: the top, or the
+    // left with the shutter down (turned -90), the right with it up
+    fn place_status(&self, q: i32) {
+        let r = &self.status_turn;
+        let (h, v) = match q {
+            -1 => (gtk::Align::Start, gtk::Align::Center),
+            1 => (gtk::Align::End, gtk::Align::Center),
+            _ => (gtk::Align::Center, gtk::Align::Start),
+        };
+        r.set_halign(h);
+        r.set_valign(v);
+        r.set_margin_top(if q == 0 { 14 } else { 0 });
+        r.set_margin_start(if q == -1 { 14 } else { 0 });
+        r.set_margin_end(if q == 1 { 14 } else { 0 });
     }
 
     // degrees between the mode wheel's labels (stock's 2 and 4 dip, as angles)
@@ -2314,6 +2337,7 @@ impl App {
         let screen = std::fs::read_to_string("/sys/class/drm/card0-DSI-1/dpms")
             .map_or(true, |s| s.trim() == "On");
         let front = self.view.root().and_downcast::<gtk::Window>().map_or(true, |w| w.is_active());
+        self.hold_front(front);
         let seen = front && !self.settings_page.is_visible();
         let unseen_since = {
             let mut st = self.st.borrow_mut();
@@ -2358,6 +2382,48 @@ impl App {
             }
             self.fast_loop();
         }
+    }
+
+    // In front, as stock's camera: the screen stays on (only the in-pocket check or the power
+    // button turns it off), and the display stays landscape even with the rotation lock off
+    // (stock's activity is locked to landscape; the UI's elements turn instead). The lock
+    // and the transform it had are given back when the camera leaves the front or closes.
+    fn hold_front(&self, front: bool) {
+        let Some(window) = self.view.root().and_downcast::<gtk::Window>() else { return };
+        let Some(app) = window.application() else { return };
+        if front && self.idle_cookie.get() == 0 {
+            self.idle_cookie.set(app.inhibit(Some(&window), gtk::ApplicationInhibitFlags::IDLE, Some("Taking photos")));
+        } else if !front && self.idle_cookie.get() != 0 {
+            app.uninhibit(self.idle_cookie.replace(0));
+        }
+        let held = self.landscape_held.borrow().is_some();
+        if front && !held {
+            let Some(lock) = rotation_lock() else { return };
+            let was = lock.boolean("orientation-lock");
+            let transform = display_transform();
+            let _ = lock.set_boolean("orientation-lock", true);
+            if transform.as_deref() != Some("270") {
+                set_display_transform("270");
+            }
+            eprintln!("l16-camera: display held in landscape (was lock {was}, transform {transform:?})");
+            *self.landscape_held.borrow_mut() = Some((was, transform));
+        } else if !front && held {
+            self.release_landscape();
+        }
+    }
+
+    fn release_landscape(&self) {
+        let Some((was, transform)) = self.landscape_held.borrow_mut().take() else { return };
+        if was {
+            // locked before: as it was locked
+            if let Some(t) = transform.filter(|t| t != "270") {
+                set_display_transform(&t);
+            }
+        }
+        if let Some(lock) = rotation_lock() {
+            let _ = lock.set_boolean("orientation-lock", was);
+        }
+        eprintln!("l16-camera: display given back (lock {was})");
     }
 
     // AF-D as stock's app runs it (SmartAFTriggerMgr; there is no ASIC mode for stills): the
@@ -2742,6 +2808,27 @@ fn light_proxy() -> Option<gtk::gio::DBusProxy> {
         .call_sync("ClaimLight", None, gtk::gio::DBusCallFlags::NONE, 2000, None::<&gtk::gio::Cancellable>)
         .ok()?;
     Some(proxy)
+}
+
+// Phosh's rotation lock (none without its schema)
+fn rotation_lock() -> Option<gtk::gio::Settings> {
+    let id = "org.gnome.settings-daemon.peripherals.touchscreen";
+    gtk::gio::SettingsSchemaSource::default()?.lookup(id, true)?;
+    Some(gtk::gio::Settings::new(id))
+}
+
+// the display's transform (wlr-randr's "Transform:"; the L16's panel, DSI-1), and setting
+// it, as light-lfc-rotate does: 270 is landscape, the camera held as a camera
+fn display_transform() -> Option<String> {
+    let out = Command::new("wlr-randr").output().ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines().find_map(|l| l.trim().strip_prefix("Transform:").map(|t| t.trim().to_string()))
+}
+
+fn set_display_transform(t: &str) {
+    if let Err(e) = Command::new("wlr-randr").args(["--output", "DSI-1", "--transform", t]).status() {
+        eprintln!("l16-camera: display transform: {e}");
+    }
 }
 
 // the screen off, as the power button turns it off (Phosh's screensaver)
@@ -3209,9 +3296,9 @@ fn build(gapp: &gtk::Application) {
     // stock's lens-blocked warning: the camera's back with the covered sensors, top centre
     let lens_badge = gtk::DrawingArea::new();
     lens_badge.set_size_request(230, 150);
+    // centred in the preview (the status line keeps to its top edge)
     lens_badge.set_halign(gtk::Align::Center);
-    lens_badge.set_valign(gtk::Align::Start);
-    lens_badge.set_margin_top(24);
+    lens_badge.set_valign(gtk::Align::Center);
     lens_badge.set_can_target(false);
     lens_badge.set_visible(false);
     let lens_turn = turn(lens_badge.upcast_ref());
@@ -3276,11 +3363,11 @@ fn build(gapp: &gtk::Application) {
 
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
-    root.add_overlay(&lens_turn);
+    preview.add_overlay(&lens_turn);
     root.add_overlay(&thermal_turn);
     root.add_overlay(&status_box_turn);
     root.add_overlay(&wheels);
-    root.add_overlay(&status_turn);
+    preview.add_overlay(&status_turn);
     root.add_overlay(&countdown);
     root.add_overlay(&toolbar);
     root.add_overlay(&mode_wheel);
@@ -3415,6 +3502,9 @@ fn build(gapp: &gtk::Application) {
         light: light_proxy(),
         accel: accel_proxy(),
         quarter: Cell::new(0),
+        status_turn: status_turn.clone(),
+        idle_cookie: Cell::new(0),
+        landscape_held: RefCell::new(None),
         rotators,
         geo: RefCell::new(geo::Geo::default()),
         storage_label,
@@ -3783,6 +3873,7 @@ fn build(gapp: &gtk::Application) {
     window.connect_close_request(move |w| {
         eprintln!("l16-camera: window closed");
         CLOSING.store(true, Ordering::Relaxed);
+        a.release_landscape();
         w.set_visible(false);
         // the app's name on the session bus given up now: a launch while the streams stop
         // (about 3 s) was handed to this instance, which then quit, and nothing opened. Now
