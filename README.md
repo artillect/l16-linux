@@ -100,7 +100,9 @@ display without copying them, and survives the preview being stopped and started
 ## Community
 
 - XDA: [Light L16 Firmware](https://xdaforums.com/t/light-l16-firmware.4403267/)
-- [Light L16 community Discord](https://discord.gg/e3c2wEVDU4): Linux talk is in the tinkering forum
+- [Light L16 community Discord](https://discord.gg/e3c2wEVDU4): questions and help in the
+  [postmarketOS thread](https://discord.com/channels/1152992591256760401/1556041895342375003)
+  (join the server first)
 
 ## Thanks
 
