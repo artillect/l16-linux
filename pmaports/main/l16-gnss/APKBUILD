@@ -4,12 +4,14 @@
 # repository (pmaports/sync.sh packs l16-gnss/ into $pkgname-src.tar.gz here).
 pkgname=l16-gnss
 pkgver=0.1.0
-pkgrel=3
+pkgrel=4
 pkgdesc="Light L16 GNSS for geoclue"
 url="https://github.com/artillect/l16-linux"
 arch="noarch"
 license="MIT"
-depends="geoclue libqmi libqrtr-glib py3-gobject3 python3 rmtfs"
+# openrc and rmtfs-openrc: installed before this, so the post-install's rc-update and the
+# rmtfs service it enables are there (a fresh image enabled neither: no modem, no GPS)
+depends="geoclue libqmi libqrtr-glib py3-gobject3 python3 rmtfs openrc rmtfs-openrc"
 install="$pkgname.post-install"
 options="!check"
 source="$pkgname-src.tar.gz"
