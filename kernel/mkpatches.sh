@@ -94,6 +94,8 @@ patch clk-qcom-smd-rpm-withdraw-unused-handoff "clk: qcom: smd-rpm: withdraw the
 	drivers/clk/qcom/clk-smd-rpm.c
 patch clk-qcom-gcc-msm8996-mss-gpll0-no-parent "clk: qcom: gcc-msm8996: the modem's GPLL0 branch without a parent, as stock" \
 	drivers/clk/qcom/gcc-msm8996.c
+patch scsi-ufs-qcom-v2-no-unipro-clock-gating "scsi: ufs: qcom: no UniPro clock gating on the v2 controller, as stock" \
+	drivers/ufs/host/ufs-qcom.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)

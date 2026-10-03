@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..478bfd4b5
+index 000000000..9f666f091
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1797 @@
+@@ -0,0 +1,1800 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -1266,6 +1266,8 @@ index 000000000..478bfd4b5
 +		}
 +		if (!ret)
 +			c->stream_count++;
++		/* every start and stop, to find one that goes missing (a stuck preview) */
++		dev_info(dev, "stream on%s: %d now (%d)\n", raw ? " (raw)" : "", c->stream_count, ret);
 +		mutex_unlock(&c->lock);
 +		if (ret)
 +			pm_runtime_put_autosuspend(dev);
@@ -1275,6 +1277,7 @@ index 000000000..478bfd4b5
 +	mutex_lock(&c->lock);
 +	if (c->stream_count && !--c->stream_count && !raw && c->previewing)
 +		ret = ccb_preview_stop(c, c->module->val);
++	dev_info(dev, "stream off%s: %d now (%d)\n", raw ? " (raw)" : "", c->stream_count, ret);
 +	mutex_unlock(&c->lock);
 +	pm_runtime_put_autosuspend(dev);
 +	return ret;

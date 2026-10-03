@@ -751,6 +751,10 @@ fn make_pipeline() -> (gst::Pipeline, gdk::Paintable) {
 
 impl App {
     fn start_preview(self: &Rc<Self>) {
+        // not before the last camera's streams are stopped (take_camera)
+        if !CAMERA_TAKEN.load(Ordering::Relaxed) {
+            return;
+        }
         let _ = self.pipeline.set_state(gst::State::Playing);
     }
 
@@ -2192,19 +2196,20 @@ impl App {
             st.pocket_since = if pocketed && st.pocket { Some(st.pocket_since.unwrap_or_else(Instant::now)) } else { None };
             st.pocket_since
         };
-        if since.is_some_and(|t| t.elapsed() >= Duration::from_secs(30)) {
+        // Unlike stock (which closes the app at 30 s with a two-second notice), a countdown from
+        // 20 s, then the screen blanks as the power button blanks it: the device suspends
+        // (light-lfc-suspend-on-blank) and the camera is there again on wake
+        let held = since.map_or(0, |t| t.elapsed().as_secs());
+        if held >= 30 {
             self.st.borrow_mut().pocket_since = None;
             eprintln!(
-                "l16-camera: in a pocket (lenses covered {:#04b}, {lux:.1} lux, 30 s): closing",
+                "l16-camera: in a pocket (lenses covered {:#04b}, {lux:.1} lux, 30 s): blanking the screen",
                 self.blocked.load(Ordering::Relaxed)
             );
-            self.show_status("Entering pocket power save due to inactivity.", 3);
-            let w = self.view.root().and_downcast::<gtk::Window>();
-            glib::timeout_add_local_once(Duration::from_secs(2), move || {
-                if let Some(w) = w {
-                    w.close();
-                }
-            });
+            self.status.set_visible(false);
+            blank_screen();
+        } else if held >= 20 {
+            self.show_status(&format!("In a pocket? Sleeping in {} s", 30 - held), 2);
         }
         // stock's hand-shake assist: the photo's exposure longer than 1/70 s (1/150 s on the
         // 70 and 150 mm modules); not while tripod mode is on
@@ -2302,6 +2307,10 @@ impl App {
     }
 
     fn follow_screen(self: &Rc<Self>) {
+        // nothing to sleep or wake before the camera is this app's (take_camera)
+        if !CAMERA_TAKEN.load(Ordering::Relaxed) {
+            return;
+        }
         let screen = std::fs::read_to_string("/sys/class/drm/card0-DSI-1/dpms")
             .map_or(true, |s| s.trim() == "On");
         let front = self.view.root().and_downcast::<gtk::Window>().map_or(true, |w| w.is_active());
@@ -2733,6 +2742,29 @@ fn light_proxy() -> Option<gtk::gio::DBusProxy> {
         .call_sync("ClaimLight", None, gtk::gio::DBusCallFlags::NONE, 2000, None::<&gtk::gio::Cancellable>)
         .ok()?;
     Some(proxy)
+}
+
+// the screen off, as the power button turns it off (Phosh's screensaver)
+fn blank_screen() {
+    let Ok(bus) = gtk::gio::bus_get_sync(gtk::gio::BusType::Session, None::<&gtk::gio::Cancellable>) else {
+        return;
+    };
+    bus.call(
+        Some("org.gnome.ScreenSaver"),
+        "/org/gnome/ScreenSaver",
+        "org.gnome.ScreenSaver",
+        "SetActive",
+        Some(&(true,).to_variant()),
+        None,
+        gtk::gio::DBusCallFlags::NONE,
+        -1,
+        None::<&gtk::gio::Cancellable>,
+        |r| {
+            if let Err(e) = r {
+                eprintln!("l16-camera: blanking the screen: {e}");
+            }
+        },
+    );
 }
 
 // iio-sensor-proxy's accelerometer orientation, claimed for as long as the app runs
@@ -3750,7 +3782,27 @@ fn build(gapp: &gtk::Application) {
     // camera), then the transfer streams and the preview stop in their order and the app ends
     window.connect_close_request(move |w| {
         eprintln!("l16-camera: window closed");
+        CLOSING.store(true, Ordering::Relaxed);
         w.set_visible(false);
+        // the app's name on the session bus given up now: a launch while the streams stop
+        // (about 3 s) was handed to this instance, which then quit, and nothing opened. Now
+        // it starts a camera of its own, which waits for this one's streams (take_camera).
+        if let Some(conn) = w.application().and_then(|a| a.dbus_connection()) {
+            let r = conn.call_sync(
+                Some("org.freedesktop.DBus"),
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "ReleaseName",
+                Some(&("org.l16linux.Camera",).to_variant()),
+                None,
+                gtk::gio::DBusCallFlags::NONE,
+                1000,
+                None::<&gtk::gio::Cancellable>,
+            );
+            if let Err(e) = r {
+                eprintln!("l16-camera: giving up the app's name: {e}");
+            }
+        }
         let (a, w) = (a.clone(), w.clone());
         glib::idle_add_local_once(move || {
             let t = Instant::now();
@@ -3781,26 +3833,91 @@ fn build(gapp: &gtk::Application) {
         });
     }
 
-    if let Some(c) = &app.ccb {
-        let st = app.st.borrow();
-        c.set(ccb::MODULE, 0);
-        // the photos are dated in local time, as stock's (the driver's SET_TIME at each start)
-        let offset = glib::DateTime::now_local().map_or(0, |d| (d.utc_offset().as_seconds()) as i32);
-        c.set(ccb::UTC_OFFSET, offset);
-        c.set(ccb::FLASH, st.flash as i32);
-        c.set(ccb::METERING, st.metering as i32);
-        c.set(ccb::ZOOM, 1000);
+    let a = app.clone();
+    let start = move || {
+        if let Some(c) = &a.ccb {
+            let st = a.st.borrow();
+            c.set(ccb::MODULE, 0);
+            // the photos are dated in local time, as stock's (the driver's SET_TIME at each start)
+            let offset = glib::DateTime::now_local().map_or(0, |d| (d.utc_offset().as_seconds()) as i32);
+            c.set(ccb::UTC_OFFSET, offset);
+            c.set(ccb::FLASH, st.flash as i32);
+            c.set(ccb::METERING, st.metering as i32);
+            c.set(ccb::ZOOM, 1000);
+        }
+        a.start_preview();
+        a.apply_exposure();
+        a.apply_wb();
+        a.start_transfers_on_frame();
+        a.refresh();
+    };
+    // opened again while the last camera was still stopping its streams (it gave up the app's
+    // name at once, so this launch is a camera of its own): the driver once those are stopped
+    if take_camera() {
+        start();
+    } else {
+        eprintln!("l16-camera: waiting for the last camera to close");
+        let mut start = Some(start);
+        glib::timeout_add_local(Duration::from_millis(100), move || {
+            if !take_camera() {
+                return glib::ControlFlow::Continue;
+            }
+            eprintln!("l16-camera: the last camera closed");
+            if let Some(start) = start.take() {
+                start();
+            }
+            glib::ControlFlow::Break
+        });
     }
-    app.start_preview();
-    app.apply_exposure();
-    app.apply_wb();
-    app.start_transfers_on_frame();
-    app.refresh();
     window.fullscreen();
     window.present();
 }
 
+// The camera, one app at a time: a lock held from the start until the process ends (its
+// streams stopped). Taken once, the preview may start (start_preview).
+static CAMERA_TAKEN: AtomicBool = AtomicBool::new(false);
+
+fn take_camera() -> bool {
+    if CAMERA_TAKEN.load(Ordering::Relaxed) {
+        return true;
+    }
+    let path = glib::user_runtime_dir().join("l16-camera.lock");
+    let Ok(f) = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path) else {
+        // no lock to be had: carry on as before
+        CAMERA_TAKEN.store(true, Ordering::Relaxed);
+        return true;
+    };
+    use std::os::fd::AsRawFd;
+    if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return false;
+    }
+    // held until the process ends
+    std::mem::forget(f);
+    CAMERA_TAKEN.store(true, Ordering::Relaxed);
+    true
+}
+
+// the window closed and the streams stopping
+static CLOSING: AtomicBool = AtomicBool::new(false);
+
 fn main() -> glib::ExitCode {
+    // started from the app grid, the output went to the console: to a file instead
+    // (~/.cache/l16-camera.log; appended to, as a launch that only hands over to a running
+    // camera is a process too; started afresh past 1 MB)
+    if unsafe { libc::isatty(2) } == 1 {
+        let path = glib::user_cache_dir().join("l16-camera.log");
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() > 1 << 20) {
+            let _ = std::fs::remove_file(&path);
+        }
+        if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            use std::os::fd::AsRawFd;
+            unsafe {
+                libc::dup2(f.as_raw_fd(), 1);
+                libc::dup2(f.as_raw_fd(), 2);
+            }
+        }
+    }
+    eprintln!("l16-camera: started (pid {})", std::process::id());
     // GTK redraws the whole window each frame: redrawing only what changed (the preview)
     // left the badges over it as flickering black bars
     if std::env::var_os("GSK_DEBUG").is_none() {
@@ -3809,9 +3926,18 @@ fn main() -> glib::ExitCode {
     gst::init().expect("gstreamer");
     let app = gtk::Application::builder().application_id("org.l16linux.Camera").build();
     // launched again while running (the gallery's camera button): back to the window there is
-    app.connect_activate(|app| match app.active_window() {
-        Some(w) => w.present(),
-        None => build(app),
+    app.connect_activate(|app| {
+        // logged: an activation while the app was closing (its streams stopping) left the
+        // preview dead (2026-10-02)
+        eprintln!("l16-camera: activated (window {})", app.active_window().is_some());
+        if CLOSING.load(Ordering::Relaxed) {
+            // closing, its name given up: a launch now is a camera of its own
+            return;
+        }
+        match app.active_window() {
+            Some(w) => w.present(),
+            None => build(app),
+        }
     });
     app.run()
 }

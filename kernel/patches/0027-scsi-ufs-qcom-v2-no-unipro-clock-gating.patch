@@ -1,0 +1,31 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] scsi: ufs: qcom: no UniPro clock gating on the v2 controller, as stock
+
+---
+diff --git a/drivers/ufs/host/ufs-qcom.c b/drivers/ufs/host/ufs-qcom.c
+index 8ebee0cc5..afa5107cd 100644
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -557,6 +557,7 @@ static int ufs_qcom_power_up_sequence(struct ufs_hba *hba)
+  */
+ static void ufs_qcom_enable_hw_clk_gating(struct ufs_hba *hba)
+ {
++	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+ 	int err;
+ 
+ 	/* Enable UTP internal clock gating */
+@@ -566,6 +567,14 @@ static void ufs_qcom_enable_hw_clk_gating(struct ufs_hba *hba)
+ 	/* Ensure that HW clock gating is enabled before next operations */
+ 	ufshcd_readl(hba, REG_UFS_CFG2);
+ 
++	/*
++	 * L16: the v2 controller (MSM8996) has no DL_VS_CLK_CFG (the dme-get fails:
++	 * "hw clk gating enabled failed"); stock enables the UTP clock gating above
++	 * only.
++	 */
++	if (host->hw_ver.major == 0x2)
++		return;
++
+ 	/* Enable Unipro internal clock gating */
+ 	err = ufshcd_dme_rmw(hba, DL_VS_CLK_CFG_MASK,
+ 			     DL_VS_CLK_CFG_MASK, DL_VS_CLK_CFG);

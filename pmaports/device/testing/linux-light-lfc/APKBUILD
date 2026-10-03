@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=94
+pkgrel=95
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -54,6 +54,7 @@ source="
 	0024-pci-qcom-power-down-linked.patch
 	0025-clk-qcom-smd-rpm-withdraw-unused-handoff.patch
 	0026-clk-qcom-gcc-msm8996-mss-gpll0-no-parent.patch
+	0027-scsi-ufs-qcom-v2-no-unipro-clock-gating.patch
 	"
 builddir="$srcdir/linux-$_tag"
 
@@ -101,7 +102,7 @@ cfad5dcc8c8fc84a8ff44228d9a30675a25116500c31df6a74f4f9d1f646ee5d12df6abfe714a553
 d728d95b22ef2d5eceb15eb2af9e33fdae6ad1711ca680b000b8609a1637fd6320aacc3dbad0b3397440e2399e0e18d4e5c2a070b26bcfb9dbd234d32373c7ab  0014-iio-qcom-smgr-l16-light.patch
 e3ed7b18db4bae18e05e549fd6ea654ee7fd74118f5a5cf826aabb5a9cdcc33c64d72a17c7b0b1da9ca2be5718cb58a5ebf5b4c03be3b577fa8c638f3ddaf2ce  0015-asoc-wcd9335-dec-volume-unmute.patch
 27a7f41c9b2392e4b98cb11686862d88097ad87bdd1b31fe80ed5e37a8bca7d43e0052aecaaf8d1f51b0eea8e12181183eb8b625450380e2f2551746aac2ea51  0016-power-reset-reboot-mode-default.patch
-7b528adffef84f0bb0f3c0c2893f8e18005d0d80e50b3e44a2ae59dbc2365f8122232ca9a210eff2a585d817ab12c6844b456e6d30ddda69006f6ac5eaa87c4f  0017-media-i2c-add-light-ccb.patch
+8a92044ddc7d58fcdd6cd79ec02d90ba62b86d6bf5bae469978802c57cd02da5e7f4aef8c625b25b4c95948290a96a6f8e8f7015a8ac0ec7a7e2b29ad833316f  0017-media-i2c-add-light-ccb.patch
 044f43d58b9b35be4332f8e857c13ee50e8e9e3c57320f5e11b6ba2ec1ef956c4b5ed9647010f6c125ec6efd6df7a166fcd20a51332efe516cbbaf895421f403  0018-slimbus-qcom-ngd-base-before-add.patch
 772c2c3989297c736c2780816aae40c2c987f9130184ff306d3d6403c8b4e801c089969755ee0f11595d37f7ccf83a4825107982f1e9334cf761631780ccf529  0019-tty-serial-msm-fourth-port.patch
 422b982fcc859a88f34e343859064f9e914e8e677851aadb8ae52dcbbf1a713161b189b269c0804473239cda681ffa65bcf020fa88259a29fdd673b23d685b32  0020-media-qcom-camss-l16-capture.patch
@@ -111,4 +112,5 @@ e07fc7e719a8762dd6ffd14307daf8ae2d24c9f56061cef0b432bd06a4b111a192903a1fbb07191e
 568b928cb42d6d6ac2882b0dce4a6f985987e0c170e382ca03de2840415fe1771038ff8a2d87923b42007d94e00b036bd27c8946ed41252c55a4cedcd4f16589  0024-pci-qcom-power-down-linked.patch
 c96b6feed40598c1ed10628731431ad56f915e2cbc59b000a4827f7e38dfb48a749747e02d81f5b758534c2cda4757993232d1aaae3697df8ba47a7e8de8866b  0025-clk-qcom-smd-rpm-withdraw-unused-handoff.patch
 1bc50f4d068bc675e6f72333b4c9b001b73857be3d13c43bf91e187efee53fd115dd671d832e609c73a3b71514685e35a4cd167af918383b2a158eac89fad638  0026-clk-qcom-gcc-msm8996-mss-gpll0-no-parent.patch
+e61562b07990cc1768255b518c8a7ea0423e67682479f29e7c6c1072916bb98b25aa1502207d85630d2d7c39e72c3b1fb8f037e7e8dbcae71292ba196d4b0d48  0027-scsi-ufs-qcom-v2-no-unipro-clock-gating.patch
 "
