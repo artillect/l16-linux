@@ -234,10 +234,10 @@ index 000000000..6121b608c
 +MODULE_LICENSE("GPL");
 diff --git a/drivers/input/misc/l16-touchstrip.c b/drivers/input/misc/l16-touchstrip.c
 new file mode 100755
-index 000000000..bc9b386b4
+index 000000000..7b907dc4c
 --- /dev/null
 +++ b/drivers/input/misc/l16-touchstrip.c
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,183 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Touch strip of the Light L16: an Elan eKTF controller reporting one finger on a
@@ -345,6 +345,7 @@ index 000000000..bc9b386b4
 +	if (!strip)
 +		return -ENOMEM;
 +	strip->client = client;
++	i2c_set_clientdata(client, strip);
 +
 +	ret = devm_regulator_get_enable(dev, "vcc33");
 +	if (ret)
@@ -379,6 +380,29 @@ index 000000000..bc9b386b4
 +					 IRQF_ONESHOT, "l16-touchstrip", strip);
 +}
 +
++/*
++ * Off across suspend: on resume the line can be low before the I2C bus is back, and
++ * every read then fails at once, using up STRIP_MAX_ERRORS and leaving the strip dead
++ */
++static int l16_strip_suspend(struct device *dev)
++{
++	struct l16_strip *strip = i2c_get_clientdata(to_i2c_client(dev));
++
++	disable_irq(strip->client->irq);
++	return 0;
++}
++
++static int l16_strip_resume(struct device *dev)
++{
++	struct l16_strip *strip = i2c_get_clientdata(to_i2c_client(dev));
++
++	strip->errors = 0;
++	enable_irq(strip->client->irq);
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(l16_strip_pm, l16_strip_suspend, l16_strip_resume);
++
 +static const struct of_device_id l16_strip_of_match[] = {
 +	{ .compatible = "light,l16-touchstrip" },
 +	{ }
@@ -389,6 +413,7 @@ index 000000000..bc9b386b4
 +	.driver = {
 +		.name = "l16-touchstrip",
 +		.of_match_table = l16_strip_of_match,
++		.pm = pm_sleep_ptr(&l16_strip_pm),
 +	},
 +	.probe = l16_strip_probe,
 +};
