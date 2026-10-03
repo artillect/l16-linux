@@ -1,44 +1,60 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <!-- one landscape; each print shows its part of it, as the L16 tiles its frames -->
+    <!-- one landscape, level: each print is a tilted window onto it, as the L16 puts one
+         photo together from its modules' frames -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#62a0ea"/>
+      <stop offset="1" stop-color="#c0dcf8"/>
+    </linearGradient>
     <g id="land">
-      <rect x="0" y="0" width="128" height="128" fill="#99c1f1"/>
-      <circle cx="90" cy="30" r="8" fill="#f6d32d"/>
-      <path d="M0 70 L30 40 L48 58 L70 34 L100 64 L128 50 V128 H0 Z" fill="#3584e4"/>
-      <path d="M0 80 Q40 62 70 78 T128 74 V128 H0 Z" fill="#57e389"/>
-      <path d="M0 96 Q60 82 128 100 V128 H0 Z" fill="#26a269"/>
+      <rect x="0" y="0" width="128" height="128" fill="url(#sky)"/>
+      <circle cx="98" cy="32" r="10" fill="#f6d32d"/>
+      <path d="M0 68 L30 38 L55 63 L64 54 L77 67 L100 44 L128 72 V128 H0 Z" fill="#3584e4"/>
+      <!-- the same snowcap on each peak (45 degree slopes near every tip) -->
+      <path d="M24 44 L30 38 L36 44 L32.5 42.5 L30 45 L27.5 42.5 Z" fill="#ffffff"/>
+      <path d="M58 60 L64 54 L70 60 L66.5 58.5 L64 61 L61.5 58.5 Z" fill="#ffffff"/>
+      <path d="M94 50 L100 44 L106 50 L102.5 48.5 L100 51 L97.5 48.5 Z" fill="#ffffff"/>
+      <path d="M0 82 Q36 66 70 78 T128 76 V128 H0 Z" fill="#57e389"/>
+      <path d="M0 98 Q64 84 128 102 V128 H0 Z" fill="#26a269"/>
     </g>
-    <clipPath id="tl"><rect x="23" y="18" width="38" height="36"/></clipPath>
-    <clipPath id="tr"><rect x="67" y="18" width="38" height="36"/></clipPath>
-    <clipPath id="bl"><rect x="23" y="64" width="38" height="36"/></clipPath>
-    <clipPath id="br"><rect x="67" y="64" width="38" height="36"/></clipPath>
-    <clipPath id="c"><rect x="45" y="41" width="38" height="36"/></clipPath>
+    <!-- each print's photo, 44 x 33 (4:3) inside a 3 px border, in its own tilted frame -->
+    <clipPath id="tl"><rect x="20" y="28.5" width="44" height="33"/></clipPath>
+    <clipPath id="tr"><rect x="64" y="26.5" width="44" height="33"/></clipPath>
+    <clipPath id="bl"><rect x="20" y="67.5" width="44" height="33"/></clipPath>
+    <clipPath id="br"><rect x="64" y="65.5" width="44" height="33"/></clipPath>
+    <clipPath id="c"><rect x="42" y="47.5" width="44" height="33"/></clipPath>
   </defs>
-  <g transform="translate(64 64) scale(1.12) translate(-64 -64)">
-    <g transform="rotate(-6 42 41)">
-      <rect x="17" y="13" width="50" height="58" rx="3" fill="#241f31" opacity="0.35"/>
-      <rect x="19" y="14" width="46" height="54" rx="2" fill="#f6f5f4"/>
-      <use href="#land" clip-path="url(#tl)"/>
+  <!-- a print: its shadow, its edge (the darker strip below: thickness), its face, its photo -->
+  <g transform="translate(64 64) scale(1.2) translate(-64 -64)">
+    <g transform="rotate(-5 42 45)">
+      <rect x="18" y="27.5" width="50" height="39" rx="2" fill="#241f31" opacity="0.3"/>
+      <rect x="17" y="27.3" width="50" height="39" rx="1.5" fill="#9a9996"/>
+      <rect x="17" y="25.5" width="50" height="39" rx="1.5" fill="#f6f5f4"/>
+      <g clip-path="url(#tl)"><use href="#land" transform="rotate(5 42 45)"/></g>
     </g>
-    <g transform="rotate(5 86 41)">
-      <rect x="61" y="13" width="50" height="58" rx="3" fill="#241f31" opacity="0.35"/>
-      <rect x="63" y="14" width="46" height="54" rx="2" fill="#f6f5f4"/>
-      <use href="#land" clip-path="url(#tr)"/>
+    <g transform="rotate(4 86 43)">
+      <rect x="62" y="25.5" width="50" height="39" rx="2" fill="#241f31" opacity="0.3"/>
+      <rect x="61" y="25.3" width="50" height="39" rx="1.5" fill="#9a9996"/>
+      <rect x="61" y="23.5" width="50" height="39" rx="1.5" fill="#f6f5f4"/>
+      <g clip-path="url(#tr)"><use href="#land" transform="rotate(-4 86 43)"/></g>
     </g>
-    <g transform="rotate(4 42 87)">
-      <rect x="17" y="59" width="50" height="58" rx="3" fill="#241f31" opacity="0.35"/>
-      <rect x="19" y="60" width="46" height="54" rx="2" fill="#f6f5f4"/>
-      <use href="#land" clip-path="url(#bl)"/>
+    <g transform="rotate(3 42 84)">
+      <rect x="18" y="66.5" width="50" height="39" rx="2" fill="#241f31" opacity="0.3"/>
+      <rect x="17" y="66.3" width="50" height="39" rx="1.5" fill="#9a9996"/>
+      <rect x="17" y="64.5" width="50" height="39" rx="1.5" fill="#f6f5f4"/>
+      <g clip-path="url(#bl)"><use href="#land" transform="rotate(-3 42 84)"/></g>
     </g>
-    <g transform="rotate(-5 86 87)">
-      <rect x="61" y="59" width="50" height="58" rx="3" fill="#241f31" opacity="0.35"/>
-      <rect x="63" y="60" width="46" height="54" rx="2" fill="#f6f5f4"/>
-      <use href="#land" clip-path="url(#br)"/>
+    <g transform="rotate(-4 86 82)">
+      <rect x="62" y="64.5" width="50" height="39" rx="2" fill="#241f31" opacity="0.3"/>
+      <rect x="61" y="64.3" width="50" height="39" rx="1.5" fill="#9a9996"/>
+      <rect x="61" y="62.5" width="50" height="39" rx="1.5" fill="#f6f5f4"/>
+      <g clip-path="url(#br)"><use href="#land" transform="rotate(4 86 82)"/></g>
     </g>
     <g transform="rotate(-2 64 64)">
-      <rect x="39" y="36" width="50" height="58" rx="3" fill="#241f31" opacity="0.35"/>
-      <rect x="41" y="37" width="46" height="54" rx="2" fill="#f6f5f4"/>
-      <use href="#land" clip-path="url(#c)"/>
+      <rect x="40" y="46.5" width="50" height="39" rx="2" fill="#241f31" opacity="0.3"/>
+      <rect x="39" y="46.3" width="50" height="39" rx="1.5" fill="#9a9996"/>
+      <rect x="39" y="44.5" width="50" height="39" rx="1.5" fill="#f6f5f4"/>
+      <g clip-path="url(#c)"><use href="#land" transform="rotate(2 64 64)"/></g>
     </g>
   </g>
 </svg>
