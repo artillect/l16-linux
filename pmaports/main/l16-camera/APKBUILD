@@ -3,7 +3,7 @@
 # packs l16-camera/ and the tools into $pkgname-src.tar.gz here).
 pkgname=l16-camera
 pkgver=0.1.0
-pkgrel=8
+pkgrel=9
 pkgdesc="Camera app for the Light L16, after OpenLight's layout"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -41,5 +41,5 @@ package() {
 	install -Dm644 l16-camera.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/l16-camera.svg
 }
 sha512sums="
-6a579916e979fefb58bf4756c26b48da073b63801e449cfbf35f900b35d0b51e041e150f7b2cfb37e7ab1b08a8fe6e6321053f42e402248baa56b8b56b2d1a6a  l16-camera-src.tar.gz
+1b5dc9f9b9ed45806f7044057771afb7c1c91d5d373e62267928eb3bf98d4576e3accf5dfbc23fc1755b7c618818f105f5af14fc817df6d3bd79b600dbe937b3  l16-camera-src.tar.gz
 "

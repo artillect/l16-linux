@@ -37,6 +37,13 @@ pub const CAMERA_LOCK: char = '\u{f1a15}'; // camera-lock-outline: tripod mode o
 pub const HAND_WAVE: char = '\u{f1821}'; // stock's hand-shake assist ("Hold steady")
 pub const MOON: char = '\u{f0594}'; // weather-night: stock's low-light assist (a stacked capture)
 pub const CHEVRON_DOWN: char = '\u{f0140}';
+// Lightbox's menu and selection
+pub const MORE: char = '\u{f01d9}'; // dots-vertical
+pub const COPY: char = '\u{f018f}'; // content-copy
+pub const FOLDER: char = '\u{f024b}';
+pub const CHECK_CIRCLE: char = '\u{f05e0}';
+pub const CIRCLE_OUTLINE: char = '\u{f0130}'; // checkbox-blank-circle-outline: not chosen
+pub const SELECT: char = '\u{f0139}'; // checkbox-multiple-marked-outline
 // white balance presets, in wb::PRESETS' order: auto, incandescent, fluorescent, daylight, cloudy
 pub const WB: [char; 5] = ['\u{f05a5}', '\u{f05a6}', '\u{f05a7}', '\u{f05a8}', '\u{f0590}'];
 

@@ -27,8 +27,8 @@ them, keep Android, and not lose the camera to a bad state.
 - [ ] Shutter sound choice (stock has several)
 - [x] Portrait UI rotation (as stock: icons turn in place, text re-laid out, the LRI's
       orientation set)
-- [ ] In-pocket check: a countdown from 20 s, then the screen blanks (suspend on battery)
-      instead of closing the app; built (l16-camera r6), not tried yet
+- [x] In-pocket check: a countdown from 20 s, then the screen blanks (suspend on battery)
+      instead of closing the app; the screen stays on while the camera is in front
 - [ ] Preview: denoising (stock's ABF) and local tone mapping (LTM): our dim previews are noisy
 - [ ] Preview digital gain: stock's ISP reached ~6.9-7.4x in a dim scene, more than the 4.13x
       boost we apply; pairing its log to frames was unreliable (see memory: stock preview tone)
@@ -38,8 +38,9 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## Gallery (Lightbox)
 
-- [ ] Menu: copy to clipboard, show in folder, ...
-- [ ] Select several photos (delete, share)
+- [x] Menu: copy the LRI or the render, show either in its folder
+- [x] Select several photos (a button or a long press) and delete them
+- [ ] Share (no share portal on the desktop yet)
 - [ ] Process while charging with the screen off (stock's "dream" processing, opt-in)
 - [ ] Thumbnails loaded as they scroll into view (all load at once today)
 - [ ] Renderer speed (l16-render: ~15-25 s a photo)
