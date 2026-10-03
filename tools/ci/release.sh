@@ -11,8 +11,23 @@ NOTES=$REPO/releases/$TAG.md
 O=$(mktemp -d)
 [ -f "$NOTES" ] || { echo "no release notes: releases/$TAG.md"; exit 1; }
 
+# The apps: postmarketOS's recommended ones (postmarketos-ui-phosh, -base-ui-gnome,
+# -base-ui-gnome-mobile, -base-ui, -base) without a phone's (calls, chatty, gnome-contacts),
+# a camera app that can't see the cameras (snapshot: no PipeWire cameras), fprintd (no
+# fingerprint reader) and rygel (a media server). pmbootstrap installs all recommends or
+# none, so they're listed: a renamed one fails the build rather than going missing.
+APPS="sudo-rs
+font-droid font-droid-nonlatin font-twemoji lang
+phosh-mobile-settings phosh-tour
+mobile-config-firefox postmarketos-tweaks-setting-definitions ttyescape
+decibels firefox-esr flatpak g4music gnome-calculator gnome-calendar gnome-clocks
+gnome-console gnome-maps gnome-software gnome-software-plugin-apk gnome-text-editor
+gnome-user-share gnome-weather gst-libav gst-plugins-bad gst-plugins-good
+gst-plugins-rs-dav1d gvfs-full loupe nautilus papers showtime tuned-ppd"
+
 # generic user with a well-known password the notes tell people to change; no ssh
-pmbootstrap -y install --single-partition --no-sshd --password 147147
+pmbootstrap -y install --single-partition --no-sshd --password 147147 \
+	--no-recommends --add "$(echo $APPS | tr ' ' ',')"
 
 sudo cp "$W/chroot_rootfs_light-lfc/boot/boot.img" "$O/light-lfc-boot.img"
 xz -T0 -6 -c "$W/chroot_native/home/pmos/rootfs/light-lfc.img" > "$O/light-lfc-rootfs.img.xz"
