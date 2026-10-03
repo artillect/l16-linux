@@ -76,8 +76,7 @@ It keeps the screen on while it is in front, and its preview stops while it can'
 
 | | |
 |---|---|
-| ![Viewfinder](docs/images/viewfinder.jpg) | ![Viewfinder with the EV wheel open](docs/images/viewfinder-ev-wheel.jpg) |
-| ![Viewfinder's settings](docs/images/viewfinder-settings.png) | |
+| ![Viewfinder with the EV wheel open](docs/images/viewfinder-ev-wheel.jpg) | ![Viewfinder's settings](docs/images/viewfinder-settings.png) |
 
 **Lightbox** ([l16-gallery](l16-gallery)) shows the photos by day. It opens a quick look
 straight from the LRI, and renders the full photo with Light's own renderer on request
