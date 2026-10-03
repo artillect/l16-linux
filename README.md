@@ -38,19 +38,20 @@ installs get updates from the [package repository](https://artillect.github.io/l
 | The five proximity sensors around the lenses (lens-blocked warning) | |
 | Touch strip (volume outside the camera app), haptics | USB OTG, DisplayPort (ANX7688) |
 | Speaker, front and rear microphones | Proximity sensor beside the screen |
-| Battery and charging, charging light | Deep sleep: standby drains about 4-5% an hour |
+| Battery and charging, charging light | |
 | Accelerometer, gyroscope, magnetometer, light sensor (sensor DSP) | |
 | Wi-Fi, Bluetooth, USB networking | |
 | GPS (the modem's receiver, with XTRA assistance, for apps through geoclue) | |
-| Suspend, screen rotation (including the lock screen) | |
+| Suspend with deep sleep, screen rotation (including the lock screen) | |
 | Rebooting to Android from a quick setting; forced restarts stay in Linux | |
 
 ## Camera
 
 The `light-ccb` kernel driver talks to Light's camera ASICs the way the stock camera
 does. The preview comes from one module at a time: 28 mm, then 70 mm, with the zoom
-cropped in between up to 150 mm. It works in any libcamera app (Snapshot, Megapixels).
-Photos capture every module for the zoom and are saved as LRI files, like stock.
+cropped in between up to 150 mm. Photos capture every module for the zoom and are saved
+as LRI files, like stock. PipeWire camera apps (Snapshot) don't see the cameras: Viewfinder
+is the camera app.
 
 Two apps, from the package repository (`apk add l16-camera l16-gallery`):
 
@@ -63,16 +64,22 @@ Two apps, from the package repository (`apk add l16-camera l16-gallery`):
 - white balance presets taken from each camera's own factory calibration;
 - stock's assists: tripod mode and stacked shots (the moon) from the gyro, a hand-shake
   warning, the lens-blocked warning, overheating, battery and storage status;
-- geotagging (a setting): the camera's own GPS, while the preview runs.
+- geotagging (a setting): the camera's own GPS, while the preview runs;
+- portrait, as stock: the controls and text turn with the camera, the display stays
+  landscape, and portrait photos come out upright;
+- stock's in-pocket check: lenses covered in the dark, a countdown, then the camera sleeps.
 
-The preview stops while it can't be seen (screen off, another app in front).
+It keeps the screen on while it is in front, and its preview stops while it can't be seen
+(screen off, another app in front).
 
 **Lightbox** ([l16-gallery](l16-gallery)) shows the photos by day. It opens a quick look
 straight from the LRI, and renders the full photo with Light's own renderer on request
 ([l16-render](l16-render): Light's library, taken from the stock partitions). The JPEG
 goes next to the LRI. A geotagged photo's info gives the nearest town, looked up on the
-camera from a table of GeoNames' places. [glycin-lri](glycin-lri) also gives LRIs thumbnails in the file
-manager and opens them in Loupe. Photos can also be rendered on a PC with Light's Lumen,
+camera from a table of GeoNames' places. Its menu copies the LRI or the render, or shows
+either in its folder, and several photos can be chosen and deleted at once.
+[glycin-lri](glycin-lri) also gives LRIs thumbnails in the file manager and opens them in
+Loupe. Photos can also be rendered on a PC with Light's Lumen,
 or with [chiaro](pmaports/main/chiaro) (packaged here).
 
 The package repository carries a patched libcamera. Its software ISP takes manual white
