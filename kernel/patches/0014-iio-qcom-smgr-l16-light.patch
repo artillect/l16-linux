@@ -3,10 +3,30 @@ Subject: [PATCH] iio: qcom_smgr: L16: stream light instead of the dead proximity
 
 ---
 diff --git a/drivers/iio/common/qcom_smgr/qcom_smgr.c b/drivers/iio/common/qcom_smgr/qcom_smgr.c
-index 1d5753bd2..5e5e87282 100644
+index 1d5753bd2..80de7c8df 100644
 --- a/drivers/iio/common/qcom_smgr/qcom_smgr.c
 +++ b/drivers/iio/common/qcom_smgr/qcom_smgr.c
-@@ -219,6 +219,11 @@ static int qcom_smgr_request_buffering(struct qcom_smgr *smgr,
+@@ -168,7 +168,18 @@ static int qcom_smgr_request_buffering(struct qcom_smgr *smgr,
+ 		 * of a separate set of IDs
+ 		 */
+ 		.report_id = sensor->id,
+-		.notify_suspend_valid = false
++		/*
++		 * L16: as stock's sensor HAL does for non-wakeup sensors: the reports
++		 * are for the apps processor (proc_type 0), and none are sent while it
++		 * is suspended. Without this the DSP keeps streaming into a suspended
++		 * AP (likely keeping the SoC out of vmin), and after a long suspend the
++		 * report was seen to stop until the DSP was restarted.
++		 */
++		.notify_suspend_valid = true,
++		.notify_suspend = {
++			.proc_type = 0,
++			.send_indications_during_suspend = 0,
++		},
+ 	};
+ 	struct sns_smgr_buffering_resp resp = {};
+ 	struct qmi_txn txn;
+@@ -219,6 +230,11 @@ static int qcom_smgr_request_buffering(struct qcom_smgr *smgr,
  		 */
  		req.items[0].val1 = 3;
  		req.items[0].val2 = 1;
@@ -18,7 +38,7 @@ index 1d5753bd2..5e5e87282 100644
  	} else
  		req.action = SNS_SMGR_BUFFERING_ACTION_DELETE;
  
-@@ -305,7 +310,8 @@ static void qcom_smgr_buffering_report_handler(struct qmi_handle *hdl,
+@@ -305,7 +321,8 @@ static void qcom_smgr_buffering_report_handler(struct qmi_handle *hdl,
  	 * (sensor maxed out) and 0 when something is within range (assume
  	 * sensor is covered).
  	 */
@@ -28,7 +48,7 @@ index 1d5753bd2..5e5e87282 100644
  		temp = le32_to_cpu(iio_data.values[0]);
  		temp >>= SMGR_VALUE_DECIMAL_OFFSET;
  		temp = ~temp & 1;
-@@ -613,7 +619,9 @@ static const struct iio_chan_spec qcom_smgr_mag_iio_channels[] = {
+@@ -613,7 +630,9 @@ static const struct iio_chan_spec qcom_smgr_mag_iio_channels[] = {
  
  static const struct iio_chan_spec qcom_smgr_prox_iio_channels[] = {
  	{

@@ -3,9 +3,27 @@ Subject: [PATCH] iio: qcom_smgr: decode the report metadata as a per-item array
 
 ---
 diff --git a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c
-index 1b58e2662..340877694 100644
+index 1b58e2662..e8ea62374 100644
 --- a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c
 +++ b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.c
+@@ -414,7 +414,7 @@ static const struct qmi_elem_info sns_smgr_buffering_req_item_ei[] = {
+ 
+ static const struct qmi_elem_info sns_smgr_buffering_req_notify_suspend_ei[] = {
+ 	{
+-		.data_type = QMI_UNSIGNED_2_BYTE,
++		.data_type = QMI_UNSIGNED_4_BYTE,
+ 		.elem_len = 1,
+ 		.elem_size = sizeof_field(
+ 			struct sns_smgr_buffering_req_notify_suspend,
+@@ -424,7 +424,7 @@ static const struct qmi_elem_info sns_smgr_buffering_req_notify_suspend_ei[] = {
+ 				   proc_type),
+ 	},
+ 	{
+-		.data_type = QMI_UNSIGNED_2_BYTE,
++		.data_type = QMI_UNSIGNED_1_BYTE,
+ 		.elem_len = 1,
+ 		.elem_size = sizeof_field(
+ 			struct sns_smgr_buffering_req_notify_suspend,
 @@ -629,6 +629,19 @@ static const struct qmi_elem_info sns_smgr_buffering_report_sample_ei[] = {
  	},
  };
@@ -56,10 +74,23 @@ index 1b58e2662..340877694 100644
  	{
  		.data_type = QMI_DATA_LEN,
 diff --git a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h
-index 5d0d622b9..dea31b8b2 100644
+index 5d0d622b9..4608e1943 100644
 --- a/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h
 +++ b/drivers/iio/common/qcom_smgr/qmi/qmi_sns_smgr.h
-@@ -141,9 +141,14 @@ struct sns_smgr_buffering_report_sample {
+@@ -106,9 +106,10 @@ struct sns_smgr_buffering_req_item {
+ 	u16 val2;
+ };
+ 
++/* L16: field sizes as in stock's sensor HAL (u32, then u8) */
+ struct sns_smgr_buffering_req_notify_suspend {
+-	u16 proc_type;
+-	u16 send_indications_during_suspend;
++	u32 proc_type;
++	u8 send_indications_during_suspend;
+ };
+ 
+ struct sns_smgr_buffering_req {
+@@ -141,9 +142,14 @@ struct sns_smgr_buffering_report_sample {
  	u16 val3;
  };
  
