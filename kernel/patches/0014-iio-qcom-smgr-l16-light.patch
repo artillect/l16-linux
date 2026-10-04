@@ -1,9 +1,9 @@
 From: Riley <oreo4455@gmail.com>
-Subject: [PATCH] iio: qcom_smgr: L16: stream light instead of the dead proximity sensor
+Subject: [PATCH] iio: qcom_smgr: L16: stream light instead of the dead proximity sensor; no reports through a suspend
 
 ---
 diff --git a/drivers/iio/common/qcom_smgr/qcom_smgr.c b/drivers/iio/common/qcom_smgr/qcom_smgr.c
-index 1d5753bd2..80de7c8df 100644
+index 1d5753bd2..176f046fa 100644
 --- a/drivers/iio/common/qcom_smgr/qcom_smgr.c
 +++ b/drivers/iio/common/qcom_smgr/qcom_smgr.c
 @@ -168,7 +168,18 @@ static int qcom_smgr_request_buffering(struct qcom_smgr *smgr,
@@ -59,3 +59,76 @@ index 1d5753bd2..80de7c8df 100644
  		.scan_index = 0,
  		.scan_type = {
  			.sign = 'u',
+@@ -825,11 +844,59 @@ static const struct qrtr_device_id qcom_smgr_qrtr_match[] = {
+ };
+ MODULE_DEVICE_TABLE(qrtr, qcom_smgr_qrtr_match);
+ 
++/*
++ * L16: no reports while the AP is suspended. With a stream left running through a long
++ * suspend (iio-sensor-proxy keeps the accelerometer's), the DSP stopped answering
++ * requests for it after ~10 min, notify_suspend or not, until it was restarted. Stock
++ * never streams through a sleep: Android stops its rotation listener when the screen
++ * goes off. So the reports are deleted at suspend and asked for again at resume.
++ */
++static int qcom_smgr_suspend(struct device *dev)
++{
++	struct qcom_smgr *smgr = dev_get_drvdata(dev);
++	struct qcom_smgr_sensor *sensor;
++	int i, ret;
++
++	for (i = 0; i < smgr->sensor_count; i++) {
++		sensor = &smgr->sensors[i];
++		sensor->paused = false;
++		if (!sensor->iio_dev || !iio_buffer_enabled(sensor->iio_dev))
++			continue;
++		ret = qcom_smgr_request_buffering(smgr, sensor, false);
++		if (ret)
++			dev_warn(dev, "sensor %u: stopping its report: %d\n", sensor->id, ret);
++		/* asked for again either way: a report left running is what's avoided */
++		sensor->paused = true;
++	}
++	return 0;
++}
++
++static int qcom_smgr_resume(struct device *dev)
++{
++	struct qcom_smgr *smgr = dev_get_drvdata(dev);
++	struct qcom_smgr_sensor *sensor;
++	int i, ret;
++
++	for (i = 0; i < smgr->sensor_count; i++) {
++		sensor = &smgr->sensors[i];
++		if (!sensor->paused)
++			continue;
++		sensor->paused = false;
++		ret = qcom_smgr_request_buffering(smgr, sensor, true);
++		if (ret)
++			dev_warn(dev, "sensor %u: restarting its report: %d\n", sensor->id, ret);
++	}
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(qcom_smgr_pm, qcom_smgr_suspend, qcom_smgr_resume);
++
+ static struct qrtr_driver qcom_smgr_driver = {
+ 	.probe = qcom_smgr_probe,
+ 	.id_table = qcom_smgr_qrtr_match,
+ 	.driver	= {
+ 		.name = "qcom_smgr",
++		.pm = pm_sleep_ptr(&qcom_smgr_pm),
+ 	},
+ };
+ module_qrtr_driver(qcom_smgr_driver);
+diff --git a/include/linux/iio/common/qcom_smgr.h b/include/linux/iio/common/qcom_smgr.h
+index fdd3de12b..e66111a09 100644
+--- a/include/linux/iio/common/qcom_smgr.h
++++ b/include/linux/iio/common/qcom_smgr.h
+@@ -52,6 +52,8 @@ struct qcom_smgr_sensor {
+ 	struct qcom_smgr_data_type_item *data_types;
+ 
+ 	struct iio_dev *iio_dev;
++	/* L16: its report was stopped for a suspend, to be restarted at resume */
++	bool paused;
+ };
+ 
+ struct qcom_smgr_iio_priv {

@@ -63,8 +63,8 @@ patch input-pm8941-pwrkey-abort-suspend "Input: pm8941-pwrkey: a press aborts su
 	drivers/input/misc/pm8941-pwrkey.c
 patch iio-qcom-smgr-metadata-array "iio: qcom_smgr: decode the report metadata as a per-item array" \
 	drivers/iio/common/qcom_smgr/qmi
-patch iio-qcom-smgr-l16-light "iio: qcom_smgr: L16: stream light instead of the dead proximity sensor" \
-	drivers/iio/common/qcom_smgr/qcom_smgr.c
+patch iio-qcom-smgr-l16-light "iio: qcom_smgr: L16: stream light instead of the dead proximity sensor; no reports through a suspend" \
+	drivers/iio/common/qcom_smgr/qcom_smgr.c include/linux/iio/common/qcom_smgr.h
 patch asoc-wcd9335-dec-volume-unmute "ASoC: codecs: wcd9335: decimator volume controls, unmute after settling" \
 	sound/soc/codecs/wcd9335.c
 patch power-reset-reboot-mode-default "power: reset: reboot-mode: settable mode for a reboot without a command" \
