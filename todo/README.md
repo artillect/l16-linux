@@ -19,14 +19,40 @@ them, keep Android, and not lose the camera to a bad state.
 - [ ] Camera module (ASIC) stalls: none seen lately; keep the UART logs running while testing
 - [x] Gallery: quit didn't happen once (SIGTERM); not seen again
 - [ ] README/wiki: what works, what doesn't, how to get back to Android, the photo pipeline
-- [ ] Linux only (no Android): untested. The packages handle it (no `linux` partition: kernel
-      updates and reboots go to `boot`), but the root filesystem must go in `userdata`, not
-      `system`: firmware, Light's renderer and its runtime are loaded from `system` at every
-      boot (and the calibration from `lightcal`), so without them Wi-Fi, Bluetooth and
-      photo processing break. Going back: stock `boot` (and `system`, if it was touched) from
-      the backups or the OTA, `userdata` wiped
+- [x] Linux only (no Android): tested both ways with 0.1.0-rc1 (2026-10-03): installed to
+      `userdata` and `boot`, first-boot resize, rebooting, the camera, and back to Android
+      (stock `boot`, `userdata` erased); written up in the wiki
+
+## 0.2.0: systemd (needs a reinstall)
+
+postmarketOS v26.06 runs Phosh on systemd by default (postmarketos-ui-phosh: pmb:default-systemd);
+we chose OpenRC. GNOME's Settings switches that start services need systemd: SSH and Remote
+Desktop (gnome-control-center calls StartUnit) and File Sharing (gsd-sharing starts
+`%s.service` units), so they do nothing here. An installed system can't switch init, so 0.2.0
+is a reinstall: everything else that only changes at install time stays (single root
+partition, ext4, no encryption by default, the 64 GiB dual-boot partition).
+
+- [ ] systemd units for our services, as `-systemd` subpackages beside the OpenRC ones:
+      light-lfc-bootmode, -firmware, -led, -strip-volume, -android-libs, the sleep inhibitor,
+      l16-gnss (its post-install's rc-update too); check rmtfs and msm-firmware-loader's
+- [ ] Build with systemd: pmbootstrap init, tools/ci (setup.sh, release.sh), the wiki's
+      "Building it yourself"
+- [ ] Re-test what touches init or power: both boot modes, suspend and deep sleep (logind, not
+      elogind), suspend-on-blank and the sleep inhibitor, modem and GPS start, the camera, the
+      LED and strip services, first-boot resize
+- [ ] Settings' SSH and File Sharing switches work; drop the "doesn't work" notes (release
+      notes, wiki Using Linux)
+- [ ] The upgrade path from 0.1.x: back up photos and settings, reinstall, restore; tested
+      once end to end, written up in the release notes and the wiki
 
 ## Camera app (Viewfinder)
+
+- [ ] Manual focus: the host can move lenses (0x0040 write: a hall code per module; 0x0041:
+      a fraction of the hard-stop range) and read them back (0x0040 read). B and C set for a
+      distance from the factory calibration (818/1500 mm points, infinity = infinity stop +
+      200) land within 2 codes (2026-10-04). Next: capture without AF, check a matched-focus
+      photo, the A modules (opposite direction, ~1000-code correction), stops probed once and
+      saved, then a focus mode in the app (infinity lock for astro, a focus pull)
 
 - [x] AF-D as stock's: motion-then-settle (gyro) and zoom, with the marks
 - [ ] AF-D: faces as a trigger (stock refocuses on face count/size/position changes)
@@ -53,12 +79,10 @@ them, keep Android, and not lose the camera to a bad state.
 
 ## System
 
-- [ ] The SLPI stops answering sensor requests after a while (2026-10-02, ~8 h into a boot
-      with suspends, the modem and GPS tests): enabling any of its sensors times out, and
-      the accelerometer, gyro and light sensor freeze on their last values. Restarting the
-      SLPI (remoteproc stop/start) brings them all back. Cause unknown; not reproduced on
-      demand. Kernel r85 tells the SLPI when the CPUs suspend (stock's sleepstate), which it
-      didn't know before; watch whether it comes back
+- [x] The SLPI stopped answering sensor requests after a while: a sensor report left running
+      through a long suspend (~10 min) wedged it until a restart. Kernel r102 stops the reports
+      at suspend and asks again at resume (stock never streams through a sleep); an 8 h sleep
+      kept rotation, and the SoC reaches vmin again
 - [x] Photos' capture time was 1970 (the ASICs' uptime): fixed in r86 (SET_TIME as stock's)
 - [x] Lightbox dates photos by the LRI's capture time (it showed the file time)
 - [x] Deep sleep (XO shutdown in suspend, kernel r94): Wi-Fi's PCIe controller and PHY
@@ -70,7 +94,8 @@ them, keep Android, and not lose the camera to a bad state.
       for the old one's streams); WirePlumber's camera monitors, which held the camera too,
       are off (device-light-lfc r28). Kernel r95 logs light-ccb's stream on/off, to keep an
       eye on its count
-- [ ] Measure the idle drain on battery overnight now that the crystal shuts off (was 4-5%/h)
+- [x] Measure the idle drain on battery overnight now that the crystal shuts off (was 4-5%/h):
+      ~2.2%/h over 8.5 h asleep (2026-10-04, r102); phones manage 0.5-1%/h, so more to find
 - [x] UFS at boot: "hw clk gating enabled failed": the v2 controller has no UniPro clock
       gating attributes (stock enables only the UTP gating); kernel r95 skips them on v2
 - [ ] Kernel tracing (CONFIG_FTRACE) is on for debugging suspend; drop it if it costs anything
