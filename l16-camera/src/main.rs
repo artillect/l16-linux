@@ -763,8 +763,8 @@ fn make_pipeline() -> (gst::Pipeline, gdk::Paintable) {
     // for libcamerasrc's first query, which only knows system memory; it then offers DMA-BUF.
     let pipeline = gst::parse::launch(
         "libcamerasrc name=src \
-         ! video/x-raw(memory:DMABuf),format=DMA_DRM,drm-format=XR24,width=1040,height=780; \
-           video/x-raw,format=BGRx,width=1040,height=780 \
+         ! video/x-raw(memory:DMABuf),format=DMA_DRM,drm-format=XR24,width=1024,height=768; \
+           video/x-raw,format=BGRx,width=1024,height=768 \
          ! queue max-size-buffers=1 leaky=downstream ! gtk4paintablesink name=sink",
     )
     .expect("preview pipeline")
@@ -1548,11 +1548,24 @@ impl App {
     }
 
     // focus on @at (preview coordinates), or the centre: a 200x200 window in the module's
-    // 4160x3120 pixels, through the zoom's crop (the driver runs AF in the background)
+    // 4160x3120 pixels, of which the preview shows the middle 4096x3072 (the driver's
+    // preview crop), through the zoom's crop (the driver runs AF in the background)
     fn focus(self: &Rc<Self>, at: Option<(f64, f64)>) {
-        // stock: AF-D leaves a focus by hand alone for 5 s
-        self.st.borrow_mut().caf_pause_until = Some(Instant::now() + Duration::from_secs(5));
+        // AF-D leaves a focus by hand alone for a moment: stock's caf.disabled.post.tap is
+        // 5 s (a setting there), which kept a whip pan right after a tap waiting too long;
+        // the gyro's threshold already ignores the jolt of a tap and gentle reframing
+        self.st.borrow_mut().caf_pause_until = Some(Instant::now() + Duration::from_millis(1500));
         self.focus_run(at, true);
+    }
+
+    // where a half press focuses: stock's "previous coordinate" (triggerAeFocusAtLastPoint),
+    // the spot last tapped, until AF-D refocuses the centre (the camera moved, or zoomed:
+    // focus_run(None) clears it) or the zoom has changed since (stock refocuses the centre
+    // on a zoom, AF-D or not)
+    fn last_focus_point(&self) -> Option<(f64, f64)> {
+        let st = self.st.borrow();
+        let same_zoom = st.caf_zoom.is_some_and(|z| (st.zoom - z).abs() <= 1.0);
+        if same_zoom { st.focus_at } else { None }
     }
 
     // @marks: show the focus marks
@@ -1566,8 +1579,8 @@ impl App {
         let (w, h) = (self.view.width() as f64, self.view.height() as f64);
         let z = self.view.zoom();
         let (px, py) = at.unwrap_or((w / 2.0, h / 2.0));
-        let sx = 2080.0 + (px - w / 2.0) / w * 4160.0 / z;
-        let sy = 1560.0 + (py - h / 2.0) / h * 3120.0 / z;
+        let sx = 2080.0 + (px - w / 2.0) / w * 4096.0 / z;
+        let sy = 1560.0 + (py - h / 2.0) / h * 3072.0 / z;
         let fx = ((sx - 100.0).round() as i32).clamp(0, 4160 - 200);
         let fy = ((sy - 100.0).round() as i32).clamp(0, 3120 - 200);
         if marks {
@@ -2450,19 +2463,25 @@ impl App {
 
     // AF-D as stock's app runs it (SmartAFTriggerMgr; there is no ASIC mode for stills): the
     // centre is focused again once the camera has moved and settled (the gyro), or the zoom
-    // has changed; not for 5 s after a focus by hand. (Stock also follows faces.)
+    // has changed; not for 1.5 s after a focus by hand. (Stock also follows faces.)
     fn continuous_focus(self: &Rc<Self>) {
-        let moved = self.moved.swap(false, Ordering::Relaxed);
-        let (want, zoom, last) = {
+        let (on, want, zoom, last) = {
             let st = self.st.borrow();
+            let on = st.caf && st.mode != Mode::Manual;
             let settled = st.settle.is_none() && st.switching.is_none();
             let paused = st.caf_pause_until.is_some_and(|t| Instant::now() < t);
-            let want = st.caf && st.mode != Mode::Manual && !st.busy && settled && !paused;
-            (want, st.zoom, st.caf_zoom)
+            (on, on && !st.busy && settled && !paused, st.zoom, st.caf_zoom)
         };
+        // a move while AF-D is off doesn't count; one during the pause after a focus by hand
+        // (or a busy moment) is kept until AF-D may act on it, not lost
+        if !on {
+            self.moved.store(false, Ordering::Relaxed);
+            return;
+        }
         if !want || self.focusing.load(Ordering::SeqCst) {
             return;
         }
+        let moved = self.moved.swap(false, Ordering::Relaxed);
         if moved || last.is_some_and(|z| (zoom - z).abs() > 1.0) {
             self.focus_run(None, true);
         }
@@ -2481,7 +2500,7 @@ impl App {
             return;
         }
         match ev {
-            input::Ev::Key(input::KEY_CAMERA_FOCUS, true) => self.focus(None),
+            input::Ev::Key(input::KEY_CAMERA_FOCUS, true) => self.focus(self.last_focus_point()),
             input::Ev::Key(input::KEY_CAMERA | input::KEY_VOLUMEUP, true) => self.shutter_pressed(),
             input::Ev::Key(..) => {}
             // the strip's position comes before its touch-down in each report

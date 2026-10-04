@@ -102,8 +102,9 @@ pub fn spawn(on: Arc<AtomicBool>, still: Arc<AtomicBool>, focal: Arc<AtomicU32>,
                 }
                 let w: [f64; 3] =
                     std::array::from_fn(|k| i32::from_le_bytes(buf[k * 4..k * 4 + 4].try_into().unwrap()) as f64 * scale);
-                let rate = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
-                if rate > MOTION {
+                // (the turn speed, not `rate`: that's the samples per second, for `turn` below)
+                let speed = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+                if speed > MOTION {
                     motion = Some(Instant::now());
                 } else if motion.is_some_and(|t| t.elapsed() >= MOTION_STABLE) {
                     motion = None;
