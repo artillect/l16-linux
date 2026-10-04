@@ -84,8 +84,15 @@ jobs:
         run: |
           sh tools/ci/setup.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # this build's l16-render, not the one the repository's checksum is for
+          # this build's l16-render, not the one the repository's checksum is for (only
+          # built when its version changed: the published one is used otherwise)
           "$HOME/.local/bin/pmbootstrap" checksum l16-render
+
+      # only the packages whose version changed are built; the others come from gh-pages
+      - name: Seed with the published packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: sh tools/ci/seed-packages.sh
 
       - name: Build packages
         run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera l16-camera glycin-lri l16-render l16-gallery l16-phosh-plugins l16-gnss
