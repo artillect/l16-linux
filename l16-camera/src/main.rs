@@ -514,8 +514,10 @@ struct App {
     // (-1, 0, 1; as stock, none upside down) and what turns with it re-laid out
     accel: Option<gtk::gio::DBusProxy>,
     quarter: Cell<i32>,
-    // the status line, at the preview's top edge as the camera is held (place_status)
+    // the status line, at the preview's top edge as the camera is held (place_status), and
+    // the overheating warning at its bottom edge
     status_turn: Rotator,
+    thermal_turn: Rotator,
     // in front: the screen kept on (an idle inhibitor's cookie) and the display held in
     // landscape (the rotation lock and transform it had, given back after)
     idle_cookie: Cell<u32>,
@@ -721,6 +723,24 @@ fn text(cr: &cairo::Context, s: &str, x: f64, y: f64, size: f64, align: f64) {
         y - ink.height() as f64 / 2.0 - ink.y() as f64,
     );
     pangocairo::functions::show_layout(cr, &layout);
+}
+
+// @r centred on the preview's top (or bottom) edge as the camera is held, @margin from it:
+// turned -90 (shutter down) the top is the left edge, turned 90 the right
+fn place_on_edge(r: &Rotator, q: i32, top: bool, margin: i32) {
+    let side = if top { q } else { -q };
+    let (h, v) = match (q, top) {
+        (0, true) => (gtk::Align::Center, gtk::Align::Start),
+        (0, false) => (gtk::Align::Center, gtk::Align::End),
+        _ if side == -1 => (gtk::Align::Start, gtk::Align::Center),
+        _ => (gtk::Align::End, gtk::Align::Center),
+    };
+    r.set_halign(h);
+    r.set_valign(v);
+    r.set_margin_top(if q == 0 && top { margin } else { 0 });
+    r.set_margin_bottom(if q == 0 && !top { margin } else { 0 });
+    r.set_margin_start(if q != 0 && side == -1 { margin } else { 0 });
+    r.set_margin_end(if q != 0 && side == 1 { margin } else { 0 });
 }
 
 // text() turned @q quarters clockwise for portrait, on the same side of (x, y)
@@ -1358,24 +1378,17 @@ impl App {
             r.set_quarter(q);
         }
         self.place_status(q);
+        self.lens_badge.queue_draw();
         self.wheels.queue_draw();
         self.mode_wheel.queue_draw();
     }
 
     // the status line along the preview's top edge as the camera is held: the top, or the
-    // left with the shutter down (turned -90), the right with it up
+    // left with the shutter down (turned -90), the right with it up; the overheating
+    // warning along the opposite edge, so neither covers the middle of the frame
     fn place_status(&self, q: i32) {
-        let r = &self.status_turn;
-        let (h, v) = match q {
-            -1 => (gtk::Align::Start, gtk::Align::Center),
-            1 => (gtk::Align::End, gtk::Align::Center),
-            _ => (gtk::Align::Center, gtk::Align::Start),
-        };
-        r.set_halign(h);
-        r.set_valign(v);
-        r.set_margin_top(if q == 0 { 14 } else { 0 });
-        r.set_margin_start(if q == -1 { 14 } else { 0 });
-        r.set_margin_end(if q == 1 { 14 } else { 0 });
+        place_on_edge(&self.status_turn, q, true, 14);
+        place_on_edge(&self.thermal_turn, q, false, 24);
     }
 
     // degrees between the mode wheel's labels (stock's 2 and 4 dip, as angles)
@@ -2581,12 +2594,26 @@ impl App {
     // stock's lens-blocked warning (proximity_sensor_notification_layout): the camera's back
     // as seen through the screen (its cut corner top right), a ringed dot at each covered
     // sensor: ch0-2 down the left edge, ch3 top centre, ch4 bottom centre; "lens blocked"
-    fn draw_lens_blocked(&self, cr: &cairo::Context, w: f64, _h: f64) {
+    // below it. The camera's back never turns (its dots are where the sensors are); in
+    // portrait only the words turn, and go below it as the camera is held
+    fn draw_lens_blocked(&self, cr: &cairo::Context, w: f64, h: f64) {
         let mask = self.st.borrow().lens_mask;
+        let q = self.quarter.get();
         let (bw, bh) = (160.0, 93.0);
-        let (x0, y0) = ((w - bw) / 2.0, 12.0);
+        // portrait: a column beside the body for the turned words (clear of the dots on
+        // the left edge, which stand 16 out)
+        let side = 40.0;
+        let (x0, y0) = match q {
+            0 => ((w - bw) / 2.0, 12.0),
+            -1 => ((w - bw - side) / 2.0, (h - bh) / 2.0),
+            _ => ((w - bw - side) / 2.0 + side, (h - bh) / 2.0),
+        };
         cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
-        rounded(cr, x0 - 12.0, 0.0, bw + 24.0, bh + 52.0, 12.0);
+        match q {
+            0 => rounded(cr, x0 - 12.0, 0.0, bw + 24.0, bh + 52.0, 12.0),
+            -1 => rounded(cr, x0 - 12.0, y0 - 12.0, bw + 24.0 + side, bh + 24.0, 12.0),
+            _ => rounded(cr, x0 - 12.0 - side, y0 - 12.0, bw + 24.0 + side, bh + 24.0, 12.0),
+        }
         let _ = cr.fill();
         // the body: rounded corners, the top right one cut
         let (r, cut) = (6.0, 22.0);
@@ -2623,7 +2650,11 @@ impl App {
             let _ = cr.fill();
         }
         cr.set_source_rgb(1.0, 1.0, 1.0);
-        text(cr, "lens blocked", w / 2.0, y0 + bh + 24.0, 17.0, 0.5);
+        match q {
+            0 => text(cr, "lens blocked", w / 2.0, y0 + bh + 24.0, 17.0, 0.5),
+            -1 => text_q(cr, "lens blocked", x0 + bw + side / 2.0, y0 + bh / 2.0, 17.0, 0.5, q),
+            _ => text_q(cr, "lens blocked", x0 - 16.0 - (side - 16.0) / 2.0, y0 + bh / 2.0, 17.0, 0.5, q),
+        }
     }
 
     // stock's focus marks (CrossHair): grey corners while focusing; then yellow and a little
@@ -3310,7 +3341,7 @@ fn build(gapp: &gtk::Application) {
     lens_badge.set_valign(gtk::Align::Center);
     lens_badge.set_can_target(false);
     lens_badge.set_visible(false);
-    let lens_turn = turn(lens_badge.upcast_ref());
+    // (not turned: draw_lens_blocked turns only its words)
 
     // stock's device status: captures left and the battery, top left
     let storage_label = gtk::Label::new(None);
@@ -3372,8 +3403,9 @@ fn build(gapp: &gtk::Application) {
 
     let root = gtk::Overlay::new();
     root.set_child(Some(&row));
-    preview.add_overlay(&lens_turn);
-    root.add_overlay(&thermal_turn);
+    preview.add_overlay(&lens_badge);
+    // on the preview, at its bottom edge as the camera is held (place_status)
+    preview.add_overlay(&thermal_turn);
     root.add_overlay(&status_box_turn);
     root.add_overlay(&wheels);
     preview.add_overlay(&status_turn);
@@ -3512,6 +3544,7 @@ fn build(gapp: &gtk::Application) {
         accel: accel_proxy(),
         quarter: Cell::new(0),
         status_turn: status_turn.clone(),
+        thermal_turn: thermal_turn.clone(),
         idle_cookie: Cell::new(0),
         landscape_held: RefCell::new(None),
         rotators,
