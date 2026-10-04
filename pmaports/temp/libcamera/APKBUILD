@@ -3,7 +3,7 @@ maintainer="Robert Mader <robert.mader@collabora.com>"
 pkgname=libcamera
 _pkgver=0.7.1
 pkgver=9999$_pkgver
-pkgrel=8
+pkgrel=9
 pkgdesc="Linux camera framework"
 url="https://libcamera.org/"
 arch="all"
@@ -63,6 +63,7 @@ source="https://gitlab.freedesktop.org/camera/libcamera/-/archive/v$_pkgver/libc
 	0006-software_isp-Light-L16-stock-preview-tone.patch
 	0007-gstreamer-Offer-DMA-BUF-caps.patch
 	0008-gstreamer-Disconnect-requestCompleted-on-close.patch
+	0009-software_isp-egl-Keep-buffers-imported-and-mapped.patch
 	qcam.desktop
 	$_tuning_files
 	"
@@ -184,6 +185,7 @@ ae78e40d82b8367574ffc3fa6c18fec86c73d8b32ccc98272e3a663f8218f02486d6e46cbe331b69
 54478ef7bb3620301a5347d44942bdd01610d26f1db067c70acc485c592a75ca419df9cd1cc38275b43ee8fd8ed3e2710a2bc368d3af3470fc6b4e73df899e0f  0006-software_isp-Light-L16-stock-preview-tone.patch
 9cce5debfb2b28cbd8f57998d9ae9515caa75f9d6e89a0c78b49f181c12d0eb3d45452c085bfb68e7fd870427f64f369b2c1f743ad1851e44ce7d3f6d9d52204  0007-gstreamer-Offer-DMA-BUF-caps.patch
 4e61b8c1e525749a039c97652256509bfc8658841842b91f83340e14251545136a3d936b0cb44d39e55b5b8e0fc16da22d8783f9deff4060ec10b7c482b9c772  0008-gstreamer-Disconnect-requestCompleted-on-close.patch
+4bfc1854f8488a5cbe4657de56d4191f3a09b378f9f3f8eee321d2097cc25e531e9e42995850a4201a92224c7c5f035986831c82349eb9b645b957500c55c6a5  0009-software_isp-egl-Keep-buffers-imported-and-mapped.patch
 22167a4eceb6d1b40b0b7c45fdf116c71684f5340de7f767535cb8e160ad9d2ae0f00cb3d461f73a344520a48a4641cf46226841d78bee06bfbfd2a91337f754  qcam.desktop
 2ee566653b17d565d2c0de67cbe6ebad25df5aac6051cad78e6bae52016fa2ca0247e964d735ac776b3e0bd447ead9c4fcb26cd7629228cdba3ceb91b46f378f  hi846.yaml
 2ee566653b17d565d2c0de67cbe6ebad25df5aac6051cad78e6bae52016fa2ca0247e964d735ac776b3e0bd447ead9c4fcb26cd7629228cdba3ceb91b46f378f  imx355.yaml

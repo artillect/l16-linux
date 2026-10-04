@@ -1,0 +1,279 @@
+From 0f67fe74123f4100393ad6127cef661552c8d55d Mon Sep 17 00:00:00 2001
+From: Riley <oreo4455@gmail.com>
+Date: Sat, 3 Oct 2026 21:53:00 -0700
+Subject: [PATCH] software_isp: egl: Keep buffers imported and mapped
+
+The GPU debayer imported (or mapped and uploaded) its input buffer, and
+created an EGL image and framebuffer for its output buffer, on every
+frame, and the CPU statistics mapped the input again every fourth frame.
+The buffers are a small pool used over and over, so each frame paid for
+an IOMMU map and unmap of both buffers, page-table setup and teardown
+for the mappings, and cache maintenance over the whole input frame.
+
+Keep, per buffer, made the first time it is seen and dropped at stop():
+the output's render target, the input's imported texture (a buffer that
+doesn't import is remembered and uploaded without retrying the import),
+and the input's CPU mapping, shared with the statistics. Sync the input
+for the CPU only on frames the CPU reads it: an upload or statistics.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../internal/software_isp/swstats_cpu.h       |  3 +-
+ src/libcamera/software_isp/debayer_egl.cpp    | 86 ++++++++++++++-----
+ src/libcamera/software_isp/debayer_egl.h      | 22 ++++-
+ src/libcamera/software_isp/swstats_cpu.cpp    | 20 +++--
+ 4 files changed, 100 insertions(+), 31 deletions(-)
+
+diff --git a/include/libcamera/internal/software_isp/swstats_cpu.h b/include/libcamera/internal/software_isp/swstats_cpu.h
+index 802370b..58e7191 100644
+--- a/include/libcamera/internal/software_isp/swstats_cpu.h
++++ b/include/libcamera/internal/software_isp/swstats_cpu.h
+@@ -56,7 +56,8 @@ public:
+ 	void setWindow(const Rectangle &window);
+ 	void startFrame(uint32_t frame);
+ 	void finishFrame(uint32_t frame, uint32_t bufferId);
+-	void processFrame(uint32_t frame, uint32_t bufferId, FrameBuffer *input);
++	void processFrame(uint32_t frame, uint32_t bufferId, FrameBuffer *input,
++			  MappedFrameBuffer *mapped = nullptr);
+ 
+ 	void processLine0(uint32_t frame, unsigned int y, const uint8_t *src[], unsigned int statsBufferIndex = 0)
+ 	{
+diff --git a/src/libcamera/software_isp/debayer_egl.cpp b/src/libcamera/software_isp/debayer_egl.cpp
+index 3f241b9..2fb9422 100644
+--- a/src/libcamera/software_isp/debayer_egl.cpp
++++ b/src/libcamera/software_isp/debayer_egl.cpp
+@@ -526,25 +526,61 @@ void DebayerEGL::setShaderVariableValues(const DebayerParams &params)
+ 	return;
+ }
+ 
+-int DebayerEGL::debayerGPU(FrameBuffer *input, int out_fd, const DebayerParams &params)
++/* the first time @input is seen: import it, once (with the eGL context current) */
++void DebayerEGL::importInput(InputBuffer &in, FrameBuffer *input)
+ {
+-	/* eGL context switch */
+-	egl_.makeCurrent();
++	if (in.tried)
++		return;
++	in.tried = true;
++
++	auto image = std::make_unique<eGLImage>(width_, height_, inputConfig_.stride, GL_TEXTURE0, 0);
++	if (egl_.createInputDMABufTexture2D(*image, input->planes()[0].fd.get(), glFormat_,
++					    inputConfig_.stride / bytesPerPixel_, height_) == 0)
++		in.image = std::move(image);
++	else
++		LOG(Debayer, Info) << "Input buffer (stride " << inputConfig_.stride
++				   << ") doesn't import: uploading it each frame";
++}
+ 
+-	/* Create a standard texture input */
+-	if (egl_.createInputDMABufTexture2D(*eglImageBayerIn_, input->planes()[0].fd.get(), glFormat_, inputConfig_.stride / bytesPerPixel_, height_) != 0) {
+-		MappedFrameBuffer in(input, MappedFrameBuffer::MapFlag::Read);
+-		if (!in.isValid()) {
++/* @input's CPU mapping, made once */
++MappedFrameBuffer *DebayerEGL::inputMap(InputBuffer &in, FrameBuffer *input)
++{
++	if (!in.map) {
++		in.map = std::make_unique<MappedFrameBuffer>(input, MappedFrameBuffer::MapFlag::Read);
++		if (!in.map->isValid()) {
+ 			LOG(Debayer, Error) << "mmap-ing buffer(s) failed";
+-			return -ENODEV;
++			in.map.reset();
+ 		}
++	}
++	return in.map.get();
++}
+ 
+-		LOG(Debayer, Debug) << "Importing input buffer with DMABuf import failed, falling back to upload";
+-		egl_.createTexture2D(*eglImageBayerIn_, glFormat_, inputConfig_.stride / bytesPerPixel_, height_, in.planes()[0].data());
++int DebayerEGL::debayerGPU(InputBuffer &in, FrameBuffer *input, FrameBuffer *output, const DebayerParams &params)
++{
++	/* The input: its imported texture, or an upload from its mapping */
++	if (in.image) {
++		glActiveTexture(in.image->texture_unit_);
++		glBindTexture(GL_TEXTURE_2D, in.image->texture_);
++	} else {
++		MappedFrameBuffer *map = inputMap(in, input);
++		if (!map)
++			return -ENODEV;
++		egl_.createTexture2D(*eglImageBayerIn_, glFormat_, inputConfig_.stride / bytesPerPixel_, height_, map->planes()[0].data());
+ 	}
+ 
+-	/* Generate the output render framebuffer as render to texture */
+-	egl_.createOutputDMABufTexture2D(*eglImageBayerOut_, out_fd);
++	/* The output: the render target bound to this buffer, made the first time */
++	std::unique_ptr<eGLImage> &out = outputs_[output];
++	if (!out) {
++		out = std::make_unique<eGLImage>(outputSize_.width, outputSize_.height, outputConfig_.stride, GL_TEXTURE1, 1);
++		if (egl_.createOutputDMABufTexture2D(*out, output->planes()[0].fd.get())) {
++			outputs_.erase(output);
++			return -ENODEV;
++		}
++	} else {
++		glActiveTexture(out->texture_unit_);
++		glBindTexture(GL_TEXTURE_2D, out->texture_);
++		glBindFramebuffer(GL_FRAMEBUFFER, out->fbo_);
++	}
+ 
+ 	setShaderVariableValues(params);
+ 	glViewport(0, 0, width_, height_);
+@@ -567,8 +603,17 @@ void DebayerEGL::process(uint32_t frame, FrameBuffer *input, FrameBuffer *output
+ 	bench_.startFrame();
+ 
+ 	std::vector<DmaSyncer> dmaSyncers;
++	InputBuffer &in = inputs_[input];
++	/* the statistics read every few frames on the CPU */
++	bool statsFrame = !(frame % SwStatsCpu::kStatPerNumFrames);
+ 
+-	dmaSyncBegin(dmaSyncers, input, nullptr);
++	/* eGL context switch */
++	egl_.makeCurrent();
++	importInput(in, input);
++
++	/* CPU cache maintenance only when the CPU reads the frame: an upload, or statistics */
++	if (!in.image || statsFrame)
++		dmaSyncBegin(dmaSyncers, input, nullptr);
+ 
+ 	/* Copy metadata from the input buffer */
+ 	FrameMetadata &metadata = output->_d()->metadata();
+@@ -576,7 +621,7 @@ void DebayerEGL::process(uint32_t frame, FrameBuffer *input, FrameBuffer *output
+ 	metadata.sequence = input->metadata().sequence;
+ 	metadata.timestamp = input->metadata().timestamp;
+ 
+-	if (debayerGPU(input, output->planes()[0].fd.get(), params)) {
++	if (debayerGPU(in, input, output, params)) {
+ 		LOG(Debayer, Error) << "debayerGPU failed";
+ 		goto error;
+ 	}
+@@ -585,8 +630,8 @@ void DebayerEGL::process(uint32_t frame, FrameBuffer *input, FrameBuffer *output
+ 
+ 	metadata.planes()[0].bytesused = output->planes()[0].length;
+ 
+-	/* Calculate stats for the whole frame */
+-	stats_->processFrame(frame, 0, input);
++	/* Calculate stats for the whole frame, from the buffer's mapping */
++	stats_->processFrame(frame, 0, input, statsFrame ? inputMap(in, input) : nullptr);
+ 	dmaSyncers.clear();
+ 
+ 	outputBufferReady.emit(output);
+@@ -611,12 +656,9 @@ int DebayerEGL::start()
+ 
+ 	LOG(Debayer, Debug) << "Available fragment shader texture units " << maxTextureImageUnits;
+ 
+-	/* Raw bayer input as texture */
++	/* Raw bayer input as texture, for buffers that are uploaded */
+ 	eglImageBayerIn_ = std::make_unique<eGLImage>(width_, height_, inputConfig_.stride, GL_TEXTURE0, 0);
+ 
+-	/* Texture we will render to */
+-	eglImageBayerOut_ = std::make_unique<eGLImage>(outputSize_.width, outputSize_.height, outputConfig_.stride, GL_TEXTURE1, 1);
+-
+ 	if (initBayerShaders(inputPixelFormat_, outputPixelFormat_))
+ 		return -EINVAL;
+ 
+@@ -625,7 +667,9 @@ int DebayerEGL::start()
+ 
+ void DebayerEGL::stop()
+ {
+-	eglImageBayerOut_.reset();
++	/* the buffers may be freed and others allocated before the next start */
++	outputs_.clear();
++	inputs_.clear();
+ 	eglImageBayerIn_.reset();
+ 
+ 	if (programId_)
+diff --git a/src/libcamera/software_isp/debayer_egl.h b/src/libcamera/software_isp/debayer_egl.h
+index c29e174..4497943 100644
+--- a/src/libcamera/software_isp/debayer_egl.h
++++ b/src/libcamera/software_isp/debayer_egl.h
+@@ -9,6 +9,7 @@
+ 
+ #pragma once
+ 
++#include <map>
+ #include <memory>
+ #include <stdint.h>
+ #include <vector>
+@@ -66,16 +67,31 @@ private:
+ 	int initBayerShaders(PixelFormat inputFormat, PixelFormat outputFormat);
+ 	int getShaderVariableLocations();
+ 	void setShaderVariableValues(const DebayerParams &params);
+-	int debayerGPU(FrameBuffer *input, int out_fd, const DebayerParams &params);
++	/*
++	 * What each buffer needs, made the first time it is seen and kept until stop(): the
++	 * buffers are a small pool used over and over, so nothing is imported or mapped per
++	 * frame. An input buffer that doesn't import (a stride the GPU won't take) is uploaded
++	 * from a persistent mapping, which the statistics use too.
++	 */
++	struct InputBuffer {
++		bool tried = false;
++		std::unique_ptr<eGLImage> image;
++		std::unique_ptr<MappedFrameBuffer> map;
++	};
++	void importInput(InputBuffer &in, FrameBuffer *input);
++	MappedFrameBuffer *inputMap(InputBuffer &in, FrameBuffer *input);
++	int debayerGPU(InputBuffer &in, FrameBuffer *input, FrameBuffer *output, const DebayerParams &params);
++
++	std::map<const FrameBuffer *, InputBuffer> inputs_;
++	std::map<const FrameBuffer *, std::unique_ptr<eGLImage>> outputs_;
+ 
+ 	/* Shader program identifiers */
+ 	GLuint vertexShaderId_ = 0;
+ 	GLuint fragmentShaderId_ = 0;
+ 	GLuint programId_ = 0;
+ 
+-	/* Pointer to object representing input texture */
++	/* The input texture of buffers that are uploaded (don't import) */
+ 	std::unique_ptr<eGLImage> eglImageBayerIn_;
+-	std::unique_ptr<eGLImage> eglImageBayerOut_;
+ 
+ 	/* Shader parameters */
+ 	float firstRed_x_;
+diff --git a/src/libcamera/software_isp/swstats_cpu.cpp b/src/libcamera/software_isp/swstats_cpu.cpp
+index 5366e01..2b28b89 100644
+--- a/src/libcamera/software_isp/swstats_cpu.cpp
++++ b/src/libcamera/software_isp/swstats_cpu.cpp
+@@ -11,6 +11,8 @@
+ 
+ #include "libcamera/internal/software_isp/swstats_cpu.h"
+ 
++#include <optional>
++
+ #include <libcamera/base/log.h>
+ 
+ #include <libcamera/stream.h>
+@@ -537,7 +539,8 @@ void SwStatsCpu::processBayerFrame2(MappedFrameBuffer &in)
+  *
+  * This may only be called after a successful setWindow() call.
+  */
+-void SwStatsCpu::processFrame(uint32_t frame, uint32_t bufferId, FrameBuffer *input)
++void SwStatsCpu::processFrame(uint32_t frame, uint32_t bufferId, FrameBuffer *input,
++			      MappedFrameBuffer *mapped)
+ {
+ 	if (frame % kStatPerNumFrames) {
+ 		finishFrame(frame, bufferId);
+@@ -547,13 +550,18 @@ void SwStatsCpu::processFrame(uint32_t frame, uint32_t bufferId, FrameBuffer *in
+ 	bench_.startFrame();
+ 	startFrame(frame);
+ 
+-	MappedFrameBuffer in(input, MappedFrameBuffer::MapFlag::Read);
+-	if (!in.isValid()) {
+-		LOG(SwStatsCpu, Error) << "mmap-ing buffer(s) failed";
+-		return;
++	/* the caller's mapping of @input if it keeps one, else one for this frame */
++	std::optional<MappedFrameBuffer> own;
++	if (!mapped) {
++		own.emplace(input, MappedFrameBuffer::MapFlag::Read);
++		if (!own->isValid()) {
++			LOG(SwStatsCpu, Error) << "mmap-ing buffer(s) failed";
++			return;
++		}
++		mapped = &*own;
+ 	}
+ 
+-	(this->*processFrame_)(in);
++	(this->*processFrame_)(*mapped);
+ 	finishFrame(frame, bufferId);
+ 	bench_.finishFrame();
+ }
+-- 
+2.43.0
+
