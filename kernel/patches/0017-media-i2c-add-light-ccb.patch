@@ -34,10 +34,10 @@ index 7e76b7cc4..2e0517f75 100644
  obj-$(CONFIG_VIDEO_MT9M114) += mt9m114.o
 diff --git a/drivers/media/i2c/light-ccb.c b/drivers/media/i2c/light-ccb.c
 new file mode 100644
-index 000000000..9f666f091
+index 000000000..b46f03665
 --- /dev/null
 +++ b/drivers/media/i2c/light-ccb.c
-@@ -0,0 +1,1800 @@
+@@ -0,0 +1,1822 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Light L16 camera ASICs ("CCB") as a CSI-2 source for CAMSS.
@@ -80,8 +80,16 @@ index 000000000..9f666f091
 +#define CCB_BPP		10
 +#define CCB_LINK_FREQ	750000000LL	/* not known; >= 386 MHz from stock capture timing */
 +#define CCB_PIXEL_RATE	(CCB_LINK_FREQ * 2 * CCB_LANES / CCB_BPP)
-+#define CCB_WIDTH	2080		/* preview, UCID 3 */
-+#define CCB_HEIGHT	1560
++/*
++ * The preview (UCID 3): 4096x3072 from the middle of the array, binned 2:1. Stock takes the
++ * whole 4160x3120 (2080x1560), into Qualcomm's hardware ISP; here the frames go to the GPU,
++ * which only imports buffers whose lines are a multiple of 64 bytes, and a 2080-pixel RAW10
++ * line is 2600. 2048 pixels is 2560 bytes: the preview shows 1.5% less than the photos.
++ */
++#define CCB_WIDTH	2048
++#define CCB_HEIGHT	1536
++#define CCB_CROP_X	32		/* in the array's pixels */
++#define CCB_CROP_Y	24
 +#define CCB_CODE	MEDIA_BUS_FMT_SGRBG10_1X10
 +#define CCB_NATIVE_W	4160		/* the AR1335 arrays; preview bins 2:1 */
 +#define CCB_NATIVE_H	3120
@@ -776,11 +784,14 @@ index 000000000..9f666f091
 +static int ccb_preview_start(struct ccb *c)
 +{
 +	static const u8 open[] = { 0x01, 0x00, 0x00, 0x02 };
-+	/* crop 4160x3120: capture (UCID 5) 1:1, preview (UCID 3) 1:2 = 2080x1560 */
++	/*
++	 * crop {u16 x, y, w, h}, then 1, the scale: capture (UCID 5) the whole 4160x3120 1:1;
++	 * preview (UCID 3) CCB_CROP_X,Y 4096x3072 1:2 = CCB_WIDTH x CCB_HEIGHT
++	 */
 +	static const u8 crop5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
 +				    0x40, 0x10, 0x30, 0x0c, 0x01, 0x01 };
-+	static const u8 crop3[] = { 0x01, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
-+				    0x40, 0x10, 0x30, 0x0c, 0x01, 0x02 };
++	static const u8 crop3[] = { 0x01, 0x00, 0x00, 0x03, 0x00, CCB_CROP_X, 0x00, CCB_CROP_Y, 0x00,
++				    0x00, 0x10, 0x00, 0x0c, 0x01, 0x02 };
 +	/* AE: gain 1.0 for capture; preview gain 1.0, 2.5 ms, as stock starts */
 +	static const u8 ae5[] = { 0x01, 0x00, 0x00, 0x05, 0x00, 0x05, 0x00, 0x00, 0x80, 0x3f,
 +				  0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x3c };
@@ -1547,12 +1558,18 @@ index 000000000..9f666f091
 +	switch (sel->target) {
 +	case V4L2_SEL_TGT_NATIVE_SIZE:
 +	case V4L2_SEL_TGT_CROP_BOUNDS:
-+	case V4L2_SEL_TGT_CROP_DEFAULT:
-+	case V4L2_SEL_TGT_CROP:
 +		sel->r.left = 0;
 +		sel->r.top = 0;
 +		sel->r.width = CCB_NATIVE_W;
 +		sel->r.height = CCB_NATIVE_H;
++		return 0;
++	/* the preview's crop (ccb_preview_start), before its 2:1 binning */
++	case V4L2_SEL_TGT_CROP_DEFAULT:
++	case V4L2_SEL_TGT_CROP:
++		sel->r.left = CCB_CROP_X;
++		sel->r.top = CCB_CROP_Y;
++		sel->r.width = CCB_WIDTH * 2;
++		sel->r.height = CCB_HEIGHT * 2;
 +		return 0;
 +	}
 +	return -EINVAL;
@@ -1731,9 +1748,14 @@ index 000000000..9f666f091
 +	if (ret)
 +		goto err_ctrls;
 +
-+	/* the ASICs are off; boot them on first use, power off after a minute idle */
++	/*
++	 * the ASICs are off; boot them on first use, power off after 10 s idle. Powered and
++	 * idle they draw ~2.8 W; stock powers them down as soon as the camera closes
++	 * (ccb_stop_cam), paying the ~3 s boot on every return. 10 s keeps a glance away
++	 * (the notification drawer, a blanked screen woken again) free of that wait.
++	 */
 +	pm_runtime_set_suspended(dev);
-+	pm_runtime_set_autosuspend_delay(dev, 60000);
++	pm_runtime_set_autosuspend_delay(dev, 10000);
 +	pm_runtime_use_autosuspend(dev);
 +	pm_runtime_enable(dev);
 +
