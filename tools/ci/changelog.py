@@ -72,6 +72,11 @@ out = ["""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>l16-linux changes</title>
+<style>
+h2 { border-top: 2px solid #ccc; padding-top: 0.8em; margin-top: 2em }
+h3 { font-size: 1em; margin-bottom: 0.3em }
+ul { margin-top: 0 }
+</style>
 <body style="font-family: sans-serif; max-width: 40em; margin: 2em auto; padding: 0 16px">
 <h1>l16-linux changes</h1>
 <p>What changed in each package update, newest first.
