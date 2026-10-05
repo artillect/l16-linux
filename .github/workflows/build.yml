@@ -95,7 +95,7 @@ jobs:
         run: sh tools/ci/seed-packages.sh
 
       - name: Build packages
-        run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera l16-camera glycin-lri l16-render l16-gallery l16-phosh-plugins l16-gnss
+        run: pmbootstrap -y build linux-light-lfc device-light-lfc chiaro libcamera phosh l16-camera glycin-lri l16-render l16-gallery l16-phosh-plugins l16-gnss
 
       - name: Publish packages
         env:
