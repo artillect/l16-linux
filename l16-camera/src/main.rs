@@ -519,10 +519,8 @@ struct App {
     // the overheating warning at its bottom edge
     status_turn: Rotator,
     thermal_turn: Rotator,
-    // in front: the screen kept on (an idle inhibitor's cookie) and the display held in
-    // landscape (the rotation lock and transform it had, given back after)
+    // in front: the screen kept on (an idle inhibitor's cookie)
     idle_cookie: Cell<u32>,
-    landscape_held: RefCell<Option<(bool, Option<String>)>>,
     rotators: Vec<Rotator>,
     geo: RefCell<geo::Geo>,
     storage_label: gtk::Label,
@@ -2430,9 +2428,9 @@ Turn them on in Settings › Privacy › Location.";
     }
 
     // In front, as stock's camera: the screen stays on (only the in-pocket check or the power
-    // button turns it off), and the display stays landscape even with the rotation lock off
-    // (stock's activity is locked to landscape; the UI's elements turn instead). The lock
-    // and the transform it had are given back when the camera leaves the front or closes.
+    // button turns it off). The display stays landscape (stock's activity is locked to
+    // landscape; the UI's elements turn instead): Phosh holds it so while the camera is the
+    // active app, from X-Phosh-Orientation=landscape in its desktop file.
     fn hold_front(&self, front: bool) {
         let Some(window) = self.view.root().and_downcast::<gtk::Window>() else { return };
         let Some(app) = window.application() else { return };
@@ -2443,35 +2441,6 @@ Turn them on in Settings › Privacy › Location.";
             app.uninhibit(self.idle_cookie.replace(0));
             front_marker(false);
         }
-        let held = self.landscape_held.borrow().is_some();
-        if front && !held {
-            let Some(lock) = rotation_lock() else { return };
-            let was = lock.boolean("orientation-lock");
-            let transform = display_transform();
-            let _ = lock.set_boolean("orientation-lock", true);
-            if transform.as_deref() != Some("270") {
-                set_display_transform("270");
-            }
-            eprintln!("l16-camera: display held in landscape (was lock {was}, transform {transform:?})");
-            *self.landscape_held.borrow_mut() = Some((was, transform));
-        } else if !front && held {
-            self.release_landscape();
-        }
-    }
-
-    fn release_landscape(&self) {
-        front_marker(false);
-        let Some((was, transform)) = self.landscape_held.borrow_mut().take() else { return };
-        if was {
-            // locked before: as it was locked
-            if let Some(t) = transform.filter(|t| t != "270") {
-                set_display_transform(&t);
-            }
-        }
-        if let Some(lock) = rotation_lock() {
-            let _ = lock.set_boolean("orientation-lock", was);
-        }
-        eprintln!("l16-camera: display given back (lock {was})");
     }
 
     // AF-D as stock's app runs it (SmartAFTriggerMgr; there is no ASIC mode for stills): the
@@ -2880,27 +2849,6 @@ fn light_proxy() -> Option<gtk::gio::DBusProxy> {
         .call_sync("ClaimLight", None, gtk::gio::DBusCallFlags::NONE, 2000, None::<&gtk::gio::Cancellable>)
         .ok()?;
     Some(proxy)
-}
-
-// Phosh's rotation lock (none without its schema)
-fn rotation_lock() -> Option<gtk::gio::Settings> {
-    let id = "org.gnome.settings-daemon.peripherals.touchscreen";
-    gtk::gio::SettingsSchemaSource::default()?.lookup(id, true)?;
-    Some(gtk::gio::Settings::new(id))
-}
-
-// the display's transform (wlr-randr's "Transform:"; the L16's panel, DSI-1), and setting
-// it, as light-lfc-rotate does: 270 is landscape, the camera held as a camera
-fn display_transform() -> Option<String> {
-    let out = Command::new("wlr-randr").output().ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    text.lines().find_map(|l| l.trim().strip_prefix("Transform:").map(|t| t.trim().to_string()))
-}
-
-fn set_display_transform(t: &str) {
-    if let Err(e) = Command::new("wlr-randr").args(["--output", "DSI-1", "--transform", t]).status() {
-        eprintln!("l16-camera: display transform: {e}");
-    }
 }
 
 // the screen off, as the power button turns it off (Phosh's screensaver)
@@ -3579,7 +3527,6 @@ fn build(gapp: &gtk::Application) {
         status_turn: status_turn.clone(),
         thermal_turn: thermal_turn.clone(),
         idle_cookie: Cell::new(0),
-        landscape_held: RefCell::new(None),
         rotators,
         geo: RefCell::new(geo::Geo::default()),
         storage_label,
@@ -3948,7 +3895,7 @@ fn build(gapp: &gtk::Application) {
     window.connect_close_request(move |w| {
         eprintln!("l16-camera: window closed");
         CLOSING.store(true, Ordering::Relaxed);
-        a.release_landscape();
+        front_marker(false);
         w.set_visible(false);
         // the app's name on the session bus given up now: a launch while the streams stop
         // (about 3 s) was handed to this instance, which then quit, and nothing opened. Now

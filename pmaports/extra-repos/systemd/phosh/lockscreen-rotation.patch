@@ -1,0 +1,31 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] rotation-manager: rotate the lock screen as well
+
+Phosh keeps the lock screen still and forces it to portrait on phones, where its
+keypad didn't fit in landscape. The L16's lock screen fits (with the compact
+keypad) and the camera is held in landscape: let it follow the sensor, as phrog's
+login screen (Phosh locked for good) then does too.
+---
+--- a/src/rotation-manager.c	2026-10-05 10:42:57.042091084 -0700
++++ b/src/rotation-manager.c	2026-10-05 10:46:25.898728644 -0700
+@@ -118,8 +118,8 @@
+     return TRUE;
+   }
+ 
++  /* L16: the lock screen follows the sensor too (see fixup_lockscreen_orientation) */
+   if (self->orientation_locked || !self->claimed ||
+-      phosh_lockscreen_manager_get_locked (self->lockscreen_manager) ||
+       self->mode == PHOSH_ROTATION_MANAGER_MODE_OFF)
+     return FALSE;
+ 
+@@ -262,6 +262,10 @@
+ 
+   g_return_if_fail (PHOSH_IS_MODE_MANAGER (mode_manager));
+ 
++  /* L16: the lock screen works in landscape (lockscreen-compact-keypad.patch) and the
++   * camera is held in landscape, so the lock screen rotates as the rest of the shell */
++  return;
++
+   if (!self->monitor)
+     return;
+ 

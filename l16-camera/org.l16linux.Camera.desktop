@@ -6,3 +6,4 @@ Exec=l16-camera
 Icon=l16-camera
 Categories=Graphics;Photography;
 X-Purism-FormFactor=Workstation;Mobile;
+X-Phosh-Orientation=landscape

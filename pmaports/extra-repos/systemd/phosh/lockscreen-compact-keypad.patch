@@ -1,31 +1,72 @@
-Subject: [PATCH] lockscreen: Tighter keypad on short displays
+Subject: [PATCH] lockscreen: Fit short displays
 
 On displays under 700 px tall the unlock box already drops its top margin.
 The 4-row keypad, the entry and the unlock button still don't fit a
 landscape phone at 200% scale (540 px): halve the keypad buttons' padding
-there too (L16 downstream).
+there too, and drop the margins around the entry and above the keypad (the
+box's spacing stays between them).
+
+And the call display's page needs 632 px there (measured on the L16), and the
+deck sizes every page to its tallest: the lock screen was 632 px tall on a
+540 px display, the info page's clock sat low, "Slide up to unlock" was off
+the bottom and the unlock page was centred too low. Keep the call display
+hidden unless a call needs it (L16 downstream).
 ---
-diff --git a/src/lockscreen.c b/src/lockscreen.c
---- a/src/lockscreen.c	2026-10-04 17:16:19.560260400 -0700
-+++ b/src/lockscreen.c	2026-10-04 17:16:19.803324200 -0700
-@@ -1011,6 +1011,14 @@
+--- a/src/lockscreen.c	2026-10-05 10:57:45.707844437 -0700
++++ b/src/lockscreen.c	2026-10-05 11:47:44.774282750 -0700
+@@ -637,6 +637,7 @@
+ 
+   update_active_call (self, path);
+ 
++  gtk_widget_set_visible (GTK_WIDGET (priv->box_call_display), TRUE);
+   hdy_deck_set_visible_child (priv->deck, GTK_WIDGET (priv->box_call_display));
+ }
+ 
+@@ -686,6 +687,14 @@
+ 
+   visible_child = hdy_deck_get_visible_child (deck);
+ 
++  /* The call display's page is taller than a short (landscape) display, and the deck
++   * sizes every page to its tallest: the info page's clock sat low and "Slide up to
++   * unlock" was off the bottom. Hidden pages don't count, so it's hidden unless a call
++   * needs it */
++  gtk_widget_set_visible (GTK_WIDGET (priv->box_call_display),
++                          visible_child == GTK_WIDGET (priv->box_call_display) ||
++                          phosh_calls_manager_get_active_call_handle (priv->calls_manager));
++
+   /* Avoid forward swipe to calls page if there's no active call */
+   if (visible_child == priv->box_info &&
+       phosh_calls_manager_get_active_call_handle (priv->calls_manager) == NULL)
+@@ -769,6 +778,7 @@
+   g_return_if_fail (PHOSH_IS_LOCKSCREEN (self));
+   priv = phosh_lockscreen_get_instance_private (self);
+ 
++  gtk_widget_set_visible (GTK_WIDGET (priv->box_call_display), TRUE);
+   hdy_deck_set_visible_child (priv->deck, GTK_WIDGET (priv->box_call_display));
+ }
+ 
+@@ -1011,6 +1021,19 @@
  
    gtk_widget_set_margin_top (GTK_WIDGET (priv->box_unlock), margin);
  
-+  /* and a tighter keypad, so the unlock button fits on short (landscape) displays */
++  /* and a tighter keypad, so the unlock button fits on short (landscape) displays:
++   * also no margins around the entry or above the keypad, which leaves the box's
++   * spacing between them */
 +  if (height < LOCKSCREEN_SMALL_DISPLAY)
 +    gtk_style_context_add_class (gtk_widget_get_style_context (priv->box_unlock),
 +                                 "phosh-lockscreen-compact");
 +  else
 +    gtk_style_context_remove_class (gtk_widget_get_style_context (priv->box_unlock),
 +                                    "phosh-lockscreen-compact");
++  gtk_widget_set_margin_top (priv->entry_pin, height < LOCKSCREEN_SMALL_DISPLAY ? 0 : 12);
++  gtk_widget_set_margin_bottom (priv->entry_pin, height < LOCKSCREEN_SMALL_DISPLAY ? 0 : 12);
++  gtk_widget_set_margin_top (priv->keypad, height < LOCKSCREEN_SMALL_DISPLAY ? 0 : 12);
 +
    PHOSH_LAYER_SURFACE_CLASS (phosh_lockscreen_parent_class)->configured (layer_surface);
  }
  
-diff --git a/src/stylesheet/common.css b/src/stylesheet/common.css
---- a/src/stylesheet/common.css	2026-10-04 17:16:19.591225600 -0700
-+++ b/src/stylesheet/common.css	2026-10-04 17:16:19.804831200 -0700
+--- a/src/stylesheet/common.css	2026-10-05 10:57:45.707844437 -0700
++++ b/src/stylesheet/common.css	2026-10-05 10:57:45.555457993 -0700
 @@ -554,6 +554,10 @@
    background: none;
  }
