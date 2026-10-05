@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=31
+pkgrel=32
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -31,6 +31,7 @@ depends="
 	swclock-offset
 	"
 makedepends="devicepkg-dev"
+install="$pkgname.post-install $pkgname.post-upgrade"
 subpackages="
 	$pkgname-openrc
 	$pkgname-phosh
@@ -43,7 +44,8 @@ source="
 	L16.conf
 	deviceinfo
 	initfs-hook.sh
-	l16-linux.list
+	light-lfc-repo
+	light-lfc-repo.initd
 	l16-linux@artillect-6ab9d2e0.rsa.pub
 	l16-mics.pa
 	light-lfc-bootmode.initd
@@ -144,9 +146,10 @@ package() {
 	install -Dm644 "$srcdir"/light-lfc-postprocess.sh \
 		"$pkgdir"/usr/share/light-lfc/postprocess.sh
 
-	# updates: the l16-linux package repository and its signing key
-	install -Dm644 "$srcdir"/l16-linux.list \
-		-t "$pkgdir"/lib/apk/repositories.d
+	# updates: the l16-linux package repository (in /etc/apk/repositories, where GNOME
+	# Software lists it: added by light-lfc-repo) and its signing key
+	install -Dm755 "$srcdir"/light-lfc-repo \
+		"$pkgdir"/usr/libexec/light-lfc-repo
 	install -Dm644 "$srcdir"/l16-linux@artillect-6ab9d2e0.rsa.pub \
 		-t "$pkgdir"/etc/apk/keys
 }
@@ -167,6 +170,8 @@ openrc() {
 		"$subpkgdir"/etc/init.d/light-lfc-android-libs
 	install -Dm755 "$srcdir"/light-lfc-strip-volume.initd \
 		"$subpkgdir"/etc/init.d/light-lfc-strip-volume
+	install -Dm755 "$srcdir"/light-lfc-repo.initd \
+		"$subpkgdir"/etc/init.d/light-lfc-repo
 }
 
 phosh() {
@@ -214,7 +219,8 @@ aa5496b76e9fff7b7526150096120c6ccd326608934cef2022f02920059072e05843b186654431c7
 97b14e6ab622d1fc3fa2841dc9ea6c3b53328675b8910a64eabc8c99c28b7bebf3281d7333bab8ff19947c8645ab28c6aa62a2496433cd9c7c358829c7468a4d  L16.conf
 9ebd71f280a5c9dc6ee46819aa5d3b235b190abe49b8f4ba86bae0f5a7ef5d34c27afbc6c69672a91bb317f66d2d2a9037f757a4580338b6f97af6d00d8ab879  deviceinfo
 01da95e84f883dc0e1308220bfb2e2fb8f9a233d130e0943bbcb564b64bb9240eb66ffd9259aff1f9df67ff7d9b4171b993c36e924e9f45c0aef75268e808594  initfs-hook.sh
-0779d528d56ad004960318affd715fbe57901a1793923522d0bd03d1ac63eae3de3739331b62b8376c5f116dbea170a1e477c12e73dc3c9685aad4b2e8d33df3  l16-linux.list
+654fd058038367e9de031dd7211d5469ad0b5ebc4788102bff4faa924dc5abb856af40700c6de9fda97c379c73f16b92bed55cbe1dfb973fdd4608c62b405bfe  light-lfc-repo
+4f417f0bcbb5f3b51f10f65cbfd14cd09cab456b3165da19c18cdf8a232d8f00d7be19fcbd59a184d21b2d5a95f41d4486a489b82cca4cb5ec0fcdf1b7b9a9fc  light-lfc-repo.initd
 b985667d6242d84247b88aed2f931b71250257bab199355f3ed9376065ec4a574670795a2938b19e5aeee9cceb9ec92d0596d70b6dc01ab83e69e05ce5a08bfb  l16-linux@artillect-6ab9d2e0.rsa.pub
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
 2889a28e367d2644eefdc87aad9292c14c063a4fcef38da113bdf0218094cb42e5abe1f76fdc67842fc254aff3063f54d8132ae98c33ad28d9d9a592d30c7f8e  light-lfc-bootmode.initd

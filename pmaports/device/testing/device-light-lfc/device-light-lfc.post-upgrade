@@ -1,0 +1,4 @@
+#!/bin/sh
+# the l16-linux package repository, where GNOME Software lists repositories
+/usr/libexec/light-lfc-repo
+exit 0

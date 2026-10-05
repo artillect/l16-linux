@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Viewfinder in GNOME Software: without a metainfo file it isn't listed as an app -->
+<component type="desktop-application">
+  <id>org.l16linux.Camera</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Viewfinder</name>
+  <summary>Take photos with the Light L16's camera modules</summary>
+  <description>
+    <p>
+      The camera app for the Light L16 on Linux, after Light's own layout: a live preview from
+      the camera modules, autofocus with a tap or a half-press of the shutter, zoom from 28 to
+      150 mm, and photos saved as LRI files with every module's image.
+    </p>
+    <p>
+      Auto, ISO priority, shutter priority and manual exposure on dials beside the preview,
+      white balance presets, the timer, burst, a grid and a live histogram, and geotagging with
+      the camera's GPS.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.l16linux.Camera.desktop</launchable>
+  <developer id="io.github.artillect">
+    <name>artillect</name>
+  </developer>
+  <url type="homepage">https://github.com/artillect/l16-linux</url>
+  <url type="bugtracker">https://github.com/artillect/l16-linux/issues</url>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+  </categories>
+  <provides>
+    <binary>l16-camera</binary>
+  </provides>
+  <recommends>
+    <control>touch</control>
+  </recommends>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The exposure dial open beside the preview</caption>
+      <image>https://raw.githubusercontent.com/artillect/l16-linux/main/docs/images/viewfinder-ev-wheel.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Settings</caption>
+      <image>https://raw.githubusercontent.com/artillect/l16-linux/main/docs/images/viewfinder-settings.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-04"/>
+  </releases>
+</component>

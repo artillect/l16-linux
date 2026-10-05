@@ -4,7 +4,7 @@
 # and LRI reader it shares with l16-camera and glycin-lri, into $pkgname-src.tar.gz here).
 pkgname=l16-gallery
 pkgver=0.1.0
-pkgrel=9
+pkgrel=10
 pkgdesc="Gallery for the Light L16's photos"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -34,11 +34,13 @@ build() {
 package() {
 	install -Dm755 target/release/l16-gallery "$pkgdir"/usr/bin/l16-gallery
 	install -Dm644 org.l16linux.Gallery.desktop "$pkgdir"/usr/share/applications/org.l16linux.Gallery.desktop
+	# (GNOME Software lists it as an app only with its metainfo)
+	install -Dm644 org.l16linux.Gallery.metainfo.xml -t "$pkgdir"/usr/share/metainfo
 	install -Dm644 l16-gallery.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/l16-gallery.svg
 	# place names for geotagged photos (tools/make-places: GeoNames, CC BY 4.0)
 	install -d "$pkgdir"/usr/share/l16-gallery
 	gunzip -c places.tsv.gz > "$pkgdir"/usr/share/l16-gallery/places.tsv
 }
 sha512sums="
-0a75f2a13e4b9bcd191a32f199764abba40be6437f4a4798d30494e0750f474dcfef45ee5f3e1e44315336e6d7041e5de0facda3b0b104c338586da99fca0ef1  l16-gallery-src.tar.gz
+539708ef7b04bba48b06db1ba3b6184199d24eb542365737ccf09d14ec7e33003a74a154b2ba1fd076000564fc0eee555b30930f27357ea705d9a576d5c32e23  l16-gallery-src.tar.gz
 "

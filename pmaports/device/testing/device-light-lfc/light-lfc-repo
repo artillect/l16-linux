@@ -1,0 +1,12 @@
+#!/bin/sh
+# light-lfc-repo: the l16-linux package repository in /etc/apk/repositories, where GNOME
+# Software lists repositories (and switches them off, as a "#" line). Added if neither line
+# is there, so switching it off sticks. Run when the device package is installed or
+# upgraded, and at boot: building the install image, pmbootstrap rewrites the file.
+URL=https://artillect.github.io/l16-linux/v26.06
+F=/etc/apk/repositories
+
+grep -q "^#*[[:space:]]*$URL[[:space:]]*\$" "$F" 2>/dev/null && exit 0
+# (a last line without its newline would run into ours)
+[ -s "$F" ] && [ -n "$(tail -c 1 "$F")" ] && echo >> "$F"
+echo "$URL" >> "$F"

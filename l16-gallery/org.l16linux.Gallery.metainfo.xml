@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Lightbox in GNOME Software: without a metainfo file it isn't listed as an app -->
+<component type="desktop-application">
+  <id>org.l16linux.Gallery</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Lightbox</name>
+  <summary>Look through and process the Light L16's photos</summary>
+  <description>
+    <p>
+      The gallery for the Light L16 on Linux: the camera's LRI photos by day, a quick look at
+      each in about a second, and the full picture from Light's own renderer on request.
+    </p>
+    <p>
+      Swipe between photos, pinch to zoom, see where and how a photo was taken, rotate it, copy
+      the LRI or the processed JPEG, and choose several photos to delete.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.l16linux.Gallery.desktop</launchable>
+  <developer id="io.github.artillect">
+    <name>artillect</name>
+  </developer>
+  <url type="homepage">https://github.com/artillect/l16-linux</url>
+  <url type="bugtracker">https://github.com/artillect/l16-linux/issues</url>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+  </categories>
+  <provides>
+    <binary>l16-gallery</binary>
+  </provides>
+  <recommends>
+    <control>touch</control>
+  </recommends>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Photos by day</caption>
+      <image>https://raw.githubusercontent.com/artillect/l16-linux/main/docs/images/lightbox-grid.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>A photo</caption>
+      <image>https://raw.githubusercontent.com/artillect/l16-linux/main/docs/images/lightbox-preview.jpg</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-04"/>
+  </releases>
+</component>
