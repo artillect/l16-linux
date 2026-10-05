@@ -38,9 +38,11 @@ def fields(m):
 
 
 def lri_orientation(path):
-	"""The view preferences' orientation, from the last block's LightHeader."""
+	"""The view preferences' orientation: the last one in the file (LightHeader 19 in any
+	small block; Lightbox's rotate can add a block after stock's view preferences)."""
+	orientation = 0
 	with open(path, "rb") as f:
-		o, last = 0, None
+		o = 0
 		while True:
 			f.seek(o)
 			h = f.read(32)
@@ -49,17 +51,15 @@ def lri_orientation(path):
 			length, moff, mlen = struct.unpack_from("<QQI", h, 4)
 			if length < 32:
 				break
-			last, o = (o + moff, mlen), o + length
-		if not last:
-			return 0
-		f.seek(last[0])
-		header = fields(f.read(last[1]))
-	for n, vp in header:
-		if n == 19 and isinstance(vp, bytes):
-			for m, v in fields(vp):
-				if m == 9 and isinstance(v, int):
-					return v
-	return 0
+			if h[28] == 0 and mlen < (1 << 20):
+				f.seek(o + moff)
+				for n, vp in fields(f.read(mlen)):
+					if n == 19 and isinstance(vp, bytes):
+						for m, v in fields(vp):
+							if m == 9 and isinstance(v, int):
+								orientation = v
+			o += length
+	return orientation
 
 
 print(lri_orientation(sys.argv[1]))

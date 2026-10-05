@@ -417,9 +417,16 @@ pub fn quick(r: &mut impl Read) -> io::Result<Picture> {
     match vp.orientation {
         Some(1) => turn(&mut p, true),
         Some(2) => turn(&mut p, false),
+        Some(7) => half_turn(&mut p),
         _ => {}
     }
     Ok(p)
+}
+
+// half a turn (a photo turned upside down in Lightbox): the pixels in reverse order
+fn half_turn(p: &mut Picture) {
+    let px: Vec<[u8; 3]> = p.rgb.chunks_exact(3).rev().map(|c| [c[0], c[1], c[2]]).collect();
+    p.rgb = px.concat();
 }
 
 // a quarter turn, clockwise or not: a photo taken in portrait, upright

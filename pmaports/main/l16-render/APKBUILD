@@ -6,7 +6,7 @@
 # build into $pkgname-src.tar.gz here.
 pkgname=l16-render
 pkgver=0.1.0
-pkgrel=2
+pkgrel=3
 pkgdesc="Light L16 photos rendered by Light's own renderer, from the stock partitions"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"

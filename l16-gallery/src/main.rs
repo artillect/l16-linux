@@ -10,6 +10,7 @@
 mod icons;
 #[path = "../../glycin-lri/src/lri.rs"]
 mod lri;
+mod orient;
 mod places;
 mod strip;
 
@@ -360,6 +361,30 @@ impl Gallery {
             s.set_selecting(false);
             s.refresh();
         });
+    }
+
+    // the shown photo turned @by quarters clockwise (-1: counter-clockwise), in the LRI itself;
+    // then its thumbnail and quick look again, and its render if it had one (Light's renderer
+    // turns it by the LRI's orientation)
+    fn rotate(&self, by: i32) {
+        let Some(path) = self.showing() else { return };
+        if let Err(e) = orient::turn(&path, by) {
+            self.status.set_text(&format!("couldn't rotate: {e}"));
+            self.status.set_visible(true);
+            return;
+        }
+        let rendered = render_path(&path).exists();
+        let _ = std::fs::remove_file(render_path(&path));
+        let _ = std::fs::remove_file(thumb_path(&path));
+        let _ = self.thumb_tx.send(path.clone());
+        // (the index out first: open() changes it, and a borrow in the if-let would outlive this)
+        let current = *self.current.borrow();
+        if let Some(i) = current {
+            self.open(i);
+        }
+        if rendered {
+            self.process();
+        }
     }
 
     // the viewer's menu: the LRI or the processed JPEG (render) on the clipboard, as a file
@@ -824,16 +849,18 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     bar.append(&process);
     bar.append(&info);
     bar.append(&delete);
-    // more: the LRI or the processed JPEG (render) copied, or shown in its folder (the
-    // render's greyed out until there is one)
+    // more: the photo turned a quarter either way; the LRI or the processed JPEG (render)
+    // copied, or shown in its folder (the render's greyed out until there is one)
     let more = gtk::MenuButton::new();
     more.set_child(Some(&icons::label(icons::MORE)));
+    let rotate_left = icons::button(icons::ROTATE_LEFT, "rotate left");
+    let rotate_right = icons::button(icons::ROTATE_RIGHT, "rotate right");
     let copy_lri = icons::button(icons::COPY, "copy LRI");
     let copy_render = icons::button(icons::COPY, "copy render");
     let folder_lri = icons::button(icons::FOLDER, "show LRI in folder");
     let folder_render = icons::button(icons::FOLDER, "show render in folder");
     let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    for b in [&copy_lri, &copy_render, &folder_lri, &folder_render] {
+    for b in [&rotate_left, &rotate_right, &copy_lri, &copy_render, &folder_lri, &folder_render] {
         b.set_halign(gtk::Align::Fill);
         if let Some(l) = b.child() {
             l.set_halign(gtk::Align::Start);
@@ -977,6 +1004,13 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     sel_cancel.connect_clicked(move |_| a.set_selecting(false));
     let a = g.clone();
     sel_delete.connect_clicked(move |_| a.delete_selected());
+    for (b, by) in [(&rotate_left, -1), (&rotate_right, 1)] {
+        let (a, m) = (g.clone(), menu.clone());
+        b.connect_clicked(move |_| {
+            m.popdown();
+            a.rotate(by);
+        });
+    }
     for (b, render, copy) in [(&copy_lri, false, true), (&copy_render, true, true), (&folder_lri, false, false), (&folder_render, true, false)] {
         let (a, m) = (g.clone(), menu.clone());
         b.connect_clicked(move |_| {
