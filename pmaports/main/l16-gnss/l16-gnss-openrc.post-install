@@ -1,5 +1,0 @@
-#!/bin/sh
-# the modem's file system service and the GNSS at boot
-rc-update add rmtfs default >/dev/null 2>&1
-rc-update add l16-gnss default >/dev/null 2>&1
-exit 0

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Publish the packages pmbootstrap built to the gh-pages branch, as the apk repository
-# https://artillect.github.io/l16-linux/<channel>. The newest builds are added to what's
+# https://artillect.github.io/l16-linux/systemd/<channel> (0.1.x, on OpenRC, keep <channel>/
+# beside it as it is). The newest builds are added to what's
 # already published, the newest KEEP versions of each package are kept (so a bad update
 # can be undone with "apk add <pkg>=<version>"), and the index is rebuilt and signed.
 # The branch is rewritten as a single commit each time, so old builds don't pile up in
@@ -11,14 +12,15 @@ CHANNEL=${CHANNEL:-v26.06}
 ARCH=aarch64
 KEEP=${KEEP:-3}
 W=$HOME/.local/var/pmbootstrap
-SRC=$W/packages/$CHANNEL/$ARCH
 P=$(mktemp -d)
-R=$P/$CHANNEL/$ARCH
+R=$P/systemd/$CHANNEL/$ARCH
 
 git clone -q --depth 1 -b gh-pages \
 	"https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git" "$P"
 mkdir -p "$R"
-cp "$SRC"/*.apk "$R/"
+# pmbootstrap's builds, and those of postmarketOS's systemd repository's packages (phosh)
+cp "$W/packages/$CHANNEL/$ARCH"/*.apk "$R/"
+cp "$W/packages/systemd-$CHANNEL/$ARCH"/*.apk "$R/" 2>/dev/null || :
 
 # keep the newest $KEEP versions of each package
 for name in $(ls "$R" | sed -n -E 's/-[0-9][^-]*-r[0-9]+\.apk$//p' | sort -u); do
@@ -42,6 +44,8 @@ ls -l "$R"
 
 # what each update changed (from this checkout's history), linked from the index page
 python3 tools/ci/changelog.py "$P/changes.html"
+grep -q 'l16-linux/systemd/' "$P/index.html" ||
+	sed -i "s#^<p>Repository: .*<br>\$#<p>Repository: <code>https://artillect.github.io/l16-linux/systemd/$CHANNEL</code> (0.1.x installs, on OpenRC: <code>https://artillect.github.io/l16-linux/$CHANNEL</code>)<br>#" "$P/index.html"
 grep -q 'href="changes.html"' "$P/index.html" ||
 	sed -i 's#^Signing key: \(.*\)</p>$#Signing key: \1<br>\n<a href="changes.html">What changed in each update</a></p>#' "$P/index.html"
 

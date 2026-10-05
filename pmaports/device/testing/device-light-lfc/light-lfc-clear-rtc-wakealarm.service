@@ -1,7 +1,6 @@
 [Unit]
 Description=Clear the RTC wake alarm at shutdown
 # suspend-on-blank arms the PMIC's RTC alarm, which can power on a switched-off L16
-# (shutdown-clear-rtc-wakealarm only has an OpenRC service)
 
 [Service]
 Type=oneshot

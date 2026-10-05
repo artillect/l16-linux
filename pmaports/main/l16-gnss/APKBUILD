@@ -4,24 +4,20 @@
 # repository (pmaports/sync.sh packs l16-gnss/ into $pkgname-src.tar.gz here).
 pkgname=l16-gnss
 pkgver=0.1.0
-pkgrel=5
+pkgrel=6
 pkgdesc="Light L16 GNSS for geoclue"
 url="https://github.com/artillect/l16-linux"
 arch="noarch"
 license="MIT"
 depends="geoclue libqmi libqrtr-glib py3-gobject3 python3 rmtfs"
-# openrc and rmtfs-openrc: installed before -openrc, so the post-install's rc-update and the
-# rmtfs service it enables are there (a fresh image enabled neither: no modem, no GPS)
-depends_openrc="openrc rmtfs-openrc"
 depends_systemd="rmtfs-systemd"
-subpackages="$pkgname-openrc $pkgname-systemd"
+subpackages="$pkgname-systemd"
 options="!check"
 source="$pkgname-src.tar.gz"
 builddir="$srcdir/l16-gnss"
 
 package() {
 	install -Dm755 l16-gnss -t "$pkgdir"/usr/bin
-	install -Dm755 l16-gnss.initd "$pkgdir"/etc/init.d/l16-gnss
 	install -Dm644 90-l16-gnss.conf -t "$pkgdir"/etc/geoclue/conf.d
 	install -dm755 "$pkgdir"/var/lib/l16-gnss
 
@@ -29,11 +25,6 @@ package() {
 	# enabled as it's installed (postmarketos-base-systemd's trigger applies presets)
 	install -Dm644 80-l16-gnss.preset -t "$pkgdir"/usr/lib/systemd/system-preset
 }
-
-openrc() {
-	default_openrc
-	install="$subpkgname.post-install"
-}
 sha512sums="
-3338843a8f46141dbc03cd4e2cf2955b3eaa6bf9c7d1b671e430770d0c046c5368f35b60069f85d815fee0a95f52f3b9de2f8dd1f30d999880e85bacb75794ea  l16-gnss-src.tar.gz
+ad7531e2a4562312eb8e1dfe022eae228d2bee285633dab6762a456705504ed4b0d9e2c6f17a72df0aef18879ea7a93780aafb22aeeedfaf08c7c3d82157ddc8  l16-gnss-src.tar.gz
 "

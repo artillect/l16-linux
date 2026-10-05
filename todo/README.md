@@ -33,16 +33,24 @@ Desktop (gnome-control-center calls StartUnit) and File Sharing (gsd-sharing sta
 is a reinstall: everything else that only changes at install time stays (single root
 partition, ext4, no encryption by default, the 64 GiB dual-boot partition).
 
-- [ ] systemd units for our services, as `-systemd` subpackages beside the OpenRC ones:
-      light-lfc-bootmode, -firmware, -led, -strip-volume, -android-libs, the sleep inhibitor,
-      l16-gnss (its post-install's rc-update too); check rmtfs and msm-firmware-loader's
-- [ ] Build with systemd: pmbootstrap init, tools/ci (setup.sh, release.sh), the wiki's
-      "Building it yourself"
-- [ ] Re-test what touches init or power: both boot modes, suspend and deep sleep (logind, not
-      elogind), suspend-on-blank and the sleep inhibitor, modem and GPS start, the camera, the
-      LED and strip services, first-boot resize
-- [ ] Settings' SSH and File Sharing switches work; drop the "doesn't work" notes (release
-      notes, wiki Using Linux)
+0.2.0 on is systemd only. Its packages are published to `systemd/v26.06`; `v26.06` stays as
+0.1.x's (OpenRC) repository, so those installs never pull a systemd package (our systemd Phosh
+would outrank theirs). Phosh comes from postmarketOS's systemd repository there, so ours is
+forked from that one (extra-repos/systemd/phosh) with our keypad patch.
+
+- [x] systemd units for our services (device-light-lfc-systemd, l16-gnss-systemd), enabled by
+      presets; OpenRC's parts dropped (initd, temp/phosh, the chrony hook: timesyncd)
+- [x] Kernel for postmarketOS's systemd services: nftables (the firewall), zram, PSI (oomd)
+- [ ] Build with systemd: tools/ci done (setup.sh, publish/seed to systemd/v26.06); the wiki's
+      "Building it yourself" (it says only OpenRC)
+- [ ] Re-test what touches init or power: rebooting to Android and back, Linux only, suspend
+      and deep sleep (logind, not elogind), suspend-on-blank and the sleep inhibitor, a GPS
+      fix, the camera. Done (dual boot, 2026-10-05): first-boot resize, all services start,
+      bootmode's dual-boot setup
+- [ ] Settings' SSH switch works (2026-10-05); File Sharing works over USB, the firewall blocks
+      it over Wi-Fi as upstream (left so: photos over USB below). Drop the "doesn't work"
+      notes (release notes, wiki Using Linux)
+- [ ] 0.1.x's repository: frozen at what's published; say so in the 0.2.0 release notes
 - [ ] The upgrade path from 0.1.x: back up photos and settings, reinstall, restore; tested
       once end to end, written up in the release notes and the wiki
 

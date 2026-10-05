@@ -1,5 +1,5 @@
-# Forked from postmarketOS (v26.06 extra-repos/systemd/phosh) for a downstream patch, as
-# temp/phosh is for OpenRC: lockscreen-compact-keypad.patch fits the unlock button on the
+# Forked from postmarketOS (v26.06 extra-repos/systemd/phosh) for a downstream patch:
+# lockscreen-compact-keypad.patch fits the unlock button on the
 # L16's 540 px tall landscape lock screen at 200% scale. pkgrel 100+ keeps it ahead of
 # postmarketOS's 99990.55.0 builds; a new upstream pkgver replaces it (re-fork then).
 #

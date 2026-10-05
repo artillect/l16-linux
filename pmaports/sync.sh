@@ -84,13 +84,15 @@ else
 fi
 
 # our patched copies of pmaports' own packages go back to temp/
-for pkg in libcamera phosh; do
+for pkg in libcamera; do
 	rm -rf "${PMAPORTS:?}/temp/$pkg"
 	mkdir -p "$PMAPORTS/temp/$pkg"
 	cp -r "$REPO/pmaports/temp/$pkg/." "$PMAPORTS/temp/$pkg/"
 	find "$PMAPORTS/temp/$pkg" -type f -exec sed -i 's/\r$//' {} +
 done
-# and postmarketOS's systemd builds of them to extra-repos/systemd/
+# (our OpenRC phosh, until 0.2.0)
+rm -rf "${PMAPORTS:?}/temp/phosh"
+# and of postmarketOS's systemd builds to extra-repos/systemd/
 for pkg in phosh; do
 	rm -rf "${PMAPORTS:?}/extra-repos/systemd/$pkg"
 	mkdir -p "$PMAPORTS/extra-repos/systemd/$pkg"
