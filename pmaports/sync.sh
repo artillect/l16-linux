@@ -84,7 +84,7 @@ else
 fi
 
 # our patched copies of pmaports' own packages go back to temp/
-for pkg in libcamera iio-sensor-proxy; do
+for pkg in libcamera iio-sensor-proxy phoc; do
 	rm -rf "${PMAPORTS:?}/temp/$pkg"
 	mkdir -p "$PMAPORTS/temp/$pkg"
 	cp -r "$REPO/pmaports/temp/$pkg/." "$PMAPORTS/temp/$pkg/"

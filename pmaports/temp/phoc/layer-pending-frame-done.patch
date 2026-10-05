@@ -1,0 +1,51 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] output: frame callbacks for layer surfaces that owe a configure commit
+
+Frame done went only to surfaces intersecting the output. After a rotation a
+layer surface's geometry is the configured size's with the client's old
+margins, which can put it off the output (Phosh's folded home bar going to
+landscape). If the client had a frame callback pending (GTK, which then
+draws, and applies the configure, only on it), it never got it, never
+committed, and stayed off the output: the home bar was gone until the next
+rotation with no app in front. Send frame done to such surfaces too.
+---
+--- a/src/output.c	2026-10-05 12:33:04.758072497 -0700
++++ b/src/output.c	2026-10-05 12:33:04.930425259 -0700
+@@ -639,6 +639,15 @@
+ 
+ 
+ static void
++send_frame_done_unconditional (struct wlr_surface *wlr_surface, int sx, int sy, void *data)
++{
++  struct timespec *when = data;
++
++  wlr_surface_send_frame_done (wlr_surface, when);
++}
++
++
++static void
+ phoc_output_handle_frame (struct wl_listener *listener, void *data)
+ {
+   PhocOutputPrivate *priv = wl_container_of (listener, priv, frame);
+@@ -676,6 +685,21 @@
+   clock_gettime (CLOCK_MONOTONIC, &now);
+   phoc_output_for_each_surface (self, surface_send_frame_done_iterator, &now, true);
+ 
++  /* And to layer surfaces that owe us a commit for a configure, wherever they are: their
++   * geometry is already the configured size's, with the client's old margins, and can be
++   * off the output (a folded home bar after a rotation). A client drawing on frame
++   * callbacks (GTK) that had one pending then never got it, so it never committed the
++   * configure and stayed off the output: Phosh's home bar gone for good */
++  {
++    PhocLayerSurface *layer_surface;
++
++    wl_list_for_each (layer_surface, &self->layer_surfaces, link) {
++      if (phoc_layer_surface_get_pending_serial (layer_surface))
++        wlr_layer_surface_v1_for_each_surface (layer_surface->layer_surface,
++                                               send_frame_done_unconditional, &now);
++    }
++  }
++
+   /* Want frame clock ticking as long as we have frame callbacks */
+   if (priv->frame_callbacks)
+     wlr_output_schedule_frame (self->wlr_output);
