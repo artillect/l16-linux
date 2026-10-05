@@ -124,8 +124,8 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
       OpenRC install, where phoc's log wasn't in a journal, so it's unknown whether it's new.
       Find what starts it (login, a rotation, a modeset) and whether the first-mixer fix
       still holds
-- [ ] Phosh's home bar sometimes disappears (and once the shade wouldn't dismiss, until the
-      power button blanked and unblanked the screen). Intermittent: seen 2026-10-05 after
+- [ ] Phosh's home bar sometimes disappears (and once the status bar wouldn't dismiss, until
+      the power button blanked and unblanked the screen). Intermittent: seen 2026-10-05 after
       opening Viewfinder in portrait, turning to landscape, then opening and closing the
       shade; the same steps again didn't repeat it. Possibly tied to the display errors above
 - [ ] Photos over USB without SSH: show up on the computer when plugged in, as a camera or a
