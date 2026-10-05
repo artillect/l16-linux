@@ -3,4 +3,7 @@
 # without a reason boots "boot" (Android); light-lfc-bootmode made plain reboots ask
 # for "recovery" (Linux) and let the user change that, so undo it for this reboot.
 printf normal > /sys/module/reboot_mode/parameters/default_mode || exit 1
-exec loginctl reboot
+systemctl reboot && exit 0
+# refused: plain reboots go to Linux again
+printf recovery > /sys/module/reboot_mode/parameters/default_mode
+exit 1

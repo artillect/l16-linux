@@ -17,7 +17,7 @@ for i in $(seq 1 $N); do
 	echo 0 > $R/wakealarm
 	echo $(( $(cat $R/since_epoch) + ASLEEP )) > $R/wakealarm
 	log "cycle $i: suspending"
-	loginctl suspend
+	systemctl suspend
 	# wait for this cycle's resume
 	t=0
 	while [ "$(dmesg | grep -c 'PM: suspend exit')" -le "$before" ] && [ $t -lt 120 ]; do
