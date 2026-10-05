@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # The packages' changelog, from git history: every commit that changed a package (its
-# packaging under pmaports/, or the sources pmaports/sync.sh packs into it), newest first, by
-# day, with its subject line and the versions of the packages it went into (their pkgver-r
-# pkgrel at that commit: several commits can make up one version). Published next to the apk
-# repository as changes.html by publish-packages.sh. Needs the full history (fetch-depth: 0).
+# packaging under pmaports/, or the sources pmaports/sync.sh packs into it), bundled by the
+# package version it went into (pkgver-rpkgrel at that commit: several commits can make up one
+# version, and a commit can be in several packages). Newest first, by the day of each
+# version's latest change. Published next to the apk repository as changes.html by
+# publish-packages.sh. Needs the full history (fetch-depth: 0).
 # usage: changelog.py OUT.html
 import html
 import os
@@ -48,20 +49,23 @@ for apkbuild in git("ls-files", "pmaports").split():
         packages.append((apkbuild, [folder] + SOURCES.get(name, [])))
 paths = sorted({p for _, ps in packages for p in ps})
 
-days = {}
+# (package, version): its day (its latest change's) and its changes, newest first
+bundles = {}
 log = git("log", "--format=%x00%H%x09%ad%x09%s", "--date=short", "--name-only", "--", *paths)
 for entry in log.split("\0")[1:]:
     head, *files = entry.strip().split("\n")
     commit, day, subject = head.split("\t", 2)
     files = [f for f in files if f]
-    versions = set()
     for apkbuild, ps in packages:
         if any(f.startswith(p) if p.endswith("/") else f == p for f in files for p in ps):
             v = version(commit, apkbuild)
             if v:
-                versions.add(v)
-    if versions:
-        days.setdefault(day, []).append((commit, subject, sorted(versions)))
+                bundles.setdefault(v, (day, []))[1].append((commit, subject))
+
+# by day, newest first (the log is newest first, so the bundles are in that order already)
+days = {}
+for (name, ver), (day, changes) in bundles.items():
+    days.setdefault(day, []).append((name, ver, changes))
 
 out = ["""<!doctype html>
 <html lang="en">
@@ -70,17 +74,18 @@ out = ["""<!doctype html>
 <title>l16-linux changes</title>
 <body style="font-family: sans-serif; max-width: 40em; margin: 2em auto; padding: 0 16px">
 <h1>l16-linux changes</h1>
-<p>What changed in the packages, newest first, with the versions each change is in.
+<p>What changed in each package update, newest first.
 <code>sudo apk upgrade</code> on the camera installs them. <a href="./">The package repository</a></p>
 """]
-for day, entries in days.items():
-    out.append(f"<h2>{day}</h2>\n<ul>\n")
-    for commit, subject, versions in entries:
-        listed = ", ".join(f"{html.escape(n)} {html.escape(v)}" for n, v in versions)
-        out.append(f'<li><a href="https://github.com/{REPO}/commit/{commit}">'
-                   f"{html.escape(subject)}</a><br><small>{listed}</small></li>\n")
-    out.append("</ul>\n")
+for day in sorted(days, reverse=True):
+    out.append(f"<h2>{day}</h2>\n")
+    for name, ver, changes in days[day]:
+        out.append(f"<h3>{html.escape(name)} {html.escape(ver)}</h3>\n<ul>\n")
+        for commit, subject in changes:
+            out.append(f'<li><a href="https://github.com/{REPO}/commit/{commit}">'
+                       f"{html.escape(subject)}</a></li>\n")
+        out.append("</ul>\n")
 out.append("</body>\n</html>\n")
 with open(sys.argv[1], "w") as f:
     f.write("".join(out))
-print(f"changelog: {sum(len(e) for e in days.values())} changes over {len(days)} days")
+print(f"changelog: {len(bundles)} package versions over {len(days)} days")
