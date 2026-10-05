@@ -8,8 +8,9 @@ What's left, in one place. Notes for the bigger items are in this folder. Tick i
 The bar: someone with an L16 can install it from the release notes, take photos and look at
 them, keep Android, and not lose the camera to a bad state.
 
-- [ ] Install path: a release image from CI, release notes (releases/0.1.0.md) and a tested
-      dual-boot install/upgrade from scratch, following only the notes
+- [x] Install path: a release image from CI, release notes (releases/0.1.0.md) and a tested
+      dual-boot install/upgrade from scratch, following only the notes (0.1.0, 2026-10-04;
+      a user's install from the notes went smoothly)
 - [x] CI green with every package (2026-10-01: ~54 min, the kernel ~42 of it)
 - [x] Lens-blocked warning: the five proximity sensors ([proximity-sensors.md](proximity-sensors.md));
       later maybe the in-pocket check
@@ -18,7 +19,7 @@ them, keep Android, and not lose the camera to a bad state.
 - [x] GPU freeze when changing ISO in continuous mode: fine in use since r64 (A530 preemption off)
 - [ ] Camera module (ASIC) stalls: none seen lately; keep the UART logs running while testing
 - [x] Gallery: quit didn't happen once (SIGTERM); not seen again
-- [ ] README/wiki: what works, what doesn't, how to get back to Android, the photo pipeline
+- [x] README/wiki: what works, what doesn't, how to get back to Android, the photo pipeline
 - [x] Linux only (no Android): tested both ways with 0.1.0-rc1 (2026-10-03): installed to
       `userdata` and `boot`, first-boot resize, rebooting, the camera, and back to Android
       (stock `boot`, `userdata` erased); written up in the wiki
@@ -73,9 +74,14 @@ partition, ext4, no encryption by default, the 64 GiB dual-boot partition).
 
 - [x] Menu: copy the LRI or the render, show either in its folder
 - [x] Select several photos (a button or a long press) and delete them
+- [x] Swiping between photos as on a phone (the photo follows the finger); a swipe isn't a tap
+- [x] Rotate left/right: the LRI's own orientation, so every reader turns it (2026-10-04)
+- [ ] Editing (crop, exposure, colour, ...) with stock's pipeline (libcp): the edits in a
+      sidecar file beside the LRI (stock kept them in its database), the original untouched
 - [ ] Share (no share portal on the desktop yet)
 - [ ] Process while charging with the screen off (stock's "dream" processing, opt-in)
-- [ ] Thumbnails loaded as they scroll into view (all load at once today)
+- [ ] Thumbnails loaded as they scroll into view: missing ones are made by a worker already;
+      the cached ones are all read when Lightbox opens (only matters for a big library)
 - [ ] Renderer speed (l16-render: ~15-25 s a photo)
 
 ## System
