@@ -70,7 +70,8 @@ window.camera { background: #000; }
 .hud-unit { color: rgba(255,255,255,0.7); font-size: 13px; }
 .toolbar { background: rgba(0,0,0,0.4); }
 .toolbar button, button.flat-white { background: none; border: none; box-shadow: none;
-    color: #fff; font-size: 16px; font-weight: 600; min-width: 68px; min-height: 56px; }
+    color: #fff; font-size: 16px; font-weight: 600; min-width: 68px; min-height: 56px;
+    padding: 0; }
 .toolbar button.on { color: #00B1ED; }
 .options { background: rgba(0,0,0,0.55); }
 .status { color: #fff; font-size: 17px; font-weight: 600; background: rgba(0,0,0,0.55);
