@@ -177,7 +177,7 @@ phosh() {
 	depends="greetd iio-sensor-proxy l16-phosh-plugins wlr-randr"
 	install="$subpkgname.post-install $subpkgname.post-upgrade"
 
-	# landscape (kernel panel orientation) at 1.75x; the phrog login screen falls
+	# landscape (kernel panel orientation) at 2x; the phrog login screen falls
 	# back to this one too
 	install -Dm644 "$srcdir"/phoc.ini \
 		"$subpkgdir"/usr/share/phosh/phoc.ini

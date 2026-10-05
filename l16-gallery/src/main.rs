@@ -15,7 +15,7 @@ mod places;
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 use md5::{Digest, Md5};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -177,8 +177,11 @@ struct Gallery {
     cell: RefCell<(i32, i32, u32)>,
     stack: gtk::Stack,
     empty: gtk::Label,
-    picture: gtk::Picture,
-    scroller: gtk::ScrolledWindow,
+    // the viewer's two pages (a picture in its scroller), the shown one and the next: the
+    // next photo goes into the other page, which slides in over the last one
+    pages: [(gtk::Picture, gtk::ScrolledWindow); 2],
+    page: Rc<Cell<usize>>,
+    slide: gtk::Stack,
     status: gtk::Label,
     title: gtk::Label,
     process: gtk::Button,
@@ -473,11 +476,11 @@ impl Gallery {
         self.status.set_text("processing…");
         self.status.set_visible(busy);
         if let Ok(tex) = gdk::Texture::from_filename(&render) {
-            self.picture.set_paintable(Some(&tex));
+            self.picture().set_paintable(Some(&tex));
             self.process.set_visible(false);
         } else {
             self.process.set_visible(!busy);
-            self.picture.set_paintable(gdk::Texture::from_filename(thumb_path(&path)).ok().as_ref());
+            self.picture().set_paintable(gdk::Texture::from_filename(thumb_path(&path)).ok().as_ref());
         }
         self.show_info();
         // the quick look (and the photo's details) either way, from its worker
@@ -500,18 +503,45 @@ impl Gallery {
         self.photos.borrow().get(i).cloned()
     }
 
+    fn picture(&self) -> &gtk::Picture {
+        &self.pages[self.page.get()].0
+    }
+
+    fn scroller(&self) -> &gtk::ScrolledWindow {
+        &self.pages[self.page.get()].1
+    }
+
+    // the next or previous photo, sliding in from the side it's on
     fn step(&self, by: i64) {
         let Some(i) = *self.current.borrow() else { return };
         let n = self.photos.borrow().len() as i64;
         let j = i as i64 + by;
-        if (0..n).contains(&j) {
-            self.open(j as usize);
+        if !(0..n).contains(&j) {
+            return;
         }
+        let last = self.page.get();
+        self.page.set(1 - last);
+        self.open(j as usize);
+        self.slide.set_transition_type(if by > 0 {
+            gtk::StackTransitionType::SlideLeft
+        } else {
+            gtk::StackTransitionType::SlideRight
+        });
+        self.slide.set_visible_child(self.scroller());
+        // the last photo's picture let go once it has slid out (unless it's back already)
+        let (pic, page) = (self.pages[last].0.clone(), self.page.clone());
+        glib::timeout_add_local_once(Duration::from_millis(400), move || {
+            if page.get() != last {
+                pic.set_paintable(None::<&gdk::Paintable>);
+            }
+        });
     }
 
     fn close_viewer(&self) {
         *self.current.borrow_mut() = None;
-        self.picture.set_paintable(None::<&gdk::Paintable>);
+        for (pic, _) in &self.pages {
+            pic.set_paintable(None::<&gdk::Paintable>);
+        }
         self.stack.set_visible_child_name("grid");
     }
 
@@ -541,7 +571,7 @@ impl Gallery {
                         &glib::Bytes::from_owned(p.rgb),
                         p.width as usize * 3,
                     );
-                    self.picture.set_paintable(Some(&tex));
+                    self.picture().set_paintable(Some(&tex));
                 }
             }
             Done::Render(path, r) => {
@@ -551,7 +581,7 @@ impl Gallery {
                 }
                 match r.and_then(|f| gdk::Texture::from_filename(&f).map_err(|e| e.to_string())) {
                     Ok(tex) => {
-                        self.picture.set_paintable(Some(&tex));
+                        self.picture().set_paintable(Some(&tex));
                         self.status.set_visible(false);
                         self.show_info();
                     }
@@ -569,16 +599,16 @@ impl Gallery {
         let z = z.clamp(1.0, 6.0);
         *self.zoom.borrow_mut() = z;
         if z <= 1.0 {
-            self.picture.set_size_request(-1, -1);
+            self.picture().set_size_request(-1, -1);
         } else {
-            let (w, h) = (self.scroller.width() as f64, self.scroller.height() as f64);
-            self.picture.set_size_request((w * z) as i32, (h * z) as i32);
+            let (w, h) = (self.scroller().width() as f64, self.scroller().height() as f64);
+            self.picture().set_size_request((w * z) as i32, (h * z) as i32);
         }
     }
 
     // a pinch: the point of the picture that was between the fingers stays between them
     fn pinch_begin(&self, centre: (f64, f64)) {
-        let (h, v) = (self.scroller.hadjustment(), self.scroller.vadjustment());
+        let (h, v) = (self.scroller().hadjustment(), self.scroller().vadjustment());
         *self.zoom_start.borrow_mut() = *self.zoom.borrow();
         *self.pinch_at.borrow_mut() = (h.value() + centre.0, v.value() + centre.1);
     }
@@ -595,8 +625,8 @@ impl Gallery {
     // the scroll a pinch wants, once the picture's new size is laid out
     fn scroll(&self) {
         if let Some((x, y)) = *self.scroll_to.borrow() {
-            self.scroller.hadjustment().set_value(x);
-            self.scroller.vadjustment().set_value(y);
+            self.scroller().hadjustment().set_value(x);
+            self.scroller().vadjustment().set_value(y);
         }
     }
 
@@ -643,7 +673,7 @@ impl Gallery {
         rows.push(match megabytes(&render_path(&path)) {
             Some(mb) => {
                 let size = self
-                    .picture
+                    .picture()
                     .paintable()
                     .filter(|_| !self.process.is_visible() && !self.status.is_visible())
                     .map(|t| format!("{} × {}, ", t.intrinsic_width(), t.intrinsic_height()))
@@ -742,13 +772,22 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     grid_page.add_css_class("gallery-page");
 
     // the viewer
-    let picture = gtk::Picture::new();
-    picture.set_content_fit(gtk::ContentFit::Contain);
-    picture.set_can_shrink(true);
-    picture.set_hexpand(true);
-    picture.set_vexpand(true);
-    let scroller = gtk::ScrolledWindow::new();
-    scroller.set_child(Some(&picture));
+    let page = || {
+        let picture = gtk::Picture::new();
+        picture.set_content_fit(gtk::ContentFit::Contain);
+        picture.set_can_shrink(true);
+        picture.set_hexpand(true);
+        picture.set_vexpand(true);
+        let scroller = gtk::ScrolledWindow::new();
+        scroller.set_child(Some(&picture));
+        (picture, scroller)
+    };
+    let pages = [page(), page()];
+    let slide = gtk::Stack::new();
+    slide.set_transition_duration(220);
+    for (_, scroller) in &pages {
+        slide.add_child(scroller);
+    }
     let back = icons::button(icons::ARROW_LEFT, "");
     let title = gtk::Label::new(None);
     title.set_hexpand(true);
@@ -808,7 +847,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     status.set_can_target(false);
     status.set_visible(false);
     let viewer = gtk::Overlay::new();
-    viewer.set_child(Some(&scroller));
+    viewer.set_child(Some(&slide));
     viewer.add_overlay(&bar);
     viewer.add_overlay(&info_box);
     viewer.add_overlay(&status);
@@ -893,8 +932,9 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         cell: RefCell::new((248, 186, 3)),
         stack,
         empty,
-        picture,
-        scroller,
+        pages,
+        page: Rc::new(Cell::new(0)),
+        slide,
         status,
         title,
         process: process.clone(),
@@ -948,20 +988,10 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     camera.connect_clicked(|_| launch("org.l16linux.Camera.desktop", None));
     grid_camera.connect_clicked(|_| launch("org.l16linux.Camera.desktop", None));
 
-    // a tap on the photo hides the bar (and the info) for an unobstructed view, or brings it
-    // back; a drag, swipe or pinch isn't a tap (the click gesture stops once the finger moves)
-    let tap = gtk::GestureClick::new();
-    let (b, i) = (bar.clone(), info.clone());
-    tap.connect_released(move |_, n, _, _| {
-        if n == 1 {
-            let show = !b.is_visible();
-            b.set_visible(show);
-            if !show {
-                i.set_active(false);
-            }
-        }
-    });
-    g.scroller.add_controller(tap);
+    // on both of the viewer's pages: a tap, the swipe between photos and the pinch
+    for (_, scroller) in &g.pages {
+        add_viewer_gestures(&g, scroller, &bar, &info);
+    }
     // the bar back each time a photo is opened from the grid
     let b = bar.clone();
     g.stack.connect_visible_child_name_notify(move |s| {
@@ -970,41 +1000,6 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         }
     });
 
-    // swipe between photos (when not zoomed in); pinch to zoom
-    let swipe = gtk::GestureSwipe::new();
-    swipe.set_touch_only(false);
-    let a = g.clone();
-    swipe.connect_swipe(move |_, vx, vy| {
-        if *a.zoom.borrow() > 1.0 || vx.abs() < 400.0 || vx.abs() < vy.abs() {
-            return;
-        }
-        a.step(if vx < 0.0 { 1 } else { -1 });
-    });
-    g.scroller.add_controller(swipe);
-    let pinch = gtk::GestureZoom::new();
-    let a = g.clone();
-    pinch.connect_begin(move |p, _| {
-        if let Some(c) = p.bounding_box_center() {
-            a.pinch_begin(c);
-        }
-    });
-    let a = g.clone();
-    pinch.connect_scale_changed(move |p, s| {
-        if let Some(c) = p.bounding_box_center() {
-            a.pinch(s, c);
-        }
-    });
-    let a = g.clone();
-    pinch.connect_end(move |_, _| {
-        let a = a.clone();
-        glib::timeout_add_local_once(Duration::from_millis(200), move || *a.scroll_to.borrow_mut() = None);
-    });
-    g.scroller.add_controller(pinch);
-    // the picture's new size makes the scroll range: then the pinch's scroll can be made
-    for adj in [g.scroller.hadjustment(), g.scroller.vadjustment()] {
-        let a = g.clone();
-        adj.connect_changed(move |_| a.scroll());
-    }
 
     // finished work, from the threads
     let a = g.clone();
@@ -1058,4 +1053,64 @@ fn main() -> glib::ExitCode {
         gal.window.present();
     });
     app.run()
+}
+
+// a viewer page's gestures. A tap on the photo hides the bar (and the info) for an
+// unobstructed view, or brings it back; a swipe isn't a tap (the click gesture also
+// ends a swipe, so a finger that moved is left out). A swipe goes between photos (when
+// not zoomed in); a pinch zooms.
+fn add_viewer_gestures(g: &Rc<Gallery>, scroller: &gtk::ScrolledWindow, bar: &gtk::Box, info: &gtk::ToggleButton) {
+    let tap = gtk::GestureClick::new();
+    let down = Rc::new(Cell::new((0.0, 0.0)));
+    let d = down.clone();
+    tap.connect_pressed(move |_, _, x, y| d.set((x, y)));
+    let (b, i) = (bar.clone(), info.clone());
+    tap.connect_released(move |_, n, x, y| {
+        let (x0, y0) = down.get();
+        if n != 1 || (x - x0).hypot(y - y0) > 12.0 {
+            return;
+        }
+        let show = !b.is_visible();
+        b.set_visible(show);
+        if !show {
+            i.set_active(false);
+        }
+    });
+    scroller.add_controller(tap);
+
+    let swipe = gtk::GestureSwipe::new();
+    swipe.set_touch_only(false);
+    let a = g.clone();
+    swipe.connect_swipe(move |_, vx, vy| {
+        if *a.zoom.borrow() > 1.0 || vx.abs() < 400.0 || vx.abs() < vy.abs() {
+            return;
+        }
+        a.step(if vx < 0.0 { 1 } else { -1 });
+    });
+    scroller.add_controller(swipe);
+
+    let pinch = gtk::GestureZoom::new();
+    let a = g.clone();
+    pinch.connect_begin(move |p, _| {
+        if let Some(c) = p.bounding_box_center() {
+            a.pinch_begin(c);
+        }
+    });
+    let a = g.clone();
+    pinch.connect_scale_changed(move |p, s| {
+        if let Some(c) = p.bounding_box_center() {
+            a.pinch(s, c);
+        }
+    });
+    let a = g.clone();
+    pinch.connect_end(move |_, _| {
+        let a = a.clone();
+        glib::timeout_add_local_once(Duration::from_millis(200), move || *a.scroll_to.borrow_mut() = None);
+    });
+    scroller.add_controller(pinch);
+    // the picture's new size makes the scroll range: then the pinch's scroll can be made
+    for adj in [scroller.hadjustment(), scroller.vadjustment()] {
+        let a = g.clone();
+        adj.connect_changed(move |_| a.scroll());
+    }
 }
