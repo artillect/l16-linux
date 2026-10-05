@@ -1,12 +1,25 @@
 From: Riley <oreo4455@gmail.com>
-Subject: [PATCH] slimbus: qcom-ngd-ctrl: set the NGD base before adding its device
+Subject: [PATCH] slimbus: qcom-ngd-ctrl: set the NGD base before adding its device; wait longer for the QMI service
 
 ---
 diff --git a/drivers/slimbus/qcom-ngd-ctrl.c b/drivers/slimbus/qcom-ngd-ctrl.c
-index a4c0e7447..2f10ad82f 100644
+index a4c0e74..09b2d97 100644
 --- a/drivers/slimbus/qcom-ngd-ctrl.c
 +++ b/drivers/slimbus/qcom-ngd-ctrl.c
-@@ -1550,6 +1550,12 @@ static int of_qcom_slim_ngd_register(struct device *parent,
+@@ -1453,9 +1453,10 @@ static void qcom_slim_ngd_up_worker(struct work_struct *work)
+ 
+ 	ctrl = container_of(work, struct qcom_slim_ngd_ctrl, ngd_up_work);
+ 
+-	/* Make sure qmi service is up before continuing */
++	/* Make sure qmi service is up before continuing: the ADSP announces it 1.2-1.6 s after
++	 * it boots on the L16, and 1 s missed it on 2 of 3 boots (no sound card) */
+ 	if (!wait_for_completion_interruptible_timeout(&ctrl->qmi_up,
+-						       msecs_to_jiffies(MSEC_PER_SEC))) {
++						       msecs_to_jiffies(10 * MSEC_PER_SEC))) {
+ 		dev_err(ctrl->dev, "QMI wait timeout\n");
+ 		return;
+ 	}
+@@ -1550,6 +1551,12 @@ static int of_qcom_slim_ngd_register(struct device *parent,
  			return ret;
  		}
  		ngd->pdev->dev.of_node = node;
@@ -19,7 +32,7 @@ index a4c0e7447..2f10ad82f 100644
  		ctrl->ngd = ngd;
  
  		ret = platform_device_add(ngd->pdev);
-@@ -1559,8 +1565,6 @@ static int of_qcom_slim_ngd_register(struct device *parent,
+@@ -1559,8 +1566,6 @@ static int of_qcom_slim_ngd_register(struct device *parent,
  			of_node_put(node);
  			return ret;
  		}
