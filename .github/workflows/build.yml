@@ -68,6 +68,9 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+        with:
+          # the whole history: the changelog is made from it
+          fetch-depth: 0
 
       - name: Check the release notes
         if: inputs.release != ''

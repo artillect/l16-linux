@@ -40,6 +40,11 @@ pmbootstrap -q chroot --user --add abuild -- sh -c \
 cp "$S/APKINDEX.tar.gz" "$R/"
 ls -l "$R"
 
+# what each update changed (from this checkout's history), linked from the index page
+python3 tools/ci/changelog.py "$P/changes.html"
+grep -q 'href="changes.html"' "$P/index.html" ||
+	sed -i 's#^Signing key: \(.*\)</p>$#Signing key: \1<br>\n<a href="changes.html">What changed in each update</a></p>#' "$P/index.html"
+
 cd "$P"
 git checkout -q --orphan publish
 git add -A
