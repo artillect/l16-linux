@@ -15,6 +15,10 @@ const DESKTOP_ID: &str = "org.l16linux.Camera";
 // ~25 km: a wrong place, not a rough one)
 const MAX_AGE: Duration = Duration::from_secs(600);
 const MAX_ACCURACY_M: f64 = 1000.0;
+// after geoclue refuses (location services off), ask again only this much later: start() is
+// called on every refresh (each step of a dial), and each refusal is a D-Bus round trip on
+// the UI thread (hundreds a minute made the whole app stutter)
+const RETRY: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy)]
 pub struct Fix {
@@ -30,24 +34,36 @@ pub struct Fix {
 pub struct Geo {
     client: Option<gio::DBusProxy>,
     last: Rc<RefCell<Option<Fix>>>,
+    retry_at: Option<Instant>,
+    // the "location services are off" message was shown (since the client was last wanted)
+    warned: bool,
 }
 
 impl Geo {
-    pub fn running(&self) -> bool {
-        self.client.is_some()
-    }
-
-    pub fn start(&mut self) {
-        if self.client.is_some() {
-            return;
+    // true the first time geoclue refuses because location services are off (to say so)
+    pub fn start(&mut self) -> bool {
+        if self.client.is_some() || self.retry_at.is_some_and(|t| Instant::now() < t) {
+            return false;
         }
         match client(self.last.clone()) {
-            Ok(c) => self.client = Some(c),
-            Err(e) => eprintln!("l16-camera: location: {e}"),
+            Ok(c) => {
+                self.client = Some(c);
+                self.retry_at = None;
+                false
+            }
+            Err(e) => {
+                eprintln!("l16-camera: location: {e}");
+                self.retry_at = Some(Instant::now() + RETRY);
+                let off = e.to_string().contains("AccessDenied") && !self.warned;
+                self.warned |= off;
+                off
+            }
         }
     }
 
     pub fn stop(&mut self) {
+        self.retry_at = None;
+        self.warned = false;
         if let Some(c) = self.client.take() {
             let _ = c.call_sync("Stop", None, gio::DBusCallFlags::NONE, 2000, None::<&gio::Cancellable>);
         }

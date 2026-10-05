@@ -894,16 +894,23 @@ impl App {
         let grid = st.grid | (st.histogram as u8) << 4;
         let geotag = st.geotag && !st.asleep;
         drop(st);
-        // geotagging: the location client while it's on and the preview runs
-        {
-            let mut geo = self.geo.borrow_mut();
-            if geotag != geo.running() {
-                if geotag {
-                    geo.start();
-                } else {
-                    geo.stop();
+        // geotagging: the location client while it's on and the preview runs (and a word if
+        // location services are off, so the photos can't be tagged)
+        let off = if geotag { self.geo.borrow_mut().start() } else {
+            self.geo.borrow_mut().stop();
+            false
+        };
+        if off {
+            let msg = "Location services are off: photos won't be geotagged.
+Turn them on in Settings › Privacy › Location.";
+            self.status.set_text(msg);
+            self.status.set_visible(true);
+            let status = self.status.clone();
+            glib::timeout_add_local_once(Duration::from_secs(6), move || {
+                if status.text() == msg {
+                    status.set_visible(false);
                 }
-            }
+            });
         }
         if *self.last_saved.borrow() != saved {
             settings::save(&saved);
@@ -1079,15 +1086,20 @@ impl App {
 
     // a settings row: title, explanation and what goes on the right; its tap
     fn setting_row(&self, title: &str, sub: &str, right: &[gtk::Widget], tap: Rc<dyn Fn()>) {
+        // wrapped: in portrait (540 wide at 200%) the longest explanations don't fit a line
         let t = gtk::Label::new(Some(title));
         t.add_css_class("set-title");
         t.set_halign(gtk::Align::Start);
+        t.set_wrap(true);
+        t.set_xalign(0.0);
         let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
         text.append(&t);
         if !sub.is_empty() {
             let d = gtk::Label::new(Some(sub));
             d.add_css_class("set-sub");
             d.set_halign(gtk::Align::Start);
+            d.set_wrap(true);
+            d.set_xalign(0.0);
             text.append(&d);
         }
         text.set_hexpand(true);
@@ -3294,6 +3306,7 @@ fn build(gapp: &gtk::Application) {
     status.add_css_class("status");
     status.set_valign(gtk::Align::Start);
     status.set_halign(gtk::Align::Center);
+    status.set_justify(gtk::Justification::Center);
     status.set_margin_top(14);
     status.set_visible(false);
     status.set_can_target(false);
