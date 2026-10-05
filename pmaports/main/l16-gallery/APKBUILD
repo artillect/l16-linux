@@ -4,7 +4,7 @@
 # and LRI reader it shares with l16-camera and glycin-lri, into $pkgname-src.tar.gz here).
 pkgname=l16-gallery
 pkgver=0.1.0
-pkgrel=10
+pkgrel=11
 pkgdesc="Gallery for the Light L16's photos"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -36,6 +36,18 @@ package() {
 	install -Dm644 org.l16linux.Gallery.desktop "$pkgdir"/usr/share/applications/org.l16linux.Gallery.desktop
 	# (GNOME Software lists it as an app only with its metainfo)
 	install -Dm644 org.l16linux.Gallery.metainfo.xml -t "$pkgdir"/usr/share/metainfo
+	# and as a catalog entry, with its package: Software searches catalogs, and only
+	# Alpine's repositories get one (alpine-appstream-downloader)
+	install -d "$pkgdir"/usr/share/swcatalog/xml
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		echo '<components version="1.0" origin="l16-linux">'
+		sed -e '1d' -e '/^<!--/d' \
+			-e "/<\/component>/i\\  <pkgname>$pkgname</pkgname>" \
+			-e "/<\/component>/i\\  <icon type=\"stock\">l16-gallery</icon>" \
+			org.l16linux.Gallery.metainfo.xml
+		echo '</components>'
+	} > "$pkgdir"/usr/share/swcatalog/xml/org.l16linux.Gallery.xml
 	install -Dm644 l16-gallery.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/l16-gallery.svg
 	# place names for geotagged photos (tools/make-places: GeoNames, CC BY 4.0)
 	install -d "$pkgdir"/usr/share/l16-gallery

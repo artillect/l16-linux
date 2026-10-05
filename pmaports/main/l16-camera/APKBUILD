@@ -3,7 +3,7 @@
 # packs l16-camera/ and the tools into $pkgname-src.tar.gz here).
 pkgname=l16-camera
 pkgver=0.1.0
-pkgrel=16
+pkgrel=17
 pkgdesc="Camera app for the Light L16, after OpenLight's layout"
 url="https://github.com/artillect/l16-linux"
 arch="aarch64"
@@ -40,6 +40,18 @@ package() {
 	install -Dm644 org.l16linux.Camera.desktop "$pkgdir"/usr/share/applications/org.l16linux.Camera.desktop
 	# (GNOME Software lists it as an app only with its metainfo)
 	install -Dm644 org.l16linux.Camera.metainfo.xml -t "$pkgdir"/usr/share/metainfo
+	# and as a catalog entry, with its package: Software searches catalogs, and only
+	# Alpine's repositories get one (alpine-appstream-downloader)
+	install -d "$pkgdir"/usr/share/swcatalog/xml
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		echo '<components version="1.0" origin="l16-linux">'
+		sed -e '1d' -e '/^<!--/d' \
+			-e "/<\/component>/i\\  <pkgname>$pkgname</pkgname>" \
+			-e "/<\/component>/i\\  <icon type=\"stock\">l16-camera</icon>" \
+			org.l16linux.Camera.metainfo.xml
+		echo '</components>'
+	} > "$pkgdir"/usr/share/swcatalog/xml/org.l16linux.Camera.xml
 	install -Dm644 l16-camera.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/l16-camera.svg
 }
 sha512sums="
