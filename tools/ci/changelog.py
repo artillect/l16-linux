@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# The packages' changelog, from git history: every commit that changed a package's
-# version (pkgver or pkgrel in an APKBUILD under pmaports/), newest first, by day, with
-# its subject line and the new versions. Published next to the apk repository as
-# changes.html by publish-packages.sh. Needs the full history (fetch-depth: 0).
+# The packages' changelog, from git history: every commit that changed a package (its
+# packaging under pmaports/, or the sources pmaports/sync.sh packs into it), newest first, by
+# day, with its subject line and the versions of the packages it went into (their pkgver-r
+# pkgrel at that commit: several commits can make up one version). Published next to the apk
+# repository as changes.html by publish-packages.sh. Needs the full history (fetch-depth: 0).
 # usage: changelog.py OUT.html
 import html
 import os
@@ -11,6 +12,17 @@ import subprocess
 import sys
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "artillect/l16-linux")
+# what each of our programs is built from, beside its pmaports folder (as pmaports/sync.sh
+# packs them)
+SOURCES = {
+    "l16-camera": ["l16-camera/", "tools/l16-shoot", "tools/l16-lri-assemble"],
+    "glycin-lri": ["glycin-lri/"],
+    "l16-gallery": ["l16-gallery/", "l16-camera/src/icons.rs", "glycin-lri/src/lri.rs"],
+    "l16-phosh-plugins": ["l16-phosh/"],
+    "l16-gnss": ["l16-gnss/"],
+    "l16-render": ["l16-render/"],
+    "linux-light-lfc": ["kernel/"],
+}
 
 
 def git(*args):
@@ -27,21 +39,29 @@ def version(commit, path):
     return expand(vars["pkgname"]), f"{expand(vars['pkgver'])}-r{vars.get('pkgrel', '0')}"
 
 
+# each package's APKBUILD (as named in the tree today) and the paths that make it
+packages = []
+for apkbuild in git("ls-files", "pmaports").split():
+    if apkbuild.endswith("/APKBUILD"):
+        folder = apkbuild[: -len("APKBUILD")]
+        name = folder.rstrip("/").rsplit("/", 1)[-1]
+        packages.append((apkbuild, [folder] + SOURCES.get(name, [])))
+paths = sorted({p for _, ps in packages for p in ps})
+
 days = {}
-log = git("log", "--format=%H%x09%ad%x09%s", "--date=short", "--", "pmaports")
-for line in log.splitlines():
-    commit, day, subject = line.split("\t", 2)
-    paths = git("diff-tree", "--no-commit-id", "--name-only", "-r", "--root", commit,
-                "--", "pmaports").split()
-    bumped = []
-    for path in paths:
-        if not path.endswith("/APKBUILD"):
-            continue
-        now = version(commit, path)
-        if now and now != version(commit + "^", path):
-            bumped.append(now)
-    if bumped:
-        days.setdefault(day, []).append((commit, subject, sorted(bumped)))
+log = git("log", "--format=%x00%H%x09%ad%x09%s", "--date=short", "--name-only", "--", *paths)
+for entry in log.split("\0")[1:]:
+    head, *files = entry.strip().split("\n")
+    commit, day, subject = head.split("\t", 2)
+    files = [f for f in files if f]
+    versions = set()
+    for apkbuild, ps in packages:
+        if any(f.startswith(p) if p.endswith("/") else f == p for f in files for p in ps):
+            v = version(commit, apkbuild)
+            if v:
+                versions.add(v)
+    if versions:
+        days.setdefault(day, []).append((commit, subject, sorted(versions)))
 
 out = ["""<!doctype html>
 <html lang="en">
@@ -50,17 +70,17 @@ out = ["""<!doctype html>
 <title>l16-linux changes</title>
 <body style="font-family: sans-serif; max-width: 40em; margin: 2em auto; padding: 0 16px">
 <h1>l16-linux changes</h1>
-<p>What each package update changed, newest first. <code>sudo apk upgrade</code> on the
-camera installs them. <a href="./">The package repository</a></p>
+<p>What changed in the packages, newest first, with the versions each change is in.
+<code>sudo apk upgrade</code> on the camera installs them. <a href="./">The package repository</a></p>
 """]
 for day, entries in days.items():
     out.append(f"<h2>{day}</h2>\n<ul>\n")
-    for commit, subject, bumped in entries:
-        versions = ", ".join(f"{html.escape(n)} {html.escape(v)}" for n, v in bumped)
+    for commit, subject, versions in entries:
+        listed = ", ".join(f"{html.escape(n)} {html.escape(v)}" for n, v in versions)
         out.append(f'<li><a href="https://github.com/{REPO}/commit/{commit}">'
-                   f"{html.escape(subject)}</a><br><small>{versions}</small></li>\n")
+                   f"{html.escape(subject)}</a><br><small>{listed}</small></li>\n")
     out.append("</ul>\n")
 out.append("</body>\n</html>\n")
 with open(sys.argv[1], "w") as f:
     f.write("".join(out))
-print(f"changelog: {sum(len(e) for e in days.values())} updates over {len(days)} days")
+print(f"changelog: {sum(len(e) for e in days.values())} changes over {len(days)} days")
