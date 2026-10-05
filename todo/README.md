@@ -52,7 +52,8 @@ partition, ext4, no encryption by default, the 64 GiB dual-boot partition).
       distance from the factory calibration (818/1500 mm points, infinity = infinity stop +
       200) land within 2 codes (2026-10-04). Next: capture without AF, check a matched-focus
       photo, the A modules (opposite direction, ~1000-code correction), stops probed once and
-      saved, then a focus mode in the app (infinity lock for astro, a focus pull)
+      saved, then a focus mode in the app (infinity lock for astro, a focus pull, and a
+      quick swap for the touch strip between zoom and focus: a user's suggestion)
 
 - [x] AF-D as stock's: motion-then-settle (gyro) and zoom, with the marks
 - [ ] AF-D: faces as a trigger (stock refocuses on face count/size/position changes)
