@@ -1,0 +1,16 @@
+[Unit]
+Description=Light L16 boot mode
+# dual boot or Linux only: see light-lfc-bootmode (start at boot, stop when rebooting to
+# Android); before the login screen, whose Phosh shows the "Android" quick setting
+Wants=dev-disk-by\x2dpartlabel-misc.device
+After=local-fs.target dev-disk-by\x2dpartlabel-misc.device
+Before=greetd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/light-lfc-bootmode start
+ExecStop=/usr/libexec/light-lfc-bootmode stop
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,69 @@
+#!/bin/sh
+# light-lfc-bootmode start|stop: set up reboots and kernel updates for dual boot or a
+# Linux-only install (start: at boot; stop: on the way down).
+#
+# Dual boot: the root filesystem is on the "linux" partition and the kernel in
+# "recovery", which FIH's LK boots on the "recovery" reboot reason; a plain reboot
+# (no reason) boots stock Android from "boot". Linux-only: the kernel is in "boot",
+# so plain reboots are already right, and kernel updates must go to "boot".
+#
+# A forced restart (a kernel panic or watchdog, or holding the power key) leaves no
+# reboot reason, so dual boot also keeps Android's bootloader message "boot-recovery" in
+# "misc" while Linux runs: LK reads it at every boot except fastboot's (offset 0, an
+# exact match) and boots recovery, and never clears it. Rebooting to Android clears it
+# on the way down (stop), when the reboot mode has been set to "normal". Fastboot still
+# works whatever misc says ("fastboot erase misc" brings Android back).
+
+# our lines in /etc/deviceinfo (boot-deploy reads it after the package's deviceinfo)
+MARK="# light-lfc-bootmode: kernel partition of a Linux-only install"
+LINE='deviceinfo_flash_fastboot_partition_kernel="boot"'
+MISC=/dev/disk/by-partlabel/misc
+
+# misc's bootloader message command (32 bytes, NUL-padded), written through to the disk
+misc_command() {
+	[ -b "$MISC" ] || return 1
+	[ "$(dd if="$MISC" bs=32 count=1 2>/dev/null | tr -d '\0')" = "$1" ] && return 0
+	# whole, from a file (dd takes a pipe's writes as they come)
+	local t=$(mktemp) ret
+	{ printf '%s' "$1"; head -c 32 /dev/zero; } | head -c 32 > "$t"
+	dd if="$t" of="$MISC" bs=32 count=1 conv=notrunc,fsync 2>/dev/null
+	ret=$?
+	rm -f "$t"
+	return $ret
+}
+
+start() {
+	rm -f /run/light-lfc-dual-boot
+	touch /etc/deviceinfo
+	sed -i "/^$MARK\$/d; /^$LINE\$/d" /etc/deviceinfo
+	partname=$(sed -n 's/^PARTNAME=//p' /sys/dev/block/$(mountpoint -d /)/uevent)
+	if [ "$partname" = linux ]; then
+		echo "Dual boot: plain reboots and forced restarts go to Linux (recovery)"
+		printf recovery > /sys/module/reboot_mode/parameters/default_mode
+		misc_command boot-recovery || echo "Can't set misc: forced restarts will boot Android" >&2
+		# "Reboot to Android" runs as the user; the setting only picks which of the
+		# two installed systems the next reboot starts. The admin group's (as rtc0's
+		# wakealarm), not any process's: anything else could send reboots to fastboot
+		chgrp wheel /sys/module/reboot_mode/parameters/default_mode
+		chmod 664 /sys/module/reboot_mode/parameters/default_mode
+		# shows the "Android" quick setting (l16-phosh-plugins)
+		ln -s /usr/bin/light-lfc-reboot-android /run/light-lfc-dual-boot
+	else
+		echo "Linux only: plain reboots and kernel updates go to boot"
+		printf '%s\n%s\n' "$MARK" "$LINE" >> /etc/deviceinfo
+	fi
+}
+
+stop() {
+	# rebooting to Android: let LK boot "boot" again
+	if [ -e /run/light-lfc-dual-boot ] &&
+	   [ "$(cat /sys/module/reboot_mode/parameters/default_mode)" = normal ]; then
+		echo "Rebooting to Android: clearing misc"
+		misc_command ""
+	fi
+}
+
+case "$1" in
+start|stop) "$1" ;;
+*) echo "usage: $0 start|stop" >&2; exit 2 ;;
+esac

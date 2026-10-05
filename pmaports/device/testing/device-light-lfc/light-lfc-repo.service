@@ -1,0 +1,11 @@
+[Unit]
+Description=l16-linux package repository
+# in /etc/apk/repositories: a fresh install's (see /usr/libexec/light-lfc-repo)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/light-lfc-repo
+
+[Install]
+WantedBy=multi-user.target

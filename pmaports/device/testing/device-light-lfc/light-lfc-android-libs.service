@@ -1,0 +1,15 @@
+[Unit]
+Description=Light L16 camera libraries
+# Light's renderer, Android's runtime and the factory calibration, from the stock
+# partitions (the system partition msm-firmware-loader mounts, and lightcal)
+Requires=msm-firmware-loader.service
+Wants=dev-disk-by\x2dpartlabel-lightcal.device
+After=local-fs.target msm-firmware-loader.service dev-disk-by\x2dpartlabel-lightcal.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/light-lfc-android-libs
+
+[Install]
+WantedBy=multi-user.target

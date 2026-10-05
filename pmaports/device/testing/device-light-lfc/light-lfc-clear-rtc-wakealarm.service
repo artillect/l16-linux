@@ -1,0 +1,13 @@
+[Unit]
+Description=Clear the RTC wake alarm at shutdown
+# suspend-on-blank arms the PMIC's RTC alarm, which can power on a switched-off L16
+# (shutdown-clear-rtc-wakealarm only has an OpenRC service)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/bin/sh -c 'echo 0 > /sys/class/rtc/rtc0/wakealarm'
+
+[Install]
+WantedBy=multi-user.target

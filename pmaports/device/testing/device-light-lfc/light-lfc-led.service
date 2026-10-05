@@ -1,0 +1,11 @@
+[Unit]
+Description=Light L16 status LED
+# charging and low-battery light by the shutter button, as in stock
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/libexec/light-lfc-led
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

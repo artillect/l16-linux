@@ -5,7 +5,7 @@
 L=/var/lib/l16/android
 if [ ! -x $L/linker64 ] || [ ! -e $L/libcp.so ] || [ ! -e $L/libc++_shared.so ]; then
 	echo "l16-render: Light's renderer isn't set up from the stock partitions" \
-		"(see: rc-service light-lfc-android-libs start)" >&2
+		"(see: the light-lfc-android-libs service)" >&2
 	exit 69
 fi
 # a photo taken in portrait: the renderer turns it, and is told its size the other way round

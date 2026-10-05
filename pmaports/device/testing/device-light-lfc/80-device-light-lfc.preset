@@ -1,0 +1,8 @@
+# Light L16 services (applied when the units are installed)
+enable light-lfc-firmware.service
+enable light-lfc-bootmode.service
+enable light-lfc-repo.service
+enable light-lfc-led.service
+enable light-lfc-android-libs.service
+enable light-lfc-strip-volume.service
+enable light-lfc-clear-rtc-wakealarm.service

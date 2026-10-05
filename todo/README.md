@@ -110,6 +110,13 @@ partition, ext4, no encryption by default, the 64 GiB dual-boot partition).
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
       not seen on a short hold since
 - [ ] Hack cleanup: comments about the persistent transfer streams
+- [ ] Photos over USB without SSH: show up on the computer when plugged in, as a camera or a
+      portable device. First check what stock did (MTP or PTP, which folders, and why the gallery
+      locks while plugged in). The pieces: FunctionFS is in the kernel, `umtprd` (an MTP server,
+      with a systemd unit) and `usb-moded` are in the repos, and the gadget now has only
+      `ncm.usb0` (USB networking), which MTP could sit beside. MTP shows every file (the .lri
+      too) without locking the device; PTP importers may skip .lri. Check whether umtprd can
+      present itself as a camera, and whether it announces photos taken while plugged in
 
 ## Later
 

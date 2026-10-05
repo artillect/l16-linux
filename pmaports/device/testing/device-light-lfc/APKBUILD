@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=32
+pkgrel=33
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -35,9 +35,11 @@ install="$pkgname.post-install $pkgname.post-upgrade"
 subpackages="
 	$pkgname-openrc
 	$pkgname-phosh
+	$pkgname-systemd
 	"
 source="
 	50-light-lfc-suspend.rules
+	80-device-light-lfc.preset
 	90-device-light-lfc.rules
 	90_light-lfc.gschema.override
 	HiFi.conf
@@ -46,19 +48,27 @@ source="
 	initfs-hook.sh
 	light-lfc-repo
 	light-lfc-repo.initd
+	light-lfc-repo.service
 	l16-linux@artillect-6ab9d2e0.rsa.pub
 	l16-mics.pa
+	light-lfc-bootmode
 	light-lfc-bootmode.initd
+	light-lfc-bootmode.service
+	light-lfc-clear-rtc-wakealarm.service
 	light-lfc-bootsig
 	light-lfc-chrony.dispatcher
 	light-lfc-firmware.initd
+	light-lfc-firmware.service
 	light-lfc-firmware.sh
 	light-lfc-led
 	light-lfc-led.initd
+	light-lfc-led.service
 	light-lfc-android-libs
 	light-lfc-android-libs.initd
+	light-lfc-android-libs.service
 	light-lfc-strip-volume
 	light-lfc-strip-volume.initd
+	light-lfc-strip-volume.service
 	libcamera-light-ccb.yaml
 	light-lfc-camss.conf
 	light-lfc-postprocess.sh
@@ -108,6 +118,10 @@ package() {
 	# firmware msm-firmware-loader does not find on its own (see the script)
 	install -Dm755 "$srcdir"/light-lfc-firmware.sh \
 		"$pkgdir"/usr/libexec/light-lfc-firmware
+
+	# dual boot or Linux only (the bootmode service: start at boot, stop on the way down)
+	install -Dm755 "$srcdir"/light-lfc-bootmode \
+		"$pkgdir"/usr/libexec/light-lfc-bootmode
 
 	# the status LED: charging and low battery, as stock
 	install -Dm755 "$srcdir"/light-lfc-led \
@@ -174,6 +188,20 @@ openrc() {
 		"$subpkgdir"/etc/init.d/light-lfc-repo
 }
 
+systemd() {
+	install_if="systemd $pkgname=$pkgver-r$pkgrel"
+	depends="msm-firmware-loader-systemd"
+
+	local unit
+	for unit in firmware bootmode repo led android-libs strip-volume clear-rtc-wakealarm; do
+		install -Dm644 "$srcdir"/light-lfc-$unit.service \
+			-t "$subpkgdir"/usr/lib/systemd/system
+	done
+	# enabled as they're installed (postmarketos-base-systemd's trigger applies presets)
+	install -Dm644 "$srcdir"/80-device-light-lfc.preset \
+		-t "$subpkgdir"/usr/lib/systemd/system-preset
+}
+
 phosh() {
 	install_if="$pkgname=$pkgver-r$pkgrel postmarketos-ui-phosh"
 	replaces="phosh"
@@ -201,6 +229,8 @@ phosh() {
 		-t "$subpkgdir"/usr/share/phrog/autostart
 	install -Dm644 "$srcdir"/logind-light-lfc.conf \
 		"$subpkgdir"/etc/elogind/logind.conf.d/50-light-lfc.conf
+	install -Dm644 "$srcdir"/logind-light-lfc.conf \
+		"$subpkgdir"/etc/systemd/logind.conf.d/50-light-lfc.conf
 
 	# rotate the lock and login screens with the accelerometer too (Phosh stops
 	# rotating while locked)
@@ -213,6 +243,7 @@ phosh() {
 }
 sha512sums="
 ae20add2083afcdb2ade1348127f6510a7056f1a74d5f5639decd7da9a972436d93f25375e6ba740403208b35711a310b5a62efc2de335d1334a9728eb095bb9  50-light-lfc-suspend.rules
+0f8c73e9f40acba25510a06f17de84c1623c5c86e04fead9d60350006059713e87d7eda0f9e5d9c422d0c86f2c3b2b90ff27eb5ba32048e5e683e0fe3f37125e  80-device-light-lfc.preset
 7aed5f24d534a874710c8922acc442fb888c8e8775d034a660e34d9e58b28774ab0846965eb296cedc59a1637c268cf2788b09afd2d5833d53d95e0e4b4c2ef9  90-device-light-lfc.rules
 aa5496b76e9fff7b7526150096120c6ccd326608934cef2022f02920059072e05843b186654431c7f7c84fbf308cc2985e47cfcd4f68c063e7d0d6866abd997c  90_light-lfc.gschema.override
 67abed5f0ed1b36da63e79430386805ffa0edc4b1cac907a0054dfee34427373b28a2050e79874415d383376461bc814c2cad96988107314fd6e26d83a6f83b6  HiFi.conf
@@ -221,19 +252,27 @@ aa5496b76e9fff7b7526150096120c6ccd326608934cef2022f02920059072e05843b186654431c7
 01da95e84f883dc0e1308220bfb2e2fb8f9a233d130e0943bbcb564b64bb9240eb66ffd9259aff1f9df67ff7d9b4171b993c36e924e9f45c0aef75268e808594  initfs-hook.sh
 654fd058038367e9de031dd7211d5469ad0b5ebc4788102bff4faa924dc5abb856af40700c6de9fda97c379c73f16b92bed55cbe1dfb973fdd4608c62b405bfe  light-lfc-repo
 4f417f0bcbb5f3b51f10f65cbfd14cd09cab456b3165da19c18cdf8a232d8f00d7be19fcbd59a184d21b2d5a95f41d4486a489b82cca4cb5ec0fcdf1b7b9a9fc  light-lfc-repo.initd
+7b3cd87d12d95d5801b028aeb61c0abadde890e870fea364f9678e9a49096d74417db2479fab588938daf85e2aa2453e40ba62d4b1a0a34a3bb91fca0a6b16c3  light-lfc-repo.service
 b985667d6242d84247b88aed2f931b71250257bab199355f3ed9376065ec4a574670795a2938b19e5aeee9cceb9ec92d0596d70b6dc01ab83e69e05ce5a08bfb  l16-linux@artillect-6ab9d2e0.rsa.pub
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
-2889a28e367d2644eefdc87aad9292c14c063a4fcef38da113bdf0218094cb42e5abe1f76fdc67842fc254aff3063f54d8132ae98c33ad28d9d9a592d30c7f8e  light-lfc-bootmode.initd
+e0dc06d8c768e0c7ab770e7dde53e9cdef4eea08fb25e16fcbd9625797cf3b901f05da31fdcd8034a0fcdc2e8187021d8ac99611336b0a0ec461f603152272c8  light-lfc-bootmode
+1f38f3022397183c0676bc240e20a5fd060a51ab396c71421db9215a28deb9e2699d9ae2357732a98a74e54b2b1c292fa864f0b78b29dfea786e4eaddb23b5ef  light-lfc-bootmode.initd
+95dbb60a35cb1d62647f7209ba62b37ad027c89a6a62b3a58898adda503dbd50d69fb22d7f95dfbd9340e295646501442c1366c0de3317e3e1b3252bbdd36bc4  light-lfc-bootmode.service
+c4437852c0333c6219201e56d0acfa8ba464806988829865ade5028d535a13e0badf207d9e9a4d288ccc1aee1de4a39a1d070b831bc96732f74c3b692b09d1f7  light-lfc-clear-rtc-wakealarm.service
 1871f2c94d4df3e71e077288391ebbd2cd511848abc065c1fe2e0cf548da1560a07240fefe3fa08b56e409dc504573feffb9817f0e953e64fbd7afed1704a921  light-lfc-bootsig
 7909a8446cd9de4955a3a9759fb0a3e268463da0cf1a90e6226913dbfa960fd7618e5b9485602bdbe7a5c93d7c7d0bb77a4f4dd668fa2d80893efa12fcfcd492  light-lfc-chrony.dispatcher
 8510e9f5b5a95f35f2653f0acff90ccdc51ae8e248edf8803368eb0b591645dcd4541fad3c61a2eb9b723f01cb7e32c63af8a40b0180da67b399791224a00b2e  light-lfc-firmware.initd
+12822d013ea16e292b5bc7cf96a207b994acbda6794b370d50edf39085bedd0de0351a70cbae4d3f808877d19f8ac6ea8b825bce5c37dce7bc24fb495552297f  light-lfc-firmware.service
 63263752f146515c8cc59338afe122f78f0dcf469954d203184e7b7de488549a75b17943373cd2f3f568552c5440c240778f480a3fe4b2ac0b12e6de5b4fc5f2  light-lfc-firmware.sh
 f6e09bfe3887ca39d226c560727a63597e10f20eba67516cf25b643d821b009a417193f44eeb5c9ecff36f1316cdb2686dbf0f05e460ff8e64c482ab31296f93  light-lfc-led
 36ddf546effd79c252b2be8337a5121731f700b45c467a19e1fc622f089ab21423401a5262fe2141aa263e79db4e7ad344a90a1076d3a5a184fb1046c472ec47  light-lfc-led.initd
+a221cde7eb997538808ac2bfc04e49fe944433edefc170e12b753db493fbcb01f38984c9ecaf0b1e8be8f23d5d530f77b72d88cc2dfbabbb10fedf40259c962f  light-lfc-led.service
 18f2ada8420ed695cb014c8f901b556330528881f892311dd795b10e454ad159f091c0d2a24100001e0677917135997586ca4019b11299e249f664b8614e8218  light-lfc-android-libs
 db45e4b609bf7cb3656f6badb9977700aa01da9381b09494503a43e85feef5c735c2f022c1fad83700d8c5e41036058d2db1fba25f63981c9af94a99065b1365  light-lfc-android-libs.initd
+8cc1f1828851a41748ea56a31518d054b0af3018093890405ed26fd669186e4f954c6d8f3ecc8b1e4679b58038d2e921d6922f6f3500a1f68988472662b94471  light-lfc-android-libs.service
 1f7eea788e000f098276089e23d5699a9de9cae96f3cabff9f34d96c1e910222517e963cb5279429245f419c209b55388ab6966f3fc49160f78ba72166612cfe  light-lfc-strip-volume
 33757bc54692c6e24ac4b65456dff2bbdc17be39ec16d95454af842902883a064c5863a4a54d40ff755cf35168c1ea71ea9ba3b7c54997a051d76509493872ff  light-lfc-strip-volume.initd
+fa80bfd4d77329bae26bf6cbcac709fc7dfa8121e294b02c559f388782342a2bd4639a05dbe9325548b706ea6b9eb23cd20f7f79b991d804583c5cb01cacceb2  light-lfc-strip-volume.service
 0e0b9f7efd6e8affc0095000f44bcca58c0254401eb7ff4f9912bd54fb64eb69bdb776b715e40835b1b0222764dcfb33d0bde498fa40aaed18981fa29ecc1024  libcamera-light-ccb.yaml
 6dcf5c6755319cc0b886c4bf570a5e169e4b2528fc1ed0a8ee9ddc56b845d4ece26a54f94bb179603bc71b30d2dc6bf2ff58f943031525c198be1334a5cae5ec  light-lfc-camss.conf
 8541cc5044aff7df7cab337c0ff3c59c5ad033792b70972626d2c6b634f7d60ac6ed5bb043445db766e3253da1b3a4fc489ca8cf67b441a15fee4ebb7f601bc9  light-lfc-postprocess.sh

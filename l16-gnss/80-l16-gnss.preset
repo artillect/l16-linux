@@ -1,0 +1,2 @@
+# the GNSS at boot (rmtfs, the modem's file system service, is in postmarketOS's presets)
+enable l16-gnss.service

@@ -1,0 +1,15 @@
+[Unit]
+Description=Light L16 firmware links
+# what msm-firmware-loader does not find on its own; before udev, as the loader
+DefaultDependencies=no
+Requires=msm-firmware-loader.service
+After=msm-firmware-loader.service
+Before=systemd-udevd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/light-lfc-firmware
+
+[Install]
+WantedBy=sysinit.target

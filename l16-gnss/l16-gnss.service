@@ -1,0 +1,12 @@
+# The Light L16's GNSS for geoclue (the modem's NMEA on /run/l16-gnss.sock)
+[Unit]
+Description=Light L16 GNSS
+Requires=rmtfs.service
+After=rmtfs.service
+Before=geoclue.service
+
+[Service]
+ExecStart=/usr/bin/l16-gnss
+
+[Install]
+WantedBy=multi-user.target

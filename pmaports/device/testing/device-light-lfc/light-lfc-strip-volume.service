@@ -1,0 +1,11 @@
+[Unit]
+Description=Light L16 touch strip volume
+# the touch strip as volume keys, outside the camera app
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/libexec/light-lfc-strip-volume
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

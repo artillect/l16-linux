@@ -2,9 +2,10 @@
 # Copy the L16 packages into pmbootstrap's pmaports checkout. The kernel patches and
 # config are kept once, in kernel/, and copied into the linux package here.
 # usage: pmaports/sync.sh   (then: pmbootstrap checksum <pkg> / pmbootstrap build <pkg>)
+# PMB_CONFIG=FILE: the pmbootstrap config (-c) whose pmaports to sync into
 set -e
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-PMAPORTS=$(pmbootstrap config aports 2>/dev/null | tail -1)
+PMAPORTS=$(pmbootstrap ${PMB_CONFIG:+-c "$PMB_CONFIG"} config aports 2>/dev/null | tail -1)
 PMAPORTS=${PMAPORTS:-$HOME/.local/var/pmbootstrap/cache_git/pmaports}
 DST=$PMAPORTS/device/testing
 
@@ -88,6 +89,13 @@ for pkg in libcamera phosh; do
 	mkdir -p "$PMAPORTS/temp/$pkg"
 	cp -r "$REPO/pmaports/temp/$pkg/." "$PMAPORTS/temp/$pkg/"
 	find "$PMAPORTS/temp/$pkg" -type f -exec sed -i 's/\r$//' {} +
+done
+# and postmarketOS's systemd builds of them to extra-repos/systemd/
+for pkg in phosh; do
+	rm -rf "${PMAPORTS:?}/extra-repos/systemd/$pkg"
+	mkdir -p "$PMAPORTS/extra-repos/systemd/$pkg"
+	cp -r "$REPO/pmaports/extra-repos/systemd/$pkg/." "$PMAPORTS/extra-repos/systemd/$pkg/"
+	find "$PMAPORTS/extra-repos/systemd/$pkg" -type f -exec sed -i 's/\r$//' {} +
 done
 
 # strip CR in case a file was edited on Windows
