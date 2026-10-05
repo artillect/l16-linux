@@ -3,7 +3,7 @@
 pkgname=device-light-lfc
 pkgdesc="Light L16"
 pkgver=1
-pkgrel=34
+pkgrel=35
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -35,6 +35,7 @@ subpackages="
 	"
 source="
 	50-light-lfc-suspend.rules
+	71-device-light-lfc-haptics.rules
 	80-device-light-lfc.preset
 	90-device-light-lfc.rules
 	90_light-lfc.gschema.override
@@ -46,6 +47,7 @@ source="
 	light-lfc-repo.service
 	l16-linux@artillect-6ab9d2e0.rsa.pub
 	l16-mics.pa
+	iio-sensor-proxy-light-lfc.conf
 	light-lfc-bootmode
 	light-lfc-bootmode.service
 	light-lfc-clear-rtc-wakealarm.service
@@ -79,6 +81,10 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	# the vibration motor for feedbackd (early: see the file)
+	install -Dm644 "$srcdir"/71-device-light-lfc-haptics.rules \
+		-t "$pkgdir"/usr/lib/udev/rules.d
 
 	# the user at the device may suspend it even while other sessions (ssh) exist
 	install -Dm644 "$srcdir"/50-light-lfc-suspend.rules \
@@ -165,6 +171,9 @@ systemd() {
 	# enabled as they're installed (postmarketos-base-systemd's trigger applies presets)
 	install -Dm644 "$srcdir"/80-device-light-lfc.preset \
 		-t "$subpkgdir"/usr/lib/systemd/system-preset
+	# rotation: iio-sensor-proxy started before the sensors (see the file)
+	install -Dm644 "$srcdir"/iio-sensor-proxy-light-lfc.conf \
+		"$subpkgdir"/usr/lib/systemd/system/iio-sensor-proxy.service.d/50-light-lfc.conf
 }
 
 phosh() {
@@ -206,8 +215,9 @@ phosh() {
 }
 sha512sums="
 ae20add2083afcdb2ade1348127f6510a7056f1a74d5f5639decd7da9a972436d93f25375e6ba740403208b35711a310b5a62efc2de335d1334a9728eb095bb9  50-light-lfc-suspend.rules
+5abb75453478270e73368dba001b0ce17b31b6774412f26791bc72282c5434ff3ab104eeac7a23247970ef2c2fa48c506c754f00f83989dbe89facd5c544beae  71-device-light-lfc-haptics.rules
 0f8c73e9f40acba25510a06f17de84c1623c5c86e04fead9d60350006059713e87d7eda0f9e5d9c422d0c86f2c3b2b90ff27eb5ba32048e5e683e0fe3f37125e  80-device-light-lfc.preset
-7aed5f24d534a874710c8922acc442fb888c8e8775d034a660e34d9e58b28774ab0846965eb296cedc59a1637c268cf2788b09afd2d5833d53d95e0e4b4c2ef9  90-device-light-lfc.rules
+12b74ca5e891e16e922a46680452533fa0cc5d5bce3f7529bb9b437c0bd94dd67cf6deefcc98882c922d30e5d88ba59201a90c936a053258351876eb37436ef8  90-device-light-lfc.rules
 aa5496b76e9fff7b7526150096120c6ccd326608934cef2022f02920059072e05843b186654431c7f7c84fbf308cc2985e47cfcd4f68c063e7d0d6866abd997c  90_light-lfc.gschema.override
 67abed5f0ed1b36da63e79430386805ffa0edc4b1cac907a0054dfee34427373b28a2050e79874415d383376461bc814c2cad96988107314fd6e26d83a6f83b6  HiFi.conf
 97b14e6ab622d1fc3fa2841dc9ea6c3b53328675b8910a64eabc8c99c28b7bebf3281d7333bab8ff19947c8645ab28c6aa62a2496433cd9c7c358829c7468a4d  L16.conf
@@ -217,6 +227,7 @@ aa5496b76e9fff7b7526150096120c6ccd326608934cef2022f02920059072e05843b186654431c7
 7b3cd87d12d95d5801b028aeb61c0abadde890e870fea364f9678e9a49096d74417db2479fab588938daf85e2aa2453e40ba62d4b1a0a34a3bb91fca0a6b16c3  light-lfc-repo.service
 b985667d6242d84247b88aed2f931b71250257bab199355f3ed9376065ec4a574670795a2938b19e5aeee9cceb9ec92d0596d70b6dc01ab83e69e05ce5a08bfb  l16-linux@artillect-6ab9d2e0.rsa.pub
 3de238b1d2d94b87cf450bc84fadae6f1647f0269c6b6bbe0365b55ac4505c482f16cc88df4a9eda2b6e2e484a35bb052d95ec1e36bd8e3b0967a53eb791d1c1  l16-mics.pa
+9699cb5b2b69f20552a8bdb66182d18cfa592f3bfb1976318f0cccd033f2dec39e4d2be2b4d6d5b95767628996123acba3ca62c92291b205afc4c23dea6280d7  iio-sensor-proxy-light-lfc.conf
 e0dc06d8c768e0c7ab770e7dde53e9cdef4eea08fb25e16fcbd9625797cf3b901f05da31fdcd8034a0fcdc2e8187021d8ac99611336b0a0ec461f603152272c8  light-lfc-bootmode
 95dbb60a35cb1d62647f7209ba62b37ad027c89a6a62b3a58898adda503dbd50d69fb22d7f95dfbd9340e295646501442c1366c0de3317e3e1b3252bbdd36bc4  light-lfc-bootmode.service
 06a9080218de7f9030b2873622f8b952d4981e463c7ecc4150729a7d8af473e69bb2a994473b0315a0bffff407aa67e286c22fd1b2ab3b5be32e6d0d3e80d2d2  light-lfc-clear-rtc-wakealarm.service

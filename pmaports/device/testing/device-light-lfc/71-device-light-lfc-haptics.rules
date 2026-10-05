@@ -1,0 +1,3 @@
+# feedbackd: the L16 vibration motor (DW7800). Before 73-seat-late.rules, which gives the
+# session's user access to devices tagged uaccess (as feedbackd's own 72-feedbackd.rules)
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT}=="1", SUBSYSTEMS=="input", ATTRS{name}=="dw7800-haptics", TAG+="uaccess", ENV{FEEDBACKD_TYPE}="vibra"
