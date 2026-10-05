@@ -118,12 +118,13 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
       not seen on a short hold since
 - [ ] Hack cleanup: comments about the persistent transfer streams
-- [ ] Display: phoc logs "Atomic commit failed: Resource busy" by the thousand on every boot of
-      the systemd install (2.5k-34k per boot, from login on, before Viewfinder opens), with
-      a few to a few dozen "pp done time out, lm=0" from MDP5. Same kernel (r102) as the
-      OpenRC install, where phoc's log wasn't in a journal, so it's unknown whether it's new.
-      Find what starts it (login, a rotation, a modeset) and whether the first-mixer fix
-      still holds
+- [x] Display: phoc's "Atomic commit failed: Resource busy", about 2,500 a minute while
+      scrolling (a frame in six dropped): an unused plane phoc keeps off in every commit is
+      tracked by DRM's fake commit, which msm completed only at the end of its commit tail,
+      after the flip event had reached phoc. Kernel r106 (patch 0028) completes it at the
+      start: none since, and scrolling is smoother. Upstream msm has the same code
+- [ ] Display: MDP5's "pp done time out, lm=0", a few per boot (3 on r106's first boot, all
+      before login; up to a few dozen per boot before). Find what triggers them
 - [ ] Phosh's home bar sometimes disappears (and once the status bar wouldn't dismiss, until
       the power button blanked and unblanked the screen). Intermittent: seen 2026-10-05 after
       opening Viewfinder in portrait, turning to landscape, then opening and closing the

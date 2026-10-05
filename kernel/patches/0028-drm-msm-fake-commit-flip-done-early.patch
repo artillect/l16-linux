@@ -1,0 +1,26 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] drm/msm: complete the fake commit's flip_done at the start of the commit tail
+
+---
+diff --git a/drivers/gpu/drm/msm/msm_atomic.c b/drivers/gpu/drm/msm/msm_atomic.c
+index 87a9114..c02f620 100644
+--- a/drivers/gpu/drm/msm/msm_atomic.c
++++ b/drivers/gpu/drm/msm/msm_atomic.c
+@@ -221,6 +221,17 @@ void msm_atomic_commit_tail(struct drm_atomic_state *state)
+ 
+ 	trace_msm_atomic_commit_tail_start(async, crtc_mask);
+ 
++	/*
++	 * Planes on no CRTC before or after this commit (e.g. an unused plane a
++	 * compositor keeps off in every commit) are tracked by the fake commit,
++	 * which the helpers only complete in drm_atomic_helper_commit_hw_done()
++	 * here, after the flush: the CRTC's flip event can reach userspace
++	 * first, and its next nonblocking commit then fails with -EBUSY on such
++	 * a plane. Nothing is shown on them, so there is nothing to wait for.
++	 */
++	if (state->fake_commit)
++		complete_all(&state->fake_commit->flip_done);
++
+ 	kms->funcs->enable_commit(kms);
+ 
+ 	/*

@@ -96,6 +96,8 @@ patch clk-qcom-gcc-msm8996-mss-gpll0-no-parent "clk: qcom: gcc-msm8996: the mode
 	drivers/clk/qcom/gcc-msm8996.c
 patch scsi-ufs-qcom-v2-no-unipro-clock-gating "scsi: ufs: qcom: no UniPro clock gating on the v2 controller, as stock" \
 	drivers/ufs/host/ufs-qcom.c
+patch drm-msm-fake-commit-flip-done-early "drm/msm: complete the fake commit's flip_done at the start of the commit tail" \
+	drivers/gpu/drm/msm/msm_atomic.c
 
 # everything changed must be in exactly one patch
 all=$(git diff --name-only "$BASE" | sort)

@@ -4,7 +4,7 @@
 _flavor="light-lfc"
 pkgname=linux-$_flavor
 pkgver=6.19.5
-pkgrel=105
+pkgrel=106
 pkgdesc="Light L16 kernel (msm8996-mainline with L16 patches)"
 arch="aarch64"
 _carch="arm64"
@@ -55,6 +55,7 @@ source="
 	0025-clk-qcom-smd-rpm-withdraw-unused-handoff.patch
 	0026-clk-qcom-gcc-msm8996-mss-gpll0-no-parent.patch
 	0027-scsi-ufs-qcom-v2-no-unipro-clock-gating.patch
+	0028-drm-msm-fake-commit-flip-done-early.patch
 	"
 builddir="$srcdir/linux-$_tag"
 
@@ -113,4 +114,5 @@ e07fc7e719a8762dd6ffd14307daf8ae2d24c9f56061cef0b432bd06a4b111a192903a1fbb07191e
 c96b6feed40598c1ed10628731431ad56f915e2cbc59b000a4827f7e38dfb48a749747e02d81f5b758534c2cda4757993232d1aaae3697df8ba47a7e8de8866b  0025-clk-qcom-smd-rpm-withdraw-unused-handoff.patch
 1bc50f4d068bc675e6f72333b4c9b001b73857be3d13c43bf91e187efee53fd115dd671d832e609c73a3b71514685e35a4cd167af918383b2a158eac89fad638  0026-clk-qcom-gcc-msm8996-mss-gpll0-no-parent.patch
 e61562b07990cc1768255b518c8a7ea0423e67682479f29e7c6c1072916bb98b25aa1502207d85630d2d7c39e72c3b1fb8f037e7e8dbcae71292ba196d4b0d48  0027-scsi-ufs-qcom-v2-no-unipro-clock-gating.patch
+4a0bbaaa155b5906c5bf0cc22e99a62f52d8512e740ce222dce867f089059a9dae587b23596ab99b0bc8e299bca7ff807282c59dee79d5f7bb68c71500636c72  0028-drm-msm-fake-commit-flip-done-early.patch
 "
