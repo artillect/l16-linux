@@ -118,6 +118,16 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [ ] Power-key long press: the power menu once froze on its first frame during a 10 s hold;
       not seen on a short hold since
 - [ ] Hack cleanup: comments about the persistent transfer streams
+- [ ] Display: phoc logs "Atomic commit failed: Resource busy" by the thousand on every boot of
+      the systemd install (2.5k-34k per boot, from login on, before Viewfinder opens), with
+      a few to a few dozen "pp done time out, lm=0" from MDP5. Same kernel (r102) as the
+      OpenRC install, where phoc's log wasn't in a journal, so it's unknown whether it's new.
+      Find what starts it (login, a rotation, a modeset) and whether the first-mixer fix
+      still holds
+- [ ] Phosh's home bar sometimes disappears (and once the shade wouldn't dismiss, until the
+      power button blanked and unblanked the screen). Intermittent: seen 2026-10-05 after
+      opening Viewfinder in portrait, turning to landscape, then opening and closing the
+      shade; the same steps again didn't repeat it. Possibly tied to the display errors above
 - [ ] Photos over USB without SSH: show up on the computer when plugged in, as a camera or a
       portable device. First check what stock did (MTP or PTP, which folders, and why the gallery
       locks while plugged in). The pieces: FunctionFS is in the kernel, `umtprd` (an MTP server,

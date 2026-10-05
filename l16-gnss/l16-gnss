@@ -69,7 +69,15 @@ def connect_modem():
         device.allocate_client(Qmi.Service.LOC, Qmi.CID_NONE, 10, None, allocated)
 
     def allocated(device, res):
-        client = device.allocate_client_finish(res)
+        try:
+            client = device.allocate_client_finish(res)
+        except GLib.Error as e:
+            # the modem isn't up yet (systemd starts this before the modem has booted): ask
+            # again
+            log('no LOC client yet:', e.message)
+            GLib.timeout_add_seconds(5, lambda: (device.allocate_client(
+                Qmi.Service.LOC, Qmi.CID_NONE, 10, None, allocated), False)[1])
+            return
         client.connect('nmea', on_nmea)
         client.connect('position-report', on_position)
         inp = Qmi.MessageLocRegisterEventsInput()

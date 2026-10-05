@@ -1,0 +1,23 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] Send the current readings to a client that claims an active sensor
+
+A client that claims a sensor another client already holds got its Claim
+returned with no readings, and then only the next change. Phosh releases
+the accelerometer while rotation is locked; when it claims it again, it
+applies the orientation it cached before releasing it, so the screen stays
+in the wrong orientation until the device is turned.
+---
+--- a/src/iio-sensor-proxy.c	2026-03-02 11:19:51.000000000 -0800
++++ b/src/iio-sensor-proxy.c	2026-10-05 09:31:30.879102817 -0700
+@@ -542,7 +542,10 @@
+ 						 invocation);
+ 			} else {
+ 				/* Client added while sensor is active already, can return the
+-				 * invocation immediately. */
++				 * invocation immediately. Send it the current readings first:
++				 * no change may come for a long time, and a client that had
++				 * released the sensor holds stale values until then. */
++				send_dbus_event_for_client (data, sender, mask_for_sensor_type (driver_type));
+ 				g_dbus_method_invocation_return_value (invocation, NULL);
+ 			}
+ 		} else {
