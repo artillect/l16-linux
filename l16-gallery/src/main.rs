@@ -11,6 +11,7 @@ mod icons;
 #[path = "../../glycin-lri/src/lri.rs"]
 mod lri;
 mod places;
+mod strip;
 
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -177,11 +178,10 @@ struct Gallery {
     cell: RefCell<(i32, i32, u32)>,
     stack: gtk::Stack,
     empty: gtk::Label,
-    // the viewer's two pages (a picture in its scroller), the shown one and the next: the
-    // next photo goes into the other page, which slides in over the last one
-    pages: [(gtk::Picture, gtk::ScrolledWindow); 2],
-    page: Rc<Cell<usize>>,
-    slide: gtk::Stack,
+    // the viewer's pages (a picture in its scroller): the previous, the shown and the next
+    // photo, side by side in the strip that follows the finger
+    pages: [(gtk::Picture, gtk::ScrolledWindow); 3],
+    strip: strip::Strip,
     status: gtk::Label,
     title: gtk::Label,
     process: gtk::Button,
@@ -483,8 +483,20 @@ impl Gallery {
             self.picture().set_paintable(gdk::Texture::from_filename(thumb_path(&path)).ok().as_ref());
         }
         self.show_info();
+        self.neighbours();
         // the quick look (and the photo's details) either way, from its worker
         let _ = self.quick_tx.send(path.clone());
+    }
+
+    // the photos either side, ready to slide in: their thumbnails (quick to load)
+    fn neighbours(&self) {
+        let Some(i) = *self.current.borrow() else { return };
+        for (k, d) in [(0usize, -1i64), (2, 1)] {
+            let j = i as i64 + d;
+            let path = if j < 0 { None } else { self.photos.borrow().get(j as usize).cloned() };
+            let tex = path.and_then(|p| gdk::Texture::from_filename(thumb_path(&p)).ok());
+            self.pages[k].0.set_paintable(tex.as_ref());
+        }
     }
 
     // the full picture, by Light's renderer (about 15 s); queued, so several can be asked for
@@ -504,35 +516,43 @@ impl Gallery {
     }
 
     fn picture(&self) -> &gtk::Picture {
-        &self.pages[self.page.get()].0
+        &self.pages[1].0
     }
 
     fn scroller(&self) -> &gtk::ScrolledWindow {
-        &self.pages[self.page.get()].1
+        &self.pages[1].1
     }
 
-    // the next or previous photo, sliding in from the side it's on
-    fn step(&self, by: i64) {
-        let Some(i) = *self.current.borrow() else { return };
-        let n = self.photos.borrow().len() as i64;
-        let j = i as i64 + by;
-        if !(0..n).contains(&j) {
+    // is there a photo @by along from the shown one
+    fn has(&self, by: i64) -> bool {
+        let Some(i) = *self.current.borrow() else { return false };
+        (0..self.photos.borrow().len() as i64).contains(&(i as i64 + by))
+    }
+
+    // the strip slid on to the next (@by 1) or previous (-1) photo, from wherever the finger
+    // left it; then that photo is the shown one
+    fn step(self: &Rc<Self>, by: i64) {
+        if !self.has(by) {
+            self.strip.animate_to(0.0, || {});
             return;
         }
-        let last = self.page.get();
-        self.page.set(1 - last);
-        self.open(j as usize);
-        self.slide.set_transition_type(if by > 0 {
-            gtk::StackTransitionType::SlideLeft
-        } else {
-            gtk::StackTransitionType::SlideRight
-        });
-        self.slide.set_visible_child(self.scroller());
-        // the last photo's picture let go once it has slid out (unless it's back already)
-        let (pic, page) = (self.pages[last].0.clone(), self.page.clone());
-        glib::timeout_add_local_once(Duration::from_millis(400), move || {
-            if page.get() != last {
-                pic.set_paintable(None::<&gdk::Paintable>);
+        let a = self.clone();
+        self.strip.animate_to(-(by as f64) * self.strip.step(), move || a.landed(by));
+    }
+
+    fn landed(self: &Rc<Self>, by: i64) {
+        let Some(i) = *self.current.borrow() else { return };
+        let j = (i as i64 + by) as usize;
+        // what's on screen moves to the middle page, in the same frame as the strip goes back
+        let shown = self.pages[if by > 0 { 2 } else { 0 }].0.paintable();
+        self.picture().set_paintable(shown.as_ref());
+        self.strip.set_offset(0.0);
+        *self.current.borrow_mut() = Some(j);
+        // then the photo itself (decoding the full picture takes a moment: after this frame)
+        let a = self.clone();
+        glib::timeout_add_local_once(Duration::from_millis(30), move || {
+            if *a.current.borrow() == Some(j) {
+                a.open(j);
             }
         });
     }
@@ -782,12 +802,10 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         scroller.set_child(Some(&picture));
         (picture, scroller)
     };
-    let pages = [page(), page()];
-    let slide = gtk::Stack::new();
-    slide.set_transition_duration(220);
-    for (_, scroller) in &pages {
-        slide.add_child(scroller);
-    }
+    let pages = [page(), page(), page()];
+    let strip = strip::Strip::new([pages[0].1.upcast_ref(), pages[1].1.upcast_ref(), pages[2].1.upcast_ref()]);
+    strip.set_hexpand(true);
+    strip.set_vexpand(true);
     let back = icons::button(icons::ARROW_LEFT, "");
     let title = gtk::Label::new(None);
     title.set_hexpand(true);
@@ -847,7 +865,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     status.set_can_target(false);
     status.set_visible(false);
     let viewer = gtk::Overlay::new();
-    viewer.set_child(Some(&slide));
+    viewer.set_child(Some(&strip));
     viewer.add_overlay(&bar);
     viewer.add_overlay(&info_box);
     viewer.add_overlay(&status);
@@ -933,8 +951,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
         stack,
         empty,
         pages,
-        page: Rc::new(Cell::new(0)),
-        slide,
+        strip,
         status,
         title,
         process: process.clone(),
@@ -992,6 +1009,7 @@ fn build(app: &gtk::Application) -> Rc<Gallery> {
     for (_, scroller) in &g.pages {
         add_viewer_gestures(&g, scroller, &bar, &info);
     }
+    add_swipe(&g);
     // the bar back each time a photo is opened from the grid
     let b = bar.clone();
     g.stack.connect_visible_child_name_notify(move |s| {
@@ -1057,8 +1075,7 @@ fn main() -> glib::ExitCode {
 
 // a viewer page's gestures. A tap on the photo hides the bar (and the info) for an
 // unobstructed view, or brings it back; a swipe isn't a tap (the click gesture also
-// ends a swipe, so a finger that moved is left out). A swipe goes between photos (when
-// not zoomed in); a pinch zooms.
+// ends a swipe, so a finger that moved is left out). A pinch zooms.
 fn add_viewer_gestures(g: &Rc<Gallery>, scroller: &gtk::ScrolledWindow, bar: &gtk::Box, info: &gtk::ToggleButton) {
     let tap = gtk::GestureClick::new();
     let down = Rc::new(Cell::new((0.0, 0.0)));
@@ -1077,17 +1094,6 @@ fn add_viewer_gestures(g: &Rc<Gallery>, scroller: &gtk::ScrolledWindow, bar: &gt
         }
     });
     scroller.add_controller(tap);
-
-    let swipe = gtk::GestureSwipe::new();
-    swipe.set_touch_only(false);
-    let a = g.clone();
-    swipe.connect_swipe(move |_, vx, vy| {
-        if *a.zoom.borrow() > 1.0 || vx.abs() < 400.0 || vx.abs() < vy.abs() {
-            return;
-        }
-        a.step(if vx < 0.0 { 1 } else { -1 });
-    });
-    scroller.add_controller(swipe);
 
     let pinch = gtk::GestureZoom::new();
     let a = g.clone();
@@ -1113,4 +1119,54 @@ fn add_viewer_gestures(g: &Rc<Gallery>, scroller: &gtk::ScrolledWindow, bar: &gt
         let a = g.clone();
         adj.connect_changed(move |_| a.scroll());
     }
+}
+
+// swiping between photos, as a phone gallery: (when not zoomed in) a sideways drag moves the
+// strip with the finger, the neighbours coming in from the side (resisting where there is
+// none); let go past a third of the way or with a flick and the photo slides on, else back.
+// The drag runs before the pages' own gestures and takes the touch once it's clearly
+// sideways (so it isn't a tap, and a zoomed photo still pans).
+fn add_swipe(g: &Rc<Gallery>) {
+    let drag = gtk::GestureDrag::new();
+    drag.set_propagation_phase(gtk::PropagationPhase::Capture);
+    // swiping, and the last two moves (time in us, x) for the speed at the end
+    let swiping = Rc::new(Cell::new(false));
+    let moves = Rc::new(Cell::new([(0i64, 0.0f64); 2]));
+    let (a, sw, mv) = (g.clone(), swiping.clone(), moves.clone());
+    drag.connect_drag_begin(move |_, _, _| {
+        a.strip.finish();
+        sw.set(false);
+        mv.set([(glib::monotonic_time(), 0.0); 2]);
+    });
+    let (a, sw, mv) = (g.clone(), swiping.clone(), moves.clone());
+    drag.connect_drag_update(move |d, dx, dy| {
+        if !sw.get() {
+            if *a.zoom.borrow() > 1.0 || dx.abs() < 12.0 || dx.abs() < dy.abs() * 1.2 {
+                return;
+            }
+            sw.set(true);
+            d.set_state(gtk::EventSequenceState::Claimed);
+        }
+        let m = mv.get();
+        mv.set([m[1], (glib::monotonic_time(), dx)]);
+        let by = if dx < 0.0 { 1 } else { -1 };
+        a.strip.set_offset(if a.has(by) { dx } else { dx * 0.3 });
+    });
+    let (a, sw, mv) = (g.clone(), swiping, moves);
+    drag.connect_drag_end(move |_, dx, _| {
+        if !sw.get() {
+            return;
+        }
+        let [(t0, x0), (t1, x1)] = mv.get();
+        let speed = if t1 > t0 { (x1 - x0) / ((t1 - t0) as f64 / 1000.0) } else { 0.0 }; // px/ms
+        let third = a.strip.step() / 3.0;
+        if dx < -third || speed < -0.5 {
+            a.step(1);
+        } else if dx > third || speed > 0.5 {
+            a.step(-1);
+        } else {
+            a.strip.animate_to(0.0, || {});
+        }
+    });
+    g.strip.add_controller(drag);
 }
