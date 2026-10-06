@@ -2698,6 +2698,16 @@ Turn them on in Settings › Privacy › Location.";
     }
 
     // the wheels' layer, shown while there is a wheel
+    // a drag along the UI's own down, as it's turned for portrait (`quarter` clockwise): the
+    // wheels are swiped across as they're drawn, not along the window's landscape axis
+    fn drag_along(&self, dx: f64, dy: f64) -> f64 {
+        match self.quarter.get() {
+            1 => dx,
+            -1 => -dx,
+            _ => dy,
+        }
+    }
+
     fn update_wheels(&self) {
         let shown = {
             let st = self.st.borrow();
@@ -3724,13 +3734,13 @@ fn build(gapp: &gtk::Application) {
             a.update_wheels();
         });
         let a = app.clone();
-        drag.connect_drag_update(move |_, _, dy| {
+        drag.connect_drag_update(move |_, dx, dy| {
             let (dial, start, dir) = {
                 let st = a.st.borrow();
                 (st.wheel, st.wheel_start, if st.inverse_wheel { -1.0 } else { 1.0 })
             };
             if let Some(dial) = dial {
-                a.set_dial(dial, start + dir * dy * 0.001);
+                a.set_dial(dial, start + dir * a.drag_along(dx, dy) * 0.001);
             }
         });
         let a = app.clone();
@@ -3780,12 +3790,13 @@ fn build(gapp: &gtk::Application) {
         st.mode_swiped = false;
     });
     let a = app.clone();
-    drag.connect_drag_update(move |_, _, dy| {
-        if dy.abs() > 8.0 {
+    drag.connect_drag_update(move |_, dx, dy| {
+        let along = a.drag_along(dx, dy);
+        if along.abs() > 8.0 {
             a.st.borrow_mut().mode_swiped = true;
         }
         let start = a.st.borrow().mode_start;
-        a.set_mode_pos(start + dy * 0.0035, true);
+        a.set_mode_pos(start + along * 0.0035, true);
     });
     let a = app.clone();
     drag.connect_drag_end(move |_, _, _| {

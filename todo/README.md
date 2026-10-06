@@ -139,6 +139,15 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
       seen the minute location services were turned on. GeoClue's own where-am-i shows the
       same assertion (KDE Discuss), so likely libgeoclue's timeout path; and why GeoClue
       times out for it at all
+- [ ] Home screen sometimes entirely black with the status bar drawn (so phoc drew the top
+      layer); it comes back on swiping the shade down or tapping an (unseen) icon. Seen
+      2026-10-05 on phoc r107; a few times before for a moment. Next time: phosh-home and
+      phoc layer/render debug logs (DebugControl LogDomains), not screenshots
+- [ ] Lock screen keeps the orientation from before it blanked for a moment after waking:
+      Phosh releases the accelerometer while blanked and nothing else holds it now
+      (light-lfc-rotate is gone), so a fresh reading takes the sensor's start-up
+- [ ] App switcher thumbnail of a pinned app (Viewfinder) stays landscape in portrait:
+      phoc's thumbnail could turn it by the view's transform
 - [ ] Photos over USB without SSH: show up on the computer when plugged in, as a camera or a
       portable device. First check what stock did (MTP or PTP, which folders, and why the gallery
       locks while plugged in). The pieces: FunctionFS is in the kernel, `umtprd` (an MTP server,
