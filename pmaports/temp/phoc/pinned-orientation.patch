@@ -1,0 +1,528 @@
+From: Riley <oreo4455@gmail.com>
+Subject: [PATCH] Fixed orientation for apps that pin one, while the shell rotates
+
+X-Phosh-Orientation=landscape in an app's desktop file pins its view to landscape
+while fullscreen: it keeps the landscape size (and gets it as its configure bounds,
+or GTK keeps it within the monitor's size) and is drawn in that orientation
+whatever the output's transform, with damage and input mapped through it, while
+the output (and so Phosh's panels, home bar and shade) rotates with the device: a
+camera app held either way. No modeset shield over it (it doesn't move): the
+shell's top layer waits instead, until a rotation's new layout is in. Direct
+scanout compares the buffer's transform with the view's, so a client that
+pre-rotates its buffers to it is still scanned out.
+---
+--- a/src/render.h
++++ b/src/render.h
+@@ -25,6 +25,9 @@
+   float                       alpha;
+   struct wlr_render_pass     *render_pass;
+   enum wlr_scale_filter_mode  tex_filter;
++  /* a pinned view drawn in its own orientation (see phoc_output_get_view_transform) */
++  gboolean                    use_view_transform;
++  enum wl_output_transform    view_transform;
+ } PhocRenderContext;
+ 
+ 
+--- a/src/render.c
++++ b/src/render.c
+@@ -18,6 +18,7 @@
+ #include "cursor.h"
+ #include "input.h"
+ #include "layer-surface.h"
++#include "layout-transaction.h"
+ #include "render-private.h"
+ #include "render.h"
+ #include "seat.h"
+@@ -219,6 +220,7 @@
+     goto buffer_damage_finish;
+ 
+   transform = wlr_output_transform_compose (wlr_output_transform_invert (surface_transform),
++                                            ctx->use_view_transform ? ctx->view_transform :
+                                             output->wlr_output->transform);
+ 
+   wlr_render_pass_add_texture (ctx->render_pass, &(struct wlr_render_texture_options) {
+@@ -260,11 +262,15 @@
+ 
+   phoc_utils_scale_box (&dst_box, scale);
+   phoc_utils_scale_box (&dst_box, wlr_output->scale);
+-  phoc_output_transform_box (output, &dst_box);
+-
+   phoc_utils_scale_box (&clip_box, scale);
+   phoc_utils_scale_box (&clip_box, wlr_output->scale);
+-  phoc_output_transform_box (output, &clip_box);
++  if (ctx->use_view_transform) {
++    phoc_output_transform_box_as (output, &dst_box, ctx->view_transform);
++    phoc_output_transform_box_as (output, &clip_box, ctx->view_transform);
++  } else {
++    phoc_output_transform_box (output, &dst_box);
++    phoc_output_transform_box (output, &clip_box);
++  }
+ 
+   alpha_modifier_state = wlr_alpha_modifier_v1_get_surface_state (surface);
+   if (alpha_modifier_state)
+@@ -315,7 +321,10 @@
+   if (!phoc_view_is_fullscreen (view))
+     render_blings (output, view, ctx);
+ 
++  ctx->use_view_transform = phoc_output_view_is_rotated (output, view);
++  ctx->view_transform = phoc_output_get_view_transform (output, view);
+   phoc_output_view_for_each_surface (output, view, render_surface_iterator, ctx);
++  ctx->use_view_transform = FALSE;
+ }
+ 
+ 
+@@ -595,8 +604,12 @@
+     }
+ #endif
+ 
+-    if (phoc_output_has_shell_revealed (output)) {
+-      /* Render top layer above fullscreen view when requested */
++    /* Render top layer above fullscreen view when requested. Over a pinned view (no
++     * modeset shield: it doesn't move) not while a rotation's layout is pending: its
++     * surfaces would show at their old places, Phosh's home (overview) across the view */
++    if (phoc_output_has_shell_revealed (output) &&
++        !(phoc_view_get_pinned_transform (view) >= 0 &&
++          phoc_layout_transaction_is_active (phoc_layout_transaction_get_default ()))) {
+       render_layer (ZWLR_LAYER_SHELL_V1_LAYER_TOP, ctx);
+     }
+   } else {
+--- a/src/output.h
++++ b/src/output.h
+@@ -186,6 +186,13 @@
+ const char *phoc_output_get_identifier       (PhocOutput *self);
+ void       phoc_output_transform_damage      (PhocOutput *self, pixman_region32_t *damage);
+ void       phoc_output_transform_box         (PhocOutput *self, struct wlr_box *box);
++void       phoc_output_transform_box_as      (PhocOutput               *self,
++                                              struct wlr_box           *box,
++                                              enum wl_output_transform  transform);
++enum wl_output_transform phoc_output_get_view_transform (PhocOutput *self, PhocView *view);
++gboolean   phoc_output_view_is_rotated       (PhocOutput *self, PhocView *view);
++void       phoc_output_map_to_view           (PhocOutput *self, PhocView *view,
++                                              double *ox, double *oy);
+ GSList    *phoc_output_get_debug_damage      (PhocOutput *self);
+ void       phoc_output_set_fullscreen_view   (PhocOutput *self, PhocView *view);
+ 
+--- a/src/output.c
++++ b/src/output.c
+@@ -114,6 +114,8 @@
+   PhocOutput          *output;
+   double               ox, oy;
+   float                scale;
++  /* a pinned view in the other orientation: its surfaces are in that one's coordinates */
++  gboolean             swap_output_box;
+ } PhocOutputSurfaceIteratorData;
+ 
+ 
+@@ -124,6 +126,11 @@
+ {
+   PhocOutputPrivate *priv = phoc_output_get_instance_private (self);
+ 
++  /* the top layer was held back over a pinned view while the transaction ran */
++  if (!phoc_layout_transaction_is_active (transaction) && self->fullscreen_view &&
++      phoc_view_get_pinned_transform (self->fullscreen_view) >= 0)
++    phoc_output_damage_whole (self);
++
+   if (!priv->modeset_shield)
+     return;
+ 
+@@ -202,6 +209,12 @@
+ 
+   struct wlr_box output_box = {0};
+   wlr_output_effective_resolution (self->wlr_output, &output_box.width, &output_box.height);
++  if (data->swap_output_box) {
++    int width = output_box.width;
++
++    output_box.width = output_box.height;
++    output_box.height = width;
++  }
+   phoc_utils_scale_box (&output_box, 1 / data->scale);
+ 
+   struct wlr_box intersection;
+@@ -471,8 +484,10 @@
+   if (wlr_surface->buffer == NULL)
+     return false;
+ 
++  /* the buffer must be in the panel's orientation: drawn with the view's transform (a
++   * pinned view's, see phoc_output_get_view_transform), it then is whatever the output's */
+   if ((float)wlr_surface->current.scale != wlr_output->scale ||
+-      wlr_surface->current.transform != wlr_output->transform) {
++      wlr_surface->current.transform != phoc_output_get_view_transform (self, view)) {
+     return false;
+   }
+ 
+@@ -751,7 +766,8 @@
+      * dim screen until this finished to avoid flickering */
+     if (configure_sent &&
+         !priv->modeset_shield &&
+-        !phoc_output_shield_is_raised (priv->shield)) {
++        !phoc_output_shield_is_raised (priv->shield) &&
++        !(self->fullscreen_view && phoc_view_get_pinned_transform (self->fullscreen_view) >= 0)) {
+       phoc_output_raise_shield (self, FALSE);
+       priv->modeset_shield = TRUE;
+     }
+@@ -1310,7 +1326,9 @@
+     .output = self,
+     .ox = view->box.x - output_box.x,
+     .oy = view->box.y - output_box.y,
+-    .scale = phoc_view_get_scale (view)
++    .scale = phoc_view_get_scale (view),
++    .swap_output_box = (phoc_output_get_view_transform (self, view) & WL_OUTPUT_TRANSFORM_90) !=
++                       (self->wlr_output->transform & WL_OUTPUT_TRANSFORM_90),
+   };
+ 
+   phoc_view_for_each_surface (view, phoc_output_for_each_surface_iterator, &data);
+@@ -1784,6 +1802,65 @@
+ }
+ 
+ 
++typedef struct {
++  bool                     whole;
++  enum wl_output_transform transform;
++} DamageViewTransformData;
++
++/* As damage_surface_iterator, for a view drawn with another transform than the output's:
++ * the damage goes to the damage ring through that transform */
++static void
++damage_view_transform_surface_iterator (PhocOutput         *self,
++                                        struct wlr_surface *wlr_surface,
++                                        struct wlr_box     *_box,
++                                        float               scale,
++                                        void               *data)
++{
++  PhocOutputPrivate *priv = phoc_output_get_instance_private (self);
++  DamageViewTransformData *d = data;
++  PhocSurface *surface = wlr_surface->data;
++  struct wlr_box box = *_box;
++  int width = self->wlr_output->width, height = self->wlr_output->height;
++  pixman_region32_t damage;
++
++  /* that transform's resolution */
++  if (d->transform & WL_OUTPUT_TRANSFORM_90) {
++    width = self->wlr_output->height;
++    height = self->wlr_output->width;
++  }
++
++  phoc_utils_scale_box (&box, scale);
++  phoc_utils_scale_box (&box, self->wlr_output->scale);
++
++  pixman_region32_init (&damage);
++  wlr_surface_get_effective_damage (wlr_surface, &damage);
++  pixman_region32_union (&damage, &damage, phoc_surface_get_damage (surface));
++  phoc_surface_clear_damage (surface);
++
++  wlr_region_scale (&damage, &damage, scale);
++  wlr_region_scale (&damage, &damage, self->wlr_output->scale);
++  if (ceil (self->wlr_output->scale) > wlr_surface->current.scale)
++    wlr_region_expand (&damage, &damage, ceil (self->wlr_output->scale) - wlr_surface->current.scale);
++  pixman_region32_translate (&damage, box.x, box.y);
++
++  if (d->whole)
++    pixman_region32_union_rect (&damage, &damage, box.x, box.y, box.width, box.height);
++
++  pixman_region32_intersect_rect (&damage, &damage, 0, 0, width, height);
++  if (!pixman_region32_empty (&damage)) {
++    /* to the damage ring's buffer coordinates */
++    wlr_region_transform (&damage, &damage, wlr_output_transform_invert (d->transform),
++                          width, height);
++    wlr_damage_ring_add (&priv->damage_ring, &damage);
++    wlr_output_schedule_frame (self->wlr_output);
++  }
++  pixman_region32_fini (&damage);
++
++  if (!wl_list_empty (&wlr_surface->current.frame_callback_list))
++    wlr_output_schedule_frame (self->wlr_output);
++}
++
++
+ static void
+ damage_view_blings (PhocOutput *self, PhocView  *view)
+ {
+@@ -1825,6 +1902,16 @@
+   if (!phoc_view_accept_damage (self, view))
+     return;
+ 
++  /* a pinned view drawn in its own orientation: its damage is in that orientation's
++   * coordinates */
++  if (phoc_output_view_is_rotated (self, view)) {
++    DamageViewTransformData d = { .whole = whole,
++                                  .transform = phoc_output_get_view_transform (self, view) };
++
++    phoc_output_view_for_each_surface (self, view, damage_view_transform_surface_iterator, &d);
++    return;
++  }
++
+   if (whole)
+     damage_view_blings (self, view);
+ 
+@@ -2583,6 +2670,95 @@
+ }
+ 
+ 
++/**
++ * phoc_output_transform_box_as:
++ * @self: The output
++ * @box: A box in output coordinates of an output with @transform
++ * @transform: The transform
++ *
++ * As [method@Output.transform_box], for the output as it would be with @transform:
++ * a pinned view's boxes (see [method@Output.get_view_transform]).
++ */
++void
++phoc_output_transform_box_as (PhocOutput *self, struct wlr_box *box,
++                              enum wl_output_transform transform)
++{
++  int ow = self->wlr_output->width, oh = self->wlr_output->height;
++
++  if (transform & WL_OUTPUT_TRANSFORM_90) {
++    ow = self->wlr_output->height;
++    oh = self->wlr_output->width;
++  }
++  wlr_box_transform (box, box, wlr_output_transform_invert (transform), ow, oh);
++}
++
++/**
++ * phoc_output_get_view_transform:
++ * @self: The output
++ * @view: A view
++ *
++ * The transform @view is drawn with on this output: the output's, or for a view
++ * fullscreen on it whose app pins an orientation (X-Phosh-Orientation in its desktop
++ * file), that one. Such a view keeps its size when the output rotates, and only the
++ * shell's layers turn with the device.
++ *
++ * Returns: The transform
++ */
++enum wl_output_transform
++phoc_output_get_view_transform (PhocOutput *self, PhocView *view)
++{
++  int pinned;
++
++  if (view && phoc_view_is_fullscreen (view) && phoc_view_get_fullscreen_output (view) == self) {
++    pinned = phoc_view_get_pinned_transform (view);
++    if (pinned >= 0)
++      return pinned;
++  }
++  return self->wlr_output->transform;
++}
++
++/**
++ * phoc_output_view_is_rotated:
++ * @self: The output
++ * @view: A view
++ *
++ * Returns: Whether @view is drawn with another transform than the output's
++ */
++gboolean
++phoc_output_view_is_rotated (PhocOutput *self, PhocView *view)
++{
++  return phoc_output_get_view_transform (self, view) != self->wlr_output->transform;
++}
++
++/**
++ * phoc_output_map_to_view:
++ * @self: The output
++ * @view: A view
++ * @ox: (inout): x in output coordinates
++ * @oy: (inout): y in output coordinates
++ *
++ * Map a point in output coordinates to those of the output as @view is drawn
++ * (see [method@Output.get_view_transform]): where it lands in a pinned view.
++ */
++void
++phoc_output_map_to_view (PhocOutput *self, PhocView *view, double *ox, double *oy)
++{
++  float scale = self->wlr_output->scale;
++  struct wlr_box box;
++
++  if (!phoc_output_view_is_rotated (self, view))
++    return;
++
++  /* to the buffer's pixels, then into the view's orientation */
++  box = (struct wlr_box) { .x = floor (*ox * scale), .y = floor (*oy * scale), .width = 1, .height = 1 };
++  phoc_output_transform_box (self, &box);
++  wlr_box_transform (&box, &box, phoc_output_get_view_transform (self, view),
++                     self->wlr_output->width, self->wlr_output->height);
++  *ox = (box.x + 0.5) / scale;
++  *oy = (box.y + 0.5) / scale;
++}
++
++
+ enum wlr_scale_filter_mode
+ phoc_output_get_texture_filter_mode (PhocOutput *self)
+ {
+--- a/src/view.h
++++ b/src/view.h
+@@ -185,6 +185,7 @@
+ void                  phoc_view_close (PhocView *self);
+ void                  phoc_view_set_app_id (PhocView *self, const char *app_id);
+ const char *          phoc_view_get_app_id (PhocView *self);
++int                   phoc_view_get_pinned_transform (PhocView *self);
+ void                  phoc_view_for_each_surface (PhocView                   *self,
+                                                   wlr_surface_iterator_func_t iterator,
+                                                   gpointer                    user_data);
+--- a/src/view.c
++++ b/src/view.c
+@@ -18,6 +18,7 @@
+ #include "view-child-private.h"
+ #include "view-private.h"
+ #include "workspace.h"
++#include "xdg-toplevel.h"
+ 
+ #include <wlr/types/wlr_subcompositor.h>
+ #include <wlr/types/wlr_output_layout.h>
+@@ -51,6 +52,7 @@
+ typedef struct _PhocViewPrivate {
+   char          *title;
+   char          *app_id;
++  int            pinned_transform;
+   GSettings     *settings;
+   pid_t          pid;
+ 
+@@ -1078,11 +1080,23 @@
+ 
+     struct wlr_box output_box;
+     wlr_output_layout_get_box (desktop->layout, output->wlr_output, &output_box);
++    /* pinned to the other orientation: its size there, whatever the output's */
++    if (priv->pinned_transform >= 0 &&
++        (priv->pinned_transform & WL_OUTPUT_TRANSFORM_90) !=
++        (output->wlr_output->transform & WL_OUTPUT_TRANSFORM_90)) {
++      int width = output_box.width;
++
++      output_box.width = output_box.height;
++      output_box.height = width;
++    }
+     phoc_view_move_resize (self,
+                            output_box.x - view_geom.x * priv->scale,
+                            output_box.y - view_geom.y * priv->scale,
+                            output_box.width,
+                            output_box.height);
++    /* and kept at that size when the monitor turns */
++    if (priv->pinned_transform >= 0 && PHOC_IS_XDG_TOPLEVEL (self))
++      phoc_xdg_toplevel_set_bounds (PHOC_XDG_TOPLEVEL (self), output_box.width, output_box.height);
+ 
+     priv->fullscreen_output = output;
+     phoc_output_set_fullscreen_view (output, self);
+@@ -1716,6 +1730,50 @@
+ }
+ 
+ 
++/* X-Phosh-Orientation=landscape in the app's desktop file: drawn in landscape (the
++ * transform Phosh rotates to for "right-up") while it's fullscreen, whatever the output's */
++static int
++lookup_pinned_transform (const char *app_id)
++{
++  g_autoptr (GKeyFile) key_file = g_key_file_new ();
++  g_autofree char *path = NULL;
++  g_autofree char *orientation = NULL;
++
++  if (!app_id)
++    return -1;
++
++  path = g_strdup_printf ("applications/%s.desktop", app_id);
++  if (!g_key_file_load_from_data_dirs (key_file, path, NULL, G_KEY_FILE_NONE, NULL))
++    return -1;
++
++  orientation = g_key_file_get_string (key_file, G_KEY_FILE_DESKTOP_GROUP,
++                                       "X-Phosh-Orientation", NULL);
++  if (g_strcmp0 (orientation, "landscape") == 0) {
++    g_debug ("%s is pinned to landscape", app_id);
++    return WL_OUTPUT_TRANSFORM_270;
++  }
++  return -1;
++}
++
++
++/**
++ * phoc_view_get_pinned_transform:
++ * @self: The view
++ *
++ * Returns: The transform the view's app pins it to when fullscreen, or -1
++ */
++int
++phoc_view_get_pinned_transform (PhocView *self)
++{
++  PhocViewPrivate *priv;
++
++  g_assert (PHOC_IS_VIEW (self));
++  priv = phoc_view_get_instance_private (self);
++
++  return priv->pinned_transform;
++}
++
++
+ void
+ phoc_view_set_app_id (PhocView *self, const char *app_id)
+ {
+@@ -1729,6 +1787,7 @@
+     priv->app_id = g_strdup (app_id);
+ 
+     bind_scale_to_fit_setting (self);
++    priv->pinned_transform = lookup_pinned_transform (app_id);
+   }
+ 
+   if (priv->toplevel_handle)
+@@ -2114,6 +2173,7 @@
+   priv = phoc_view_get_instance_private (self);
+   priv->alpha = 1.0f;
+   priv->scale = 1.0f;
++  priv->pinned_transform = -1;
+   priv->state = PHOC_VIEW_STATE_FLOATING;
+   priv->visibility = TRUE;
+ 
+--- a/src/desktop.c
++++ b/src/desktop.c
+@@ -308,7 +308,11 @@
+           return surface;
+       }
+ 
+-      if (view_at (output->fullscreen_view, lx, ly, &surface, sx, sy)) {
++      double vx = ox, vy = oy;
++
++      /* a pinned view drawn in its own orientation: where the point lands in it */
++      phoc_output_map_to_view (output, output->fullscreen_view, &vx, &vy);
++      if (view_at (output->fullscreen_view, lx - ox + vx, ly - oy + vy, &surface, sx, sy)) {
+         if (view)
+           *view = output->fullscreen_view;
+         return surface;
+--- a/src/xdg-toplevel.h
++++ b/src/xdg-toplevel.h
+@@ -27,5 +27,6 @@
+ 
+ void                phoc_handle_xdg_shell_toplevel (struct wl_listener *listener, void *data);
+ gboolean            phoc_xdg_toplevel_is_initialized (PhocXdgToplevel *self);
++void                phoc_xdg_toplevel_set_bounds (PhocXdgToplevel *self, int width, int height);
+ 
+ G_END_DECLS
+--- a/src/xdg-toplevel.c
++++ b/src/xdg-toplevel.c
+@@ -810,6 +810,30 @@
+ }
+ 
+ 
++/**
++ * phoc_xdg_toplevel_set_bounds:
++ * @self: The toplevel
++ * @width: The width
++ * @height: The height
++ *
++ * Tell the client the size it should keep within (xdg_toplevel.configure_bounds), for
++ * clients that bind a version that knows it. Without bounds, GTK keeps a window within
++ * its monitor's size, which a view pinned to the other orientation is bigger than.
++ */
++void
++phoc_xdg_toplevel_set_bounds (PhocXdgToplevel *self, int width, int height)
++{
++  g_assert (PHOC_IS_XDG_TOPLEVEL (self));
++
++  if (!self->xdg_toplevel->base->initialized ||
++      wl_resource_get_version (self->xdg_toplevel->resource) <
++      XDG_TOPLEVEL_CONFIGURE_BOUNDS_SINCE_VERSION)
++    return;
++
++  wlr_xdg_toplevel_set_bounds (self->xdg_toplevel, width, height);
++}
++
++
+ gboolean
+ phoc_xdg_toplevel_is_initialized (PhocXdgToplevel *self)
+ {
