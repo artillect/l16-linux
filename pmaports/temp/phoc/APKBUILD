@@ -13,7 +13,7 @@
 maintainer="team/phosh <newbie13xd@gmail.com>"
 pkgname=phoc
 pkgver=0.55.1
-pkgrel=106
+pkgrel=112
 pkgdesc="wlroots based Phone compositor for the Phosh shell"
 arch="all"
 url="https://gitlab.gnome.org/World/Phosh/phoc"
@@ -113,6 +113,6 @@ schemas() {
 sha512sums="
 23d94948eedec78099059e082a9b7fed029e5ecaec093eec6585770f592249d7db3be2a97d0a1fa72c4ed104d3d47f1c1890658b5beabeafd0ffc33656efd046  phoc-0.55.1.tar.xz
 58df41771cf3c5729e615b7cd55995b90161308541a84d8d7833b92c9817f6867375e72161ee8583b8adcc0288b2324d5dbe2ff3d4023bcd961310825551d840  layer-pending-frame-done.patch
-640baa53a8f20864c315cee69fa899104140dda5a881113932abfc55532b101aeb2bcd3451eb3e849b37b9edf558d93d4132b7644a72b84edee8bbd545e4c58d  pinned-orientation.patch
-71c481b91dde857c3df05aa99e480b147578301bf20c4fc0937b1bf63cff983adc52f3a4955500a4a5e66da849f34e3ce19caced4bc5a843f642d95ea304c142  draggable-fold-no-slide.patch
+9820ef0c55caf379b4b8b2c04bbb2c45b652498c37f2ddef489efd29ecc02304e96f6ebc08983a9963e89ea38b4ff5d6b66aef63dab736371176fb880038b42a  pinned-orientation.patch
+c9fcf8fd4b35106b3b1ba230a0d1c97b5a705d4f14cd5e0c3c97ad97859da5a087e1f6395d6117e012200a58d21d03b5b58c58a08c47da2df503ec5b4ba2cf38  draggable-fold-no-slide.patch
 "

@@ -484,6 +484,34 @@ pre-rotates its buffers to it is still scanned out.
          if (view)
            *view = output->fullscreen_view;
          return surface;
+--- a/src/cursor.c
++++ b/src/cursor.c
+@@ -1704,9 +1704,23 @@
+     } else {
+       PhocView *view = phoc_view_from_wlr_surface (root);
+       if (view) {
++        double vx = lx, vy = ly;
++
++        /* a pinned view drawn in its own orientation: where the point lands in it, as for
++         * the touch down (else a drag jumped across it) */
++        if (phoc_output_view_is_rotated (output, view)) {
++          struct wlr_box output_box;
++
++          wlr_output_layout_get_box (desktop->layout, output->wlr_output, &output_box);
++          vx -= output_box.x;
++          vy -= output_box.y;
++          phoc_output_map_to_view (output, view, &vx, &vy);
++          vx += output_box.x;
++          vy += output_box.y;
++        }
+         scale = phoc_view_get_scale (view);
+-        sx = lx / scale - view->box.x;
+-        sy = ly / scale - view->box.y;
++        sx = vx / scale - view->box.x;
++        sy = vy / scale - view->box.y;
+         found = true;
+       } else {
+         // FIXME: buggy fallback, but at least handles xdg_popups for now...
 --- a/src/xdg-toplevel.h
 +++ b/src/xdg-toplevel.h
 @@ -27,5 +27,6 @@

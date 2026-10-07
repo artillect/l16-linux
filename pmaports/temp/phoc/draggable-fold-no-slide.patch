@@ -1,49 +1,68 @@
 From: Riley <oreo4455@gmail.com>
-Subject: [PATCH] layer-shell-effects: no slide for a resting folded surface whose margin changes
+Subject: [PATCH] layer-shell-effects: no visible slide for a resting folded surface whose margin changes
 
 The commit handler re-targets a slide in to a changed folded margin
 ("in case it's ongoing") whenever anim_dir is ANIM_DIR_IN, which it stays
 once the surface has folded. So every later folded margin change, as a
 rotation brings, slid the surface from its old margin: Phosh's home and its
-overview background crossed the screen. Only re-target a running slide;
-move a resting folded surface to the new margin at once.
+overview background crossed the screen. A surface resting at its old folded
+margin (no slide running) now slides there at once, the slide ending as any
+(state, drag end to the client); others slide as before.
 ---
 --- a/src/layer-shell-effects.c
 +++ b/src/layer-shell-effects.c
-@@ -626,6 +626,9 @@
+@@ -626,6 +626,27 @@
  }
  
  
-+static void apply_margin (PhocDraggableLayerSurface *drag_surface, double margin);
++/* the margin on the drag surface's edge as it is now */
++static int32_t
++get_margin (PhocDraggableLayerSurface *drag_surface)
++{
++  struct wlr_layer_surface_v1 *wlr_layer_surface = drag_surface->layer_surface->layer_surface;
++
++  switch (wlr_layer_surface->current.anchor) {
++  case PHOC_LAYER_SHELL_EFFECT_DRAG_FROM_TOP:
++    return wlr_layer_surface->current.margin.top;
++  case PHOC_LAYER_SHELL_EFFECT_DRAG_FROM_BOTTOM:
++    return wlr_layer_surface->current.margin.bottom;
++  case PHOC_LAYER_SHELL_EFFECT_DRAG_FROM_LEFT:
++    return wlr_layer_surface->current.margin.left;
++  case PHOC_LAYER_SHELL_EFFECT_DRAG_FROM_RIGHT:
++    return wlr_layer_surface->current.margin.right;
++  default:
++    g_assert_not_reached ();
++  }
++}
 +
 +
  static void
  draggable_layer_surface_handle_commit (struct wl_listener *listener, void *data)
  {
-@@ -647,10 +650,23 @@
-   drag_surface->current.drag_mode = drag_surface->pending.drag_mode;
-   drag_surface->current.drag_handle = drag_surface->pending.drag_handle;
+@@ -633,6 +654,7 @@
+     wl_container_of(listener, drag_surface, surface_handle_commit);
+   PhocLayerSurface *layer_surface = drag_surface->layer_surface;
+   gboolean changed = FALSE;
++  int32_t old_folded = drag_surface->current.folded;
  
--  /* Update animation end in case it's ongoing to compensate for size changes */
-+  /* Update animation end in case it's ongoing to compensate for size changes. anim_dir
-+   * stays ANIM_DIR_IN once folded, so check that it is: otherwise a resting folded surface
-+   * whose folded margin changes (a rotation) slid there from its old margin, Phosh's home
-+   * (overview and its background) showing on the way. Move it there at once instead */
+   if (layer_surface == NULL)
+     return;
+@@ -649,8 +671,18 @@
+ 
+   /* Update animation end in case it's ongoing to compensate for size changes */
    if (changed && drag_surface->drag.anim_dir == ANIM_DIR_IN) {
--    drag_surface->drag.anim_end = drag_surface->current.folded;
--    phoc_draggable_layer_surface_slide (drag_surface, ANIM_DIR_IN);
-+    if (drag_surface->drag.anim_id) {
-+      drag_surface->drag.anim_end = drag_surface->current.folded;
-+      phoc_draggable_layer_surface_slide (drag_surface, ANIM_DIR_IN);
-+    } else if (drag_surface->drag.last_state ==
-+               ZPHOC_DRAGGABLE_LAYER_SURFACE_V1_DRAG_END_STATE_FOLDED &&
-+               layer_surface->layer_surface->output) {
-+      PhocOutput *output = PHOC_OUTPUT (layer_surface->layer_surface->output->data);
++    /* anim_dir stays ANIM_DIR_IN once folded, so a surface resting at its folded margin
++     * when that changes (a rotation) slid there from the old one: Phosh's home (overview
++     * and its background) crossed the screen. Such a surface slides at once instead, the
++     * slide still ending as any (state, drag end to the client) */
++    /* (a fresh surface's folded margin is still its initial 0: not folded yet) */
++    gboolean resting = !drag_surface->drag.anim_id && old_folded != 0 &&
++                       get_margin (drag_surface) == old_folded;
 +
-+      apply_margin (drag_surface, drag_surface->current.folded);
-+      phoc_layer_shell_arrange (output);
-+      phoc_output_damage_whole (output);
-+    }
+     drag_surface->drag.anim_end = drag_surface->current.folded;
+     phoc_draggable_layer_surface_slide (drag_surface, ANIM_DIR_IN);
++    if (resting)
++      drag_surface->drag.anim_duration = 1;
    }
  
    /* TODO: cancel related gestures on drag mode changes */
