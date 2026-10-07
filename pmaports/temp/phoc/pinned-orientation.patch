@@ -71,7 +71,37 @@ pre-rotates its buffers to it is still scanned out.
  }
  
  
-@@ -595,8 +604,12 @@
+@@ -423,15 +432,26 @@
+     .height = surface->current.height,
+   };
+ 
+-  float scale = fmin (data->width / (float)geo.width,
+-                      data->height / (float)geo.height);
++  /* a pinned view turned on its output: drawn as it shows there (the buffer's sides
++   * swapped already, see handle_get_thumbnail) */
++  enum wl_output_transform shown = phoc_view_get_shown_transform (data->view);
++  int width = data->width, height = data->height;
++
++  if (shown & WL_OUTPUT_TRANSFORM_90) {
++    width = data->height;
++    height = data->width;
++  }
++
++  float scale = fmin (width / (float)geo.width, height / (float)geo.height);
+   phoc_utils_scale_box (&dst_box, scale);
++  wlr_box_transform (&dst_box, &dst_box, shown, width, height);
+ 
+   wlr_render_pass_add_texture (data->render_pass, &(struct wlr_render_texture_options) {
+       .texture = texture,
+       .src_box = src_box,
+       .dst_box = dst_box,
+-      .transform = wlr_output_transform_invert (surface->current.transform),
++      .transform = wlr_output_transform_compose (
++        wlr_output_transform_invert (surface->current.transform), shown),
+       .alpha = &alpha,
+     });
+ }
+@@ -595,8 +615,12 @@
      }
  #endif
  
@@ -88,7 +118,7 @@ pre-rotates its buffers to it is still scanned out.
    } else {
 --- a/src/output.h
 +++ b/src/output.h
-@@ -186,6 +186,13 @@
+@@ -186,6 +186,14 @@
  const char *phoc_output_get_identifier       (PhocOutput *self);
  void       phoc_output_transform_damage      (PhocOutput *self, pixman_region32_t *damage);
  void       phoc_output_transform_box         (PhocOutput *self, struct wlr_box *box);
@@ -97,6 +127,7 @@ pre-rotates its buffers to it is still scanned out.
 +                                              enum wl_output_transform  transform);
 +enum wl_output_transform phoc_output_get_view_transform (PhocOutput *self, PhocView *view);
 +gboolean   phoc_output_view_is_rotated       (PhocOutput *self, PhocView *view);
++enum wl_output_transform phoc_view_get_shown_transform (PhocView *view);
 +void       phoc_output_map_to_view           (PhocOutput *self, PhocView *view,
 +                                              double *ox, double *oy);
  GSList    *phoc_output_get_debug_damage      (PhocOutput *self);
@@ -254,7 +285,7 @@ pre-rotates its buffers to it is still scanned out.
    if (whole)
      damage_view_blings (self, view);
  
-@@ -2583,6 +2670,95 @@
+@@ -2583,6 +2670,119 @@
  }
  
  
@@ -316,6 +347,30 @@ pre-rotates its buffers to it is still scanned out.
 +phoc_output_view_is_rotated (PhocOutput *self, PhocView *view)
 +{
 +  return phoc_output_get_view_transform (self, view) != self->wlr_output->transform;
++}
++
++/**
++ * phoc_view_get_shown_transform:
++ * @view: A view
++ *
++ * Returns: The transform that turns @view's content as it shows on its output: none,
++ * or for a pinned view drawn in another orientation than the output's, the difference
++ */
++enum wl_output_transform
++phoc_view_get_shown_transform (PhocView *view)
++{
++  PhocOutput *output;
++
++  if (!phoc_view_is_fullscreen (view))
++    return WL_OUTPUT_TRANSFORM_NORMAL;
++
++  output = phoc_view_get_fullscreen_output (view);
++  if (!output || !phoc_output_view_is_rotated (output, view))
++    return WL_OUTPUT_TRANSFORM_NORMAL;
++
++  return wlr_output_transform_compose (
++    wlr_output_transform_invert (output->wlr_output->transform),
++    phoc_output_get_view_transform (output, view));
 +}
 +
 +/**
@@ -554,3 +609,27 @@ pre-rotates its buffers to it is still scanned out.
  gboolean
  phoc_xdg_toplevel_is_initialized (PhocXdgToplevel *self)
  {
+--- a/src/phosh-private.c
++++ b/src/phosh-private.c
+@@ -10,6 +10,7 @@
+ #include "phoc-config.h"
+ #include "phoc-enums.h"
+ #include "phosh-private.h"
++#include "output.h"
+ 
+ #include <assert.h>
+ #include <stdlib.h>
+@@ -540,6 +541,13 @@
+   // to ignore it, at least for now.
+   struct wlr_box box;
+   phoc_view_get_box (view, &box);
++  /* a pinned view turned on its output: its thumbnail as it shows there */
++  if (phoc_view_get_shown_transform (view) & WL_OUTPUT_TRANSFORM_90) {
++    int width = box.width;
++
++    box.width = box.height;
++    box.height = width;
++  }
+ 
+   frame->format = WL_SHM_FORMAT_ARGB8888;
+   frame->width = box.width * view->wlr_surface->current.scale;

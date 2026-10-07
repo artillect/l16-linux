@@ -146,8 +146,8 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [ ] Lock screen keeps the orientation from before it blanked for a moment after waking:
       Phosh releases the accelerometer while blanked and nothing else holds it now
       (light-lfc-rotate is gone), so a fresh reading takes the sensor's start-up
-- [ ] App switcher thumbnail of a pinned app (Viewfinder) stays landscape in portrait:
-      phoc's thumbnail could turn it by the view's transform
+- [x] App switcher thumbnail of a pinned app (Viewfinder) stayed landscape in portrait:
+      phoc r114 draws it as the view shows on its output
 - [ ] Photos over USB without SSH: show up on the computer when plugged in, as a camera or a
       portable device. First check what stock did (MTP or PTP, which folders, and why the gallery
       locks while plugged in). The pieces: FunctionFS is in the kernel, `umtprd` (an MTP server,
