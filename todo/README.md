@@ -50,8 +50,8 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [x] Settings' SSH switch works; File Sharing works over USB, the firewall blocks it over Wi-Fi
       as upstream (left so: photos over USB below). Release notes and wiki updated (2026-10-08)
 - [x] 0.1.x's repository: frozen at what's published; said in the 0.2.0 release notes
-- [ ] The upgrade path from 0.1.x: written up in the 0.2.0 release notes (copy photos off,
-      reinstall); not yet followed end to end from a 0.1.x install
+- [x] The upgrade path from 0.1.x: in the 0.2.0 release notes (copy photos off, reinstall);
+      done twice on the L16 (0.1.x to systemd, 2026-10-05; 0.2.0-rc1, 2026-10-08)
 
 ## Release process (after 0.2.0-rc1)
 
