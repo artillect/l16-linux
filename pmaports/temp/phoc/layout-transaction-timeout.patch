@@ -1,0 +1,138 @@
+Layout transaction: ignore configures for a timed out transaction
+
+The 3 s timeout zeroes the pending count, but layer surfaces keep their
+pending serial: their late acks then hit "pending_layer_configures > 0"
+(a critical), and such a surface is not counted in the next transaction
+while its ack still is, ending that one early. Number transactions; a
+surface remembers the one it was added to.
+
+--- a/src/layer-surface.c
++++ b/src/layer-surface.c
+@@ -278,7 +278,8 @@
+   if (self->pending_serial &&
+       self->layer_surface->current.configure_serial >= self->pending_serial) {
+     g_debug ("layer-surface ack'ed serial %d", self->layer_surface->current.configure_serial);
+-    phoc_layout_transaction_notify_layer_configured (phoc_layout_transaction_get_default ());
++    phoc_layout_transaction_notify_layer_configured (phoc_layout_transaction_get_default (),
++                                                     self->pending_generation);
+     self->pending_serial = 0;
+   }
+ }
+@@ -712,11 +713,13 @@
+ phoc_layer_surface_send_configure (PhocLayerSurface *self)
+ {
+   guint32 pending_serial;
++  PhocLayoutTransaction *transaction = phoc_layout_transaction_get_default ();
+   g_assert (PHOC_IS_LAYER_SURFACE (self));
+ 
+-  /* We're not part of a transaction yet but need to */
+-  if (!self->pending_serial)
+-    phoc_layout_transaction_add_layer_dirty (phoc_layout_transaction_get_default ());
++  /* We're not part of a transaction yet (or the one we were in timed out) but need to */
++  if (!self->pending_serial ||
++      !phoc_layout_transaction_is_pending (transaction, self->pending_generation))
++    self->pending_generation = phoc_layout_transaction_add_layer_dirty (transaction);
+ 
+   pending_serial = wlr_layer_surface_v1_configure (self->layer_surface,
+                                                    self->geo.width,
+--- a/src/layer-surface.h
++++ b/src/layer-surface.h
+@@ -43,6 +43,8 @@
+   GSList            *child_surfaces;
+   /* Last not yet ACKed serial */
+   uint32_t           pending_serial;
++  /* The layout transaction waiting for it */
++  guint              pending_generation;
+ };
+ 
+ PhocLayerSurface *phoc_layer_surface_new (struct wlr_layer_surface_v1 *layer_surface);
+--- a/src/layout-transaction.c
++++ b/src/layout-transaction.c
+@@ -34,6 +34,8 @@
+   gint64                starttime;
+   guint                 pending_layer_configures;
+   guint                 layer_timer_id;
++  /* Bumped when a transaction starts: a timed out transaction's late configures don't count */
++  guint                 generation;
+ };
+ G_DEFINE_TYPE (PhocLayoutTransaction, phoc_layout_transaction, G_TYPE_OBJECT)
+ 
+@@ -170,7 +172,7 @@
+  * a layout transaction. If the number of outstanding configures isn't
+  * 0 we consider the transaction dirty (in progress).
+  */
+-void
++guint
+ phoc_layout_transaction_add_layer_dirty (PhocLayoutTransaction *self)
+ {
+   g_assert (PHOC_IS_LAYOUT_TRANSACTION (self));
+@@ -178,15 +180,34 @@
+   self->pending_layer_configures++;
+   if (self->pending_layer_configures > 1) {
+     g_debug ("Layout transaction, adding %dth pending configure", self->pending_layer_configures);
+-    return;
++    return self->generation;
+   }
+ 
+   /* Outstanding configures. Transaction started */
++  self->generation++;
+   g_debug ("Starting new layout transaction");
+   self->starttime = g_get_monotonic_time ();
+   self->layer_timer_id = g_timeout_add_once (TIMEOUT_LAYER_MS, on_timeout_expired, self);
+   g_source_set_name_by_id (self->layer_timer_id, "[phoc] layout transaction timer");
+   g_object_notify_by_pspec (G_OBJECT (self), props[PROP_ACTIVE]);
++
++  return self->generation;
++}
++
++/**
++ * phoc_layout_transaction_is_pending:
++ * @self: The transaction
++ * @generation: What [method@LayoutTransaction.add_layer_dirty] returned
++ *
++ * Returns: Whether the transaction a layer surface was added to still waits for it
++ * (not timed out)
++ */
++gboolean
++phoc_layout_transaction_is_pending (PhocLayoutTransaction *self, guint generation)
++{
++  g_assert (PHOC_IS_LAYOUT_TRANSACTION (self));
++
++  return self->pending_layer_configures > 0 && generation == self->generation;
+ }
+ 
+ /**
+@@ -198,13 +219,16 @@
+  * configures drops to 0 we apply the transaction.
+  */
+ void
+-phoc_layout_transaction_notify_layer_configured (PhocLayoutTransaction *self)
++phoc_layout_transaction_notify_layer_configured (PhocLayoutTransaction *self, guint generation)
+ {
+   gint64 now;
+ 
+   g_assert (PHOC_IS_LAYOUT_TRANSACTION (self));
+ 
+-  g_return_if_fail (self->pending_layer_configures > 0);
++  if (!phoc_layout_transaction_is_pending (self, generation)) {
++    g_debug ("Configure for a timed out layout transaction");
++    return;
++  }
+ 
+   self->pending_layer_configures--;
+   if (self->pending_layer_configures) {
+--- a/src/layout-transaction.h
++++ b/src/layout-transaction.h
+@@ -18,7 +18,10 @@
+ PhocLayoutTransaction *
+                   phoc_layout_transaction_get_default (void);
+ gboolean          phoc_layout_transaction_is_active (PhocLayoutTransaction *self);
+-void              phoc_layout_transaction_notify_layer_configured (PhocLayoutTransaction *self);
+-void              phoc_layout_transaction_add_layer_dirty (PhocLayoutTransaction *self);
++gboolean          phoc_layout_transaction_is_pending (PhocLayoutTransaction *self,
++                                                      guint                  generation);
++void              phoc_layout_transaction_notify_layer_configured (PhocLayoutTransaction *self,
++                                                                   guint                  generation);
++guint             phoc_layout_transaction_add_layer_dirty (PhocLayoutTransaction *self);
+ 
+ G_END_DECLS

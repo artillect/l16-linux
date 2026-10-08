@@ -4,8 +4,10 @@
 # rotation landed while it had a frame pending); pinned-orientation.patch keeps an app that
 # pins an orientation (X-Phosh-Orientation) in it while the shell rotates;
 # draggable-fold-no-slide.patch stops a folded home bar sliding across the screen
-# when a rotation changes its margin. pkgrel 100+ keeps it ahead of Alpine's 0.55.1
-# builds; a new upstream pkgver replaces it (re-fork then).
+# when a rotation changes its margin; layout-transaction-timeout.patch keeps a layout
+# transaction that timed out from counting its late configures (a critical at every shell
+# start, and a stale surface could end the next transaction early). pkgrel 100+ keeps it
+# ahead of Alpine's 0.55.1 builds; a new upstream pkgver replaces it (re-fork then).
 # Contributor: Bart Ribbers <bribbers@disroot.org>
 # Contributor: Danct12 <danct12@disroot.org>
 # Contributor: Clayton Craft <clayton@craftyguy.net>
@@ -13,7 +15,7 @@
 maintainer="team/phosh <newbie13xd@gmail.com>"
 pkgname=phoc
 pkgver=0.55.1
-pkgrel=115
+pkgrel=116
 pkgdesc="wlroots based Phone compositor for the Phosh shell"
 arch="all"
 url="https://gitlab.gnome.org/World/Phosh/phoc"
@@ -66,6 +68,7 @@ source="https://sources.phosh.mobi/releases/phoc/phoc-${pkgver/_/.}.tar.xz
 	layer-pending-frame-done.patch
 	pinned-orientation.patch
 	draggable-fold-no-slide.patch
+	layout-transaction-timeout.patch
 	"
 replaces="wlroots-phosh"
 builddir="$srcdir/$pkgname-${pkgver/_/.}"
@@ -115,4 +118,5 @@ sha512sums="
 58df41771cf3c5729e615b7cd55995b90161308541a84d8d7833b92c9817f6867375e72161ee8583b8adcc0288b2324d5dbe2ff3d4023bcd961310825551d840  layer-pending-frame-done.patch
 88e78347999369e8af46d067377e2a23e544921205b6ba15cb5b43f08e868d3f6de638cac56bea124dd7a0186fede4e24cd6cd27e559f812193f88a420a8c385  pinned-orientation.patch
 c9fcf8fd4b35106b3b1ba230a0d1c97b5a705d4f14cd5e0c3c97ad97859da5a087e1f6395d6117e012200a58d21d03b5b58c58a08c47da2df503ec5b4ba2cf38  draggable-fold-no-slide.patch
+ae74fc1d4542d10ad6956447d87be532408fe445f2f39096953e2f77103756db98565f8e870e147fe94422c687ab08b256cca7dd6e44961c7eea76c2abbc7a9f  layout-transaction-timeout.patch
 "
