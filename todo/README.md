@@ -54,6 +54,29 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [ ] The upgrade path from 0.1.x: back up photos and settings, reinstall, restore; tested
       once end to end, written up in the release notes and the wiki
 
+## Release process (after 0.2.0-rc1)
+
+- [ ] Fresh-equivalence check: CI publishes the image's package list (`apk info -v`) and
+      enabled units beside it; a script on the camera diffs against them, with
+      `apk audit --system` and /usr/local, so an `apk upgrade` test can stand in for a reinstall
+      when nothing install-time changed (device-light-lfc's install parts, setup.sh, the
+      kernel/initramfs, the partitions)
+- [ ] Re-setup after a test reinstall: a script that puts back the SSH key, Wi-Fi profiles and
+      home folder
+
+## Tests (none yet)
+
+- [ ] On-device self-test (`l16-selftest`, run over SSH after an install or upgrade): our services
+      active, sensor readings, an `l16-shoot` capture, sound devices, a GPS answer, no criticals
+      in the journal since boot, a suspend and resume; pass/fail from the logs, so only layout,
+      rotation and flicker need eyes
+- [ ] Unit tests for the apps' pure logic, written as each piece is touched: l16-camera's
+      rotation/drag mapping (the reversed wheel), exposure steps, the manual focus model;
+      LRI parsing in glycin-lri/l16-render; run by CI on every push
+- [ ] CI checks on the built image: the expected units enabled, our packages installed, nothing
+      OpenRC left; mkpatches.sh reproduces the committed kernel patches (shares the manifest
+      with the fresh-equivalence check)
+
 ## Camera app (Viewfinder)
 
 - [ ] Manual focus: the host can move lenses (0x0040 write: a hall code per module; 0x0041:
@@ -152,6 +175,16 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
       `ncm.usb0` (USB networking), which MTP could sit beside. MTP shows every file (the .lri
       too) without locking the device; PTP importers may skip .lri. Check whether umtprd can
       present itself as a camera, and whether it announces photos taken while plugged in
+- [ ] l16-gnss never receives the modem's XTRA indications (source, validity): its queries
+      succeed but its handlers never run, while a fresh client's do (0.2.0-rc1, 2026-10-08), so
+      XTRA isn't refreshed when it runs out. The code is unchanged since it worked (2026-10-02)
+- [ ] geoclue doesn't reconnect to /run/l16-gnss.sock when l16-gnss restarts, and spins at
+      nearly a core meanwhile (6 min 44 s of CPU in 8 min 40 s): GPS is dead until geoclue
+      restarts
+- [ ] First fix after an install (no saved fix): ~12 min on a windowsill; inject geoclue's
+      Wi-Fi/IP location as the rough position when there's no saved fix
+- [ ] Viewfinder's close: camss "VFE sof timeout", "reg update timeout", "ispif stop timeout",
+      three rounds of ~2 s before light-ccb's stream off; likely the ~3 s close
 
 ## Later
 
