@@ -1,0 +1,76 @@
+From ac436c150ccca86a8bccda2cb587b8abdb758fc9 Mon Sep 17 00:00:00 2001
+From: ax487 <ax487@gmx.de>
+Date: Sat, 23 May 2026 23:31:41 +0200
+Subject: [PATCH]  Fix double free in on_desktop_id_set() and
+ on_client_proxy_ready()
+
+GVariants serving as parameters to calls `g_dbus_proxy_call` were
+erroneously initialized using g_autoptrs. The call does however take
+ownership of the parameter objects passed into it unless the
+references are sunk, leading to a double free. This patch makes the
+pointers plain pointers to floating references (i.e., references
+without owners) which are consumed (and deallocated) by the GDBusProxy
+without causing errors or leaks.
+---
+ libgeoclue/gclue-helpers.c | 20 ++++++++------------
+ 1 file changed, 8 insertions(+), 12 deletions(-)
+
+diff --git a/libgeoclue/gclue-helpers.c b/libgeoclue/gclue-helpers.c
+index 252990f..5089892 100644
+--- a/libgeoclue/gclue-helpers.c
++++ b/libgeoclue/gclue-helpers.c
+@@ -143,7 +143,6 @@ on_desktop_id_set (GObject *source_object,
+ {
+         g_autoptr(GError) error = NULL;
+         g_autoptr(GVariant) retval = NULL;
+-        g_autoptr(GVariant) params = NULL;
+         g_autoptr(GDBusProxy) client = G_DBUS_PROXY (source_object);
+         g_autoptr(GTask) task = G_TASK (user_data);
+         ClientCreateData *data = g_task_get_task_data (task);
+@@ -154,13 +153,12 @@ on_desktop_id_set (GObject *source_object,
+                 return;
+         }
+ 
+-        params = g_variant_new ("(ssv)",
+-                                "org.freedesktop.GeoClue2.Client",
+-                                "RequestedAccuracyLevel",
+-                                g_variant_new_uint32 (data->accuracy_level));
+         g_dbus_proxy_call (g_steal_pointer (&client),
+                            "org.freedesktop.DBus.Properties.Set",
+-                           params,
++                           g_variant_new ("(ssv)",
++                                          "org.freedesktop.GeoClue2.Client",
++                                          "RequestedAccuracyLevel",
++                                          g_variant_new_uint32 (data->accuracy_level)),
+                            G_DBUS_CALL_FLAGS_NONE,
+                            -1,
+                            NULL,
+@@ -177,7 +175,6 @@ on_client_proxy_ready (GObject      *source_object,
+         ClientDestroyData *destroy;
+         g_autoptr(GClueClient) client = NULL;
+         g_autoptr(GError) error = NULL;
+-        g_autoptr(GVariant) params = NULL;
+         g_autoptr(GTask) task = G_TASK (user_data);
+ 
+         client = gclue_client_proxy_new_for_bus_finish (res, &error);
+@@ -197,13 +194,12 @@ on_client_proxy_ready (GObject      *source_object,
+                                    destroy);
+        }
+ 
+-        params = g_variant_new ("(ssv)",
+-                                "org.freedesktop.GeoClue2.Client",
+-                                "DesktopId",
+-                                g_variant_new_string (data->desktop_id));
+         g_dbus_proxy_call (G_DBUS_PROXY (g_steal_pointer (&client)),
+                            "org.freedesktop.DBus.Properties.Set",
+-                           params,
++                           g_variant_new ("(ssv)",
++                                          "org.freedesktop.GeoClue2.Client",
++                                          "DesktopId",
++                                          g_variant_new_string (data->desktop_id)),
+                            G_DBUS_CALL_FLAGS_NONE,
+                            -1,
+                            NULL,
+-- 
+GitLab
+

@@ -129,16 +129,12 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
       the power button blanked and unblanked the screen). Intermittent: seen 2026-10-05 after
       opening Viewfinder in portrait, turning to landscape, then opening and closing the
       shade; the same steps again didn't repeat it. Possibly tied to the display errors above
-- [ ] gsd-color corrupts its memory once location services are on: at start it fails to get
-      a location from GeoClue ("Failed to connect to GeoClue2 service: Timeout was reached",
-      for Night Light's automatic schedule, though Night Light is off) and logs
-      "g_atomic_ref_count_dec: assertion 'old_value > 0' failed" twice (a double unref).
-      Later its gdbus thread spins at 100% of a core in g_hash_table_contains under
-      g_source_attach, holding the main context, so it stops answering D-Bus: logout hangs
-      on "Color not responding" (2026-10-05: ~28 min of a core burnt since login). First
-      seen the minute location services were turned on. GeoClue's own where-am-i shows the
-      same assertion (KDE Discuss), so likely libgeoclue's timeout path; and why GeoClue
-      times out for it at all
+- [x] gsd-color corrupted its memory once location services were on: two
+      "g_atomic_ref_count_dec: assertion 'old_value > 0' failed" at every start, later its
+      gdbus thread spinning in g_hash_table_contains and logout hanging on "Color not
+      responding". libgeoclue 2.8.1 freed the Properties.Set bodies (DesktopId,
+      RequestedAccuracyLevel) it had handed to GDBus, in every client (where-am-i too).
+      Upstream's fix (ac436c15, in 2.8.2) backported: temp/geoclue r100 (2026-10-07)
 - [ ] Home screen sometimes entirely black with the status bar drawn (so phoc drew the top
       layer); it comes back on swiping the shade down or tapping an (unseen) icon. Seen
       2026-10-05 on phoc r107; a few times before for a moment. Next time: phosh-home and
