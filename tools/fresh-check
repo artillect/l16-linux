@@ -1,0 +1,42 @@
+#!/bin/sh
+# Is this camera what a fresh install of a release would be? Diffs the release's manifest
+# (light-lfc-manifest.txt, from CI) against tools/fresh-manifest run on the camera, leaving out
+# what every install gets on its first boot. "<" lines are only in the image, ">" lines only
+# on the camera. Nothing printed: the camera is equivalent, so an `apk upgrade` test on it
+# stands in for a reinstall (unless install-time parts changed: see todo/README.md).
+# usage: fresh-check <camera> <release tag>     e.g. fresh-check 172.16.42.1 0.2.0
+#        KEY=<ssh key> for root on the camera (default: ssh's own)
+#        MANIFEST=<file> to use a local manifest instead of the release's
+set -eu
+HOST=$1
+TAG=$2
+HERE=$(cd "$(dirname "$0")" && pwd)
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+
+if [ -n "${MANIFEST:-}" ]; then
+	cp "$MANIFEST" "$T/image"
+else
+	curl -fsSL -o "$T/image" \
+		"https://github.com/artillect/l16-linux/releases/download/$TAG/light-lfc-manifest.txt"
+fi
+ssh ${KEY:+-i "$KEY"} root@"$HOST" sh -s < "$HERE/fresh-manifest" > "$T/camera"
+
+# what every install has after its first boot (systemd's machine id and preset pass, sshd's
+# host keys, tuned's profile, ...), and the networks it was set up with
+diff "$T/image" "$T/camera" | grep '^[<>]' | grep -v \
+	-e '^> \./system/sockets\.target\.wants/avahi-daemon\.socket$' \
+	-e '^> A etc/\.updated$' \
+	-e '^> A etc/machine-id$' \
+	-e '^> A etc/vconsole\.conf$' \
+	-e '^> A etc/profile\.d/70-systemd-shell-extra\.sh$' \
+	-e '^> A etc/profile\.d/80-systemd-osc-context\.sh$' \
+	-e '^> A etc/ssh/ssh_host_' \
+	-e '^> A etc/NetworkManager/system-connections/' \
+	-e '^> D etc/credstore/$' \
+	-e '^> D etc/credstore\.encrypted/$' \
+	-e '^> D etc/kernel/$' \
+	-e '^> D etc/ssh/ssh_config\.d/$' \
+	-e '^> U etc/mtab$' \
+	-e '^> U etc/modprobe\.d/tuned\.conf$' \
+	-e '^> U etc/tuned/' || true

@@ -1,0 +1,27 @@
+#!/bin/sh
+# What makes an install what it is, as a text file to diff: the packages and their versions,
+# the enabled units, and the files that differ from the packages'. CI runs it on each release
+# image's root filesystem (light-lfc-manifest.txt beside the image); tools/fresh-check runs it
+# on the camera and diffs the two, so what's left is what the camera has that a fresh install
+# of that release wouldn't.
+# usage: fresh-manifest [root]    (as root; APK=path to apk if not on PATH)
+set -eu
+R=${1:-/}
+APK=${APK:-apk}
+
+echo "## packages"
+# name-version of each installed package, from apk's database
+awk '/^P:/ { p = substr($0, 3) } /^V:/ { print p "-" substr($0, 3) }' "$R/lib/apk/db/installed" | sort
+
+echo "## enabled units"
+# what systemctl enable/disable and presets change: the links under etc/systemd
+(cd "$R/etc/systemd" && find . -type l | sort)
+
+echo "## changed files"
+# files that differ from their packages', and files no package owns: config files (apk audit's
+# default, /etc) and the rest of the system (--full), without what changes by itself at runtime
+# (Python's bytecode caches, /run, /proc)
+{
+	"$APK" --root "$R" audit 2>/dev/null
+	"$APK" --root "$R" audit --full --ignore-busybox-symlinks 2>/dev/null
+} | grep -v -e '/__pycache__/' -e ' run/' -e ' proc/' | sort -u

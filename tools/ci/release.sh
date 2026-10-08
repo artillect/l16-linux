@@ -29,12 +29,26 @@ gst-plugins-rs-dav1d gvfs-full loupe nautilus papers showtime tuned-ppd"
 pmbootstrap -y install --single-partition --no-sshd --password 147147 \
 	--no-recommends --add "$(echo $APPS | tr ' ' ',')"
 
+IMG=$W/chroot_native/home/pmos/rootfs/light-lfc.img
 sudo cp "$W/chroot_rootfs_light-lfc/boot/boot.img" "$O/light-lfc-boot.img"
-xz -T0 -6 -c "$W/chroot_native/home/pmos/rootfs/light-lfc.img" > "$O/light-lfc-rootfs.img.xz"
+xz -T0 -6 -c "$IMG" > "$O/light-lfc-rootfs.img.xz"
+
+# the image's manifest, for tools/fresh-check: from the image itself (pmbootstrap writes some
+# files only there, as fstab), which is sparse, so unpacked to a raw copy first
+sudo apt-get install -y -q android-sdk-libsparse-utils
+M=$(mktemp -d)
+simg2img "$IMG" "$O/raw.img"
+sudo mount -o loop,ro "$O/raw.img" "$M"
+sudo APK="$W/apk.static" sh "$REPO/tools/fresh-manifest" "$M" > "$O/light-lfc-manifest.txt"
+sudo umount "$M"
+rm "$O/raw.img"
+
 sudo chown "$(id -u):$(id -g)" "$O"/*
+# (the image files only: the wiki's `sha256sum -c` would fail on a manifest not downloaded)
 (cd "$O" && sha256sum light-lfc-boot.img light-lfc-rootfs.img.xz > SHA256SUMS && cat SHA256SUMS)
 
 flag=
 [ "$PRERELEASE" = true ] && flag=--prerelease
-gh release create "$TAG" "$O/light-lfc-rootfs.img.xz" "$O/light-lfc-boot.img" "$O/SHA256SUMS" \
+gh release create "$TAG" "$O/light-lfc-rootfs.img.xz" "$O/light-lfc-boot.img" \
+	"$O/light-lfc-manifest.txt" "$O/SHA256SUMS" \
 	--target "${GITHUB_SHA:-main}" --title "$TAG" --notes-file "$NOTES" $flag

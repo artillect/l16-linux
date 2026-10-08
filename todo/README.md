@@ -56,11 +56,13 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 
 ## Release process (after 0.2.0-rc1)
 
-- [ ] Fresh-equivalence check: CI publishes the image's package list (`apk info -v`) and
-      enabled units beside it; a script on the camera diffs against them, with
-      `apk audit --system` and /usr/local, so an `apk upgrade` test can stand in for a reinstall
-      when nothing install-time changed (device-light-lfc's install parts, setup.sh, the
-      kernel/initramfs, the partitions)
+- [x] Fresh-equivalence check (2026-10-08): tools/fresh-manifest (packages, enabled units, apk
+      audit of /etc and --full), published by release.sh as light-lfc-manifest.txt;
+      tools/fresh-check diffs a camera against a release's, leaving out first-boot files. Tested
+      against 0.2.0-rc1's image; release.sh's part runs for the first time with the next RC.
+      An `apk upgrade` test on a camera that checks clean stands in for a reinstall when nothing
+      install-time changed (device-light-lfc's install parts, setup.sh, the kernel/initramfs,
+      the partitions)
 - [ ] Re-setup after a test reinstall: a script that puts back the SSH key, Wi-Fi profiles and
       home folder
 
