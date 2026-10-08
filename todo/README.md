@@ -45,8 +45,9 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
       "Building it yourself" says systemd (2026-10-08)
 - [ ] Re-test what touches init or power. Done with 0.2.0-rc1 (dual boot, 2026-10-08): install
       from the release files, first-boot resize, services, rebooting to Android and back,
-      suspend-on-blank on battery, a GPS fix, the camera. Left: Linux only, and deep sleep
-      (vmin) measured under systemd
+      suspend-on-blank on battery, a GPS fix, the camera. Linux only: light-lfc-bootmode's
+      branch for it is unchanged from 0.1.0 (only OpenRC's logging swapped for echo), whose
+      Linux-only install was tested. Left: deep sleep (vmin) measured under systemd
 - [x] Settings' SSH switch works; File Sharing works over USB, the firewall blocks it over Wi-Fi
       as upstream (left so: photos over USB below). Release notes and wiki updated (2026-10-08)
 - [x] 0.1.x's repository: frozen at what's published; said in the 0.2.0 release notes
