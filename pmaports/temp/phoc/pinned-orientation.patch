@@ -181,17 +181,18 @@ pre-rotates its buffers to it is still scanned out.
      return false;
    }
  
-@@ -751,7 +766,8 @@
+@@ -751,7 +766,9 @@
       * dim screen until this finished to avoid flickering */
      if (configure_sent &&
          !priv->modeset_shield &&
 -        !phoc_output_shield_is_raised (priv->shield)) {
 +        !phoc_output_shield_is_raised (priv->shield) &&
-+        !(self->fullscreen_view && phoc_view_get_pinned_transform (self->fullscreen_view) >= 0)) {
++        !(self->fullscreen_view && phoc_view_get_pinned_transform (self->fullscreen_view) >= 0 &&
++          !phoc_output_has_layer (self, ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY))) {
        phoc_output_raise_shield (self, FALSE);
        priv->modeset_shield = TRUE;
      }
-@@ -1310,7 +1326,9 @@
+@@ -1310,7 +1327,9 @@
      .output = self,
      .ox = view->box.x - output_box.x,
      .oy = view->box.y - output_box.y,
@@ -202,7 +203,7 @@ pre-rotates its buffers to it is still scanned out.
    };
  
    phoc_view_for_each_surface (view, phoc_output_for_each_surface_iterator, &data);
-@@ -1784,6 +1802,65 @@
+@@ -1784,6 +1803,65 @@
  }
  
  
@@ -268,7 +269,7 @@ pre-rotates its buffers to it is still scanned out.
  static void
  damage_view_blings (PhocOutput *self, PhocView  *view)
  {
-@@ -1825,6 +1902,16 @@
+@@ -1825,6 +1903,16 @@
    if (!phoc_view_accept_damage (self, view))
      return;
  
@@ -285,7 +286,7 @@ pre-rotates its buffers to it is still scanned out.
    if (whole)
      damage_view_blings (self, view);
  
-@@ -2583,6 +2670,119 @@
+@@ -2583,6 +2671,119 @@
  }
  
  

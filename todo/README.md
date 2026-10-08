@@ -143,9 +143,10 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
       layer); it comes back on swiping the shade down or tapping an (unseen) icon. Seen
       2026-10-05 on phoc r107; a few times before for a moment. Next time: phosh-home and
       phoc layer/render debug logs (DebugControl LogDomains), not screenshots
-- [ ] Lock screen keeps the orientation from before it blanked for a moment after waking:
-      Phosh releases the accelerometer while blanked and nothing else holds it now
-      (light-lfc-rotate is gone), so a fresh reading takes the sensor's start-up
+- [x] Lock screen woke in the orientation from before it blanked, the camera showing round
+      it: not the sensor (first reading 120 ms after unblank) but the lock screen's
+      re-layout with no modeset shield, skipped for a pinned fullscreen view. phoc r115
+      keeps the shield while an overlay surface (the lock screen) is up
 - [x] App switcher thumbnail of a pinned app (Viewfinder) stayed landscape in portrait:
       phoc r114 draws it as the view shows on its output
 - [ ] Photos over USB without SSH: show up on the computer when plugged in, as a camera or a
