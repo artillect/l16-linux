@@ -41,18 +41,17 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [x] systemd units for our services (device-light-lfc-systemd, l16-gnss-systemd), enabled by
       presets; OpenRC's parts dropped (initd, temp/phosh, the chrony hook: timesyncd)
 - [x] Kernel for postmarketOS's systemd services: nftables (the firewall), zram, PSI (oomd)
-- [ ] Build with systemd: tools/ci done (setup.sh, publish/seed to systemd/v26.06); the wiki's
-      "Building it yourself" (it says only OpenRC)
-- [ ] Re-test what touches init or power: rebooting to Android and back, Linux only, suspend
-      and deep sleep (logind, not elogind), suspend-on-blank and the sleep inhibitor, a GPS
-      fix, the camera. Done (dual boot, 2026-10-05): first-boot resize, all services start,
-      bootmode's dual-boot setup
-- [ ] Settings' SSH switch works (2026-10-05); File Sharing works over USB, the firewall blocks
-      it over Wi-Fi as upstream (left so: photos over USB below). Drop the "doesn't work"
-      notes (release notes, wiki Using Linux)
-- [ ] 0.1.x's repository: frozen at what's published; say so in the 0.2.0 release notes
-- [ ] The upgrade path from 0.1.x: back up photos and settings, reinstall, restore; tested
-      once end to end, written up in the release notes and the wiki
+- [x] Build with systemd: tools/ci (setup.sh, publish/seed to systemd/v26.06); the wiki's
+      "Building it yourself" says systemd (2026-10-08)
+- [ ] Re-test what touches init or power. Done with 0.2.0-rc1 (dual boot, 2026-10-08): install
+      from the release files, first-boot resize, services, rebooting to Android and back,
+      suspend-on-blank on battery, a GPS fix, the camera. Left: Linux only, and deep sleep
+      (vmin) measured under systemd
+- [x] Settings' SSH switch works; File Sharing works over USB, the firewall blocks it over Wi-Fi
+      as upstream (left so: photos over USB below). Release notes and wiki updated (2026-10-08)
+- [x] 0.1.x's repository: frozen at what's published; said in the 0.2.0 release notes
+- [ ] The upgrade path from 0.1.x: written up in the 0.2.0 release notes (copy photos off,
+      reinstall); not yet followed end to end from a 0.1.x install
 
 ## Release process (after 0.2.0-rc1)
 
