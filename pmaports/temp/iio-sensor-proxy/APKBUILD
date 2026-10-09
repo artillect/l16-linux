@@ -3,12 +3,13 @@
 # its current readings (Phosh, claiming the accelerometer again after Viewfinder's rotation
 # lock, otherwise kept the orientation from before it, while light-lfc-rotate held the
 # sensor). pkgrel 100+ keeps it ahead of Alpine's 3.9 builds; a new upstream pkgver
-# replaces it (re-fork then). Without the OpenRC service (0.2.0 on is systemd only).
+# replaces it (re-fork then). With Alpine's OpenRC service, for OpenRC installs
+# (community-supported; 0.2.0 on is tested on systemd only).
 # Contributor: Rasmus Thomsen <oss@cogitri.dev>
 # Maintainer: Natanael Copa <ncopa@alpinelinux.org>
 pkgname=iio-sensor-proxy
 pkgver=3.9
-pkgrel=100
+pkgrel=101
 pkgdesc="IIO sensors to D-Bus proxy"
 url="https://gitlab.freedesktop.org/hadess/iio-sensor-proxy"
 arch="all"
@@ -22,8 +23,9 @@ makedepends="
 	polkit-dev
 	libssc-dev
 	"
-subpackages="$pkgname-systemd $pkgname-udev $pkgname-dbg"
+subpackages="$pkgname-openrc $pkgname-systemd $pkgname-udev $pkgname-dbg"
 source="https://gitlab.freedesktop.org/hadess/iio-sensor-proxy/-/archive/$pkgver/iio-sensor-proxy-$pkgver.tar.gz
+	iio-sensor-proxy.initd
 	claim-active-sensor-readings.patch
 	"
 
@@ -42,8 +44,11 @@ check() {
 
 package() {
 	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
 }
 sha512sums="
 a89c842f8db2a1a36c1c7c990434bb57fd905224459170cba2ec56e79f1272acc4cac4221937704d5e9247f957d86fde716d25e2d1ccb80d88fa643b47edfda6  iio-sensor-proxy-3.9.tar.gz
+b25df94e249ca46fe96926e5a866c20dc913fa52a2d9259fb7a3594861c6b2f246fc7fef8a21f5b021f3a71401f734ae27210137b0b1917a7daaffb5e3221f2e  iio-sensor-proxy.initd
 36e6737262654ddba6e1adee980dde41c0435c3fc22d69929de0c8482463f5a07741e85ce3b2858a7d04fd71256e6c12985e2572543a2b6987ad70dd99522388  claim-active-sensor-readings.patch
 "

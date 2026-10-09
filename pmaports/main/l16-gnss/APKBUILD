@@ -4,14 +4,16 @@
 # repository (pmaports/sync.sh packs l16-gnss/ into $pkgname-src.tar.gz here).
 pkgname=l16-gnss
 pkgver=0.1.0
-pkgrel=7
+pkgrel=8
 pkgdesc="Light L16 GNSS for geoclue"
 url="https://github.com/artillect/l16-linux"
 arch="noarch"
 license="MIT"
 depends="geoclue libqmi libqrtr-glib py3-gobject3 python3 rmtfs"
 depends_systemd="rmtfs-systemd"
-subpackages="$pkgname-systemd"
+# -openrc: community-supported (0.2.0 on is tested on systemd only)
+depends_openrc="rmtfs-openrc"
+subpackages="$pkgname-openrc $pkgname-systemd"
 options="!check"
 source="$pkgname-src.tar.gz"
 builddir="$srcdir/l16-gnss"
@@ -24,7 +26,14 @@ package() {
 	install -Dm644 l16-gnss.service -t "$pkgdir"/usr/lib/systemd/system
 	# enabled as it's installed (postmarketos-base-systemd's trigger applies presets)
 	install -Dm644 80-l16-gnss.preset -t "$pkgdir"/usr/lib/systemd/system-preset
+	install -Dm755 l16-gnss.initd "$pkgdir"/etc/init.d/l16-gnss
+}
+
+openrc() {
+	default_openrc
+	# enables it and the modem's file system service (rmtfs) at boot
+	install="$subpkgname.post-install"
 }
 sha512sums="
-fc106eac99f965d3d6bc4240110154a209d4bc5058ced9b819241f5e5eec0043adabde84e09f8441874b69c52be846d4400d921353aadac68922cff8f26ac7b1  l16-gnss-src.tar.gz
+5803b956a8f72935224a1ee6389c328297e76bf2f5da2e502652a7914baea3ec58247f4470c6712bf6c10a58909fcb7f74a2ab240f617fbd60f86039fda8f7a3  l16-gnss-src.tar.gz
 "

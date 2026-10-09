@@ -1,0 +1,16 @@
+#!/bin/sh
+# NetworkManager dispatcher: tell chrony when the network comes and goes. A fresh
+# install has no saved time (the RTC is read-only and counts from 1970), and chrony,
+# started before Wi-Fi was up, only retries the pool.ntp.org lookup minutes later.
+command -v chronyc >/dev/null || exit 0
+
+case "$2" in
+up | connectivity-change | dhcp4-change)
+	# "online" also retries names that failed to resolve
+	chronyc online >/dev/null 2>&1
+	;;
+down)
+	chronyc onoffline >/dev/null 2>&1
+	;;
+esac
+exit 0

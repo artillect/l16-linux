@@ -51,6 +51,11 @@ forked from that one (extra-repos/systemd/phosh) with our keypad patch.
 - [x] Settings' SSH switch works; File Sharing works over USB, the firewall blocks it over Wi-Fi
       as upstream (left so: photos over USB below). Release notes and wiki updated (2026-10-08)
 - [x] 0.1.x's repository: frozen at what's published; said in the 0.2.0 release notes
+- [ ] OpenRC, community-supported (2026-10-08): device-light-lfc-openrc (the init scripts as
+      0.1.x had them, bootmode's now a wrapper of /usr/libexec/light-lfc-bootmode, the chrony
+      hook), l16-gnss-openrc and iio-sensor-proxy-openrc again, installed on OpenRC systems
+      only; light-lfc-reboot-android uses elogind's loginctl there. Built, never booted: no
+      OpenRC image or repository from us. Test once if someone builds one (Sxmo, say)
 - [x] The upgrade path from 0.1.x: in the 0.2.0 release notes (copy photos off, reinstall);
       done twice on the L16 (0.1.x to systemd, 2026-10-05; 0.2.0-rc1, 2026-10-08)
 
